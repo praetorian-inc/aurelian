@@ -116,9 +116,9 @@ func newFakeCloudControl(provider *AWSConfigProvider, skipReport *SkipReport) *C
 	return NewCloudControlEnumeratorWithProvider(provider.AWSCommonRecon, provider, skipReport)
 }
 
-// collectResources runs fn against a fresh pipeline and returns what it sent
+// collectFakeResources runs fn against a fresh pipeline and returns what it sent
 // together with fn's own error.
-func collectResources(t *testing.T, fn func(out *pipeline.P[output.AWSResource]) error) ([]output.AWSResource, error) {
+func collectFakeResources(t *testing.T, fn func(out *pipeline.P[output.AWSResource]) error) ([]output.AWSResource, error) {
 	t.Helper()
 	out := pipeline.New[output.AWSResource]()
 	var runErr error

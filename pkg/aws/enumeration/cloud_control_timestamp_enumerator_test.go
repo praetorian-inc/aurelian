@@ -59,11 +59,11 @@ func TestNewEnumerator_StampedTypesMatchCloudControlExceptLastModified(t *testin
 			plain := newFakeCloudControl(provider, NewSkipReport())
 
 			for _, identifier := range []string{tc.resourceType, tc.arn} {
-				stamped, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+				stamped, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 					return dispatcher.List(identifier, out)
 				})
 				require.NoError(t, err)
-				want, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+				want, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 					return plain.List(identifier, out)
 				})
 				require.NoError(t, err)

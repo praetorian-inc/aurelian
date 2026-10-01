@@ -32,7 +32,7 @@ func TestSSMDocument_ListStampsDefaultVersionCreatedDate(t *testing.T) {
 	fake.reply("ListDocuments", ssmListOneDocument)
 	fake.reply("DescribeDocument", ssmDescribeDocument(defaultCreated))
 
-	resources, err := collectResources(t, enum.EnumerateAll)
+	resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 	require.NoError(t, err)
 	require.Len(t, resources, 1)
@@ -65,7 +65,7 @@ func TestSSMDocument_DescribeFailureLeavesDocumentUnstampedButEmitted(t *testing
 			fake.reply("ListDocuments", ssmListOneDocument)
 			fake.fail("DescribeDocument", http.StatusBadRequest, jsonError(tc.code))
 
-			resources, err := collectResources(t, enum.EnumerateAll)
+			resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 			require.NoError(t, err)
 			require.Len(t, resources, 1)
@@ -84,7 +84,7 @@ func TestSSMDocument_EnumerateByARNStampsDescribedCreatedDate(t *testing.T) {
 	fake, _, enum := newSSMDocumentFixture(t)
 	fake.reply("DescribeDocument", ssmDescribeDocument(defaultCreated))
 
-	resources, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+	resources, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 		return enum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:document/deploy", out)
 	})
 
@@ -99,7 +99,7 @@ func TestSSMDocument_EnumerateByARNDescribesDefaultVersion(t *testing.T) {
 	fake, skipReport, enum := newSSMDocumentFixture(t)
 	fake.reply("DescribeDocument", ssmDescribeDocument(defaultCreated))
 
-	resources, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+	resources, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 		return enum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:document/deploy", out)
 	})
 

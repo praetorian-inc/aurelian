@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -49,7 +50,7 @@ func TestEC2InstanceTimestamp_EnumerateAllStampsEachInstanceWithItsLaunchTime(t 
 		"i-bbb": "2026-07-15T08:30:00.000Z",
 	}))
 
-	resources, err := collectResources(t, enum.EnumerateAll)
+	resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 	require.NoError(t, err)
 	got := byResourceID(resources)
@@ -63,23 +64,26 @@ func TestEC2InstanceTimestamp_EnumerateAllStampsEachInstanceWithItsLaunchTime(t 
 	assert.Zero(t, skipReport.Len())
 }
 
-func TestEC2InstanceTimestamp_MissingLaunchTimeIsAnError(t *testing.T) {
+func TestEC2InstanceTimestamp_MissingLaunchTimeEmitsInstanceUnstamped(t *testing.T) {
+	logs := captureLogs(t)
 	fake, _, enum := newEC2TimestampFixture(t)
-	fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-ok"), ec2Instance("i-nolaunch")))
-	fake.reply("DescribeInstances", ec2DescribeInstances(map[string]string{
-		"i-ok":       "2026-03-01T10:00:00.000Z",
-		"i-nolaunch": "",
-	}))
+	fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-nolaunch")))
+	fake.reply("DescribeInstances", ec2DescribeInstances(map[string]string{"i-nolaunch": ""}))
 
-	resources, err := collectResources(t, enum.EnumerateAll)
+	resources, err := collectFakeResources(t, enum.EnumerateAll)
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "i-nolaunch")
-	assert.Contains(t, err.Error(), "LaunchTime")
-	got := byResourceID(resources)
-	assert.NotContains(t, got, "i-nolaunch", "a resource missing its contracted timestamp is withheld, not sent with a guess")
-	require.Contains(t, got, "i-ok", "other instances are still emitted")
-	assert.NotNil(t, got["i-ok"].LastModified)
+	require.NoError(t, err, "a missing contracted field must not fail the region listing")
+	require.Len(t, resources, 1, "the instance is still emitted")
+	assert.Equal(t, "i-nolaunch", resources[0].ResourceID)
+	assert.Equal(t, "AWS::EC2::Instance", resources[0].ResourceType)
+	assert.Nil(t, resources[0].LastModified, "an instance without LaunchTime is unstamped so it is always scanned")
+
+	failures := logs.timestampFailures(slog.LevelError)
+	require.Len(t, failures, 1)
+	assert.Equal(t, "i-nolaunch", failures[0].attrs["resource_id"])
+	require.NotEmpty(t, resources[0].ARN)
+	assert.Equal(t, resources[0].ARN, failures[0].attrs["arn"])
+	assert.Contains(t, failures[0].attrs["error"], "LaunchTime")
 }
 
 func TestEC2InstanceTimestamp_DescribeFailureLeavesInstancesUnstamped(t *testing.T) {
@@ -98,7 +102,7 @@ func TestEC2InstanceTimestamp_DescribeFailureLeavesInstancesUnstamped(t *testing
 			fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-aaa"), ec2Instance("i-bbb")))
 			fake.fail("DescribeInstances", tc.statusCode, ec2Error(tc.code))
 
-			resources, err := collectResources(t, enum.EnumerateAll)
+			resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 			require.NoError(t, err, "a timestamp call failure must not fail enumeration")
 			require.Len(t, resources, 2, "resources are still emitted when the timestamp call fails")
@@ -119,7 +123,7 @@ func TestEC2InstanceTimestamp_EnumerateByARNDescribesOnlyThatInstance(t *testing
 	fake.reply("GetResource", ccGetResource("AWS::EC2::Instance", ec2Instance("i-aaa")))
 	fake.reply("DescribeInstances", ec2DescribeInstances(map[string]string{"i-aaa": "2026-05-05T05:05:05.000Z"}))
 
-	resources, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+	resources, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 		return enum.EnumerateByARN("arn:aws:ec2:us-east-1:123456789012:instance/i-aaa", out)
 	})
 

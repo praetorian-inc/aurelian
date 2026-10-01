@@ -53,7 +53,7 @@ func TestLogGroupTimestamp_UsesNewestIngestionTimeAcrossSampledStreams(t *testin
 	// The stream order is by event time, so the newest ingestion is not first.
 	fake.reply("DescribeLogStreams", logStreams(millis(older), nil, millis(newest), millis(middle)))
 
-	resources, err := collectResources(t, enum.EnumerateAll)
+	resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 	require.NoError(t, err)
 	require.Len(t, resources, 1)
@@ -66,7 +66,7 @@ func TestLogGroupTimestamp_SamplesTheStreamsTheExtractorReads(t *testing.T) {
 	fake.reply("ListResources", ccListResources("AWS::Logs::LogGroup", logGroup("/app/api")))
 	fake.reply("DescribeLogStreams", logStreams(millis(time.Now())))
 
-	_, err := collectResources(t, enum.EnumerateAll)
+	_, err := collectFakeResources(t, enum.EnumerateAll)
 	require.NoError(t, err)
 
 	requests := fake.requests("DescribeLogStreams")
@@ -90,7 +90,7 @@ func TestLogGroupTimestamp_NoIngestionTimeLeavesLastModifiedNil(t *testing.T) {
 			fake.reply("ListResources", ccListResources("AWS::Logs::LogGroup", logGroup("/app/api")))
 			fake.reply("DescribeLogStreams", body)
 
-			resources, err := collectResources(t, enum.EnumerateAll)
+			resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 			require.NoError(t, err, "a missing optional field is not an error")
 			require.Len(t, resources, 1)
@@ -114,7 +114,7 @@ func TestLogGroupTimestamp_DescribeFailureLeavesGroupUnstampedButEmitted(t *test
 			fake.reply("ListResources", ccListResources("AWS::Logs::LogGroup", logGroup("/app/api")))
 			fake.fail("DescribeLogStreams", http.StatusBadRequest, jsonError(tc.code))
 
-			resources, err := collectResources(t, enum.EnumerateAll)
+			resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 			require.NoError(t, err)
 			require.Len(t, resources, 1, "the log group is still emitted")
@@ -134,7 +134,7 @@ func TestLogGroupTimestamp_EnumerateByARNStampsTheGroup(t *testing.T) {
 	fake.reply("GetResource", ccGetResource("AWS::Logs::LogGroup", logGroup("/app/api")))
 	fake.reply("DescribeLogStreams", logStreams(millis(ingested)))
 
-	resources, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+	resources, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 		return enum.EnumerateByARN("arn:aws:logs:us-east-1:123456789012:log-group:/app/api", out)
 	})
 
