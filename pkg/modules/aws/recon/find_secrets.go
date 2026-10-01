@@ -23,7 +23,7 @@ type FindSecretsConfig struct {
 	secrets.ScannerConfig
 	MaxEvents  int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
 	MaxStreams int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
-	LogsSince  string `param:"logs-since" desc:"RFC3339 timestamp of the last successful scan; log events older than this (minus a lag buffer) are not read"`
+	LogsSince  string `param:"logs-since" desc:"RFC3339 timestamp of the last successful scan; log events older than this time minus six hours are not read"`
 }
 
 // AWSFindSecretsModule scans AWS resources for hardcoded secrets using Titus.

@@ -60,9 +60,11 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 	g, gctx := errgroup.WithContext(ctx.Context)
 	g.SetLimit(ctx.Concurrency)
 
+	// FilterLogEvents rejects a negative startTime; a cutoff at or before the
+	// epoch (including an unset logs-since) reads from the start.
 	var startTime *int64
-	if !ctx.Config.LogsSince.IsZero() {
-		startTime = aws.Int64(ctx.Config.LogsSince.Add(-logsLagBuffer).UnixMilli())
+	if ms := ctx.Config.LogsSince.Add(-logsLagBuffer).UnixMilli(); ms > 0 {
+		startTime = aws.Int64(ms)
 	}
 
 	for _, streamName := range streamNames {
