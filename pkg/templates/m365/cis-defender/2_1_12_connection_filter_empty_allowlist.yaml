@@ -1,0 +1,35 @@
+id: "2.1.12"
+title: "Ensure the connection filter IP allow list is empty"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the connection filter policy does not have any IP
+  addresses in the IP allow list.
+rationale: |
+  IP addresses in the connection filter allow list bypass spam
+  filtering entirely. Attackers who compromise or spoof an allowed IP
+  can deliver malicious email without any spam or threat detection.
+impact: |
+  Removing IP allow list entries may cause previously allowed senders
+  to be subject to normal spam filtering, potentially quarantining
+  some legitimate emails.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Anti-spam > Connection filter policy and remove all
+  entries from the IP allow list.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/connection-filter-policies-configure"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.12"
+cis_controls:
+  - "v8: 9.3"
+guard:
+  finding_slug: "m365-cis-2-1-12-connection-filter-empty-allowlist"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - connection_filter_policy

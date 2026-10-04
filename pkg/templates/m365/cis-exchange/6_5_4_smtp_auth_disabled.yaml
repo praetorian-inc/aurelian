@@ -1,0 +1,36 @@
+id: "6.5.4"
+title: "Ensure SMTP AUTH is disabled globally"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that SMTP AUTH is disabled globally at the organization
+  level in Exchange Online.
+rationale: |
+  SMTP AUTH uses basic authentication to submit email and does not
+  support modern authentication or MFA. Attackers frequently abuse
+  SMTP AUTH with compromised credentials for email-based attacks and
+  spam distribution from the tenant.
+impact: |
+  Applications and devices that rely on SMTP AUTH for sending email
+  will need to be migrated to modern authentication methods or
+  granted per-mailbox SMTP AUTH exceptions.
+remediation: |
+  Run Set-TransportConfig -SmtpClientAuthenticationDisabled $true in
+  Exchange Online PowerShell to disable SMTP AUTH globally.
+references:
+  - "https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/authenticated-client-smtp-submission"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.5.4"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 6.4"
+guard:
+  finding_slug: "m365-cis-6-5-4-smtp-auth-disabled"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - transport_config

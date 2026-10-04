@@ -1,0 +1,38 @@
+id: "2.1.2"
+title: "Ensure the common attachment types filter is enabled"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that the common attachment types filter is enabled in the
+  anti-malware policy to block file types commonly used for malware
+  delivery.
+rationale: |
+  Executable and script file types are the primary delivery mechanism
+  for malware via email. Filtering common malicious attachment types
+  prevents delivery of payloads that could compromise endpoints
+  and the broader environment.
+impact: |
+  Legitimate emails containing blocked file types will be quarantined
+  or rejected. Users may need to use alternative file sharing methods
+  for legitimate executable content.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Anti-malware and enable the common attachment types
+  filter in the default or custom policy.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/anti-malware-protection-about"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.2"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-1-2-common-attachments-filter"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-1188"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - anti_malware_policies

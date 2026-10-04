@@ -1,0 +1,35 @@
+id: "8.6.1"
+title: "Ensure users can report security concerns in Teams"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the user reporting policy for Teams chat messages is
+  enabled, allowing users to report suspicious messages directly
+  from the Teams client.
+rationale: |
+  User reporting is a critical layer of defense that enables the
+  organization to identify phishing and malicious content that
+  bypasses automated controls. Without this capability, users cannot
+  easily flag suspicious Teams messages for security review.
+impact: |
+  Users will see a reporting option in Teams for suspicious messages.
+  Security teams will need to triage reported messages.
+remediation: |
+  Navigate to Microsoft 365 Defender > Settings > User reported
+  settings and ensure the Teams message reporting feature is enabled.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/submissions-user-reported-messages-custom-mailbox"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.6.1"
+cis_controls:
+  - "v8: 17.5"
+guard:
+  finding_slug: "m365-cis-8-6-1-chat-report-policy"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-778"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - user_reporting_settings

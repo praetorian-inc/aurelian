@@ -1,0 +1,34 @@
+id: "8.5.4"
+title: "Ensure dial-in users cannot bypass the lobby"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that dial-in (PSTN) callers cannot bypass the meeting lobby
+  and must be admitted by an organizer or presenter.
+rationale: |
+  Dial-in callers are not authenticated through Entra ID and their
+  identity cannot be verified. Allowing them to bypass the lobby
+  enables unidentified participants to access meetings without any
+  verification.
+impact: |
+  Dial-in users will wait in the lobby until admitted. This may
+  cause minor delays for legitimate dial-in participants.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  ensure "Dial-in users can bypass the lobby" is disabled.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/who-can-bypass-meeting-lobby"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.4"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-5-4-dialin-lobby-bypass-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

@@ -1,0 +1,36 @@
+id: "2.4.4"
+title: "Ensure Zero-hour Auto Purge (ZAP) for Teams is enabled"
+service: defender
+level: L2
+profile: "E5 Level 2"
+execution: Automated
+severity: high
+description: |
+  Verify that Zero-hour Auto Purge (ZAP) is enabled for Microsoft
+  Teams to automatically remove malicious messages after delivery.
+rationale: |
+  ZAP for Teams retroactively removes messages that are later
+  identified as malicious after initial delivery. Without ZAP,
+  malicious links or content in Teams messages remain accessible
+  even after threat intelligence is updated.
+impact: |
+  Messages identified as malicious will be automatically removed
+  from Teams conversations. Users may notice messages disappearing
+  if they were malicious.
+remediation: |
+  Navigate to Microsoft 365 Defender > Settings > Microsoft Teams
+  and ensure Zero-hour Auto Purge is enabled for Teams messages.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/zero-hour-auto-purge"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.4.4"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-4-4-zap-teams-enabled"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-1188"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - teams_protection_settings

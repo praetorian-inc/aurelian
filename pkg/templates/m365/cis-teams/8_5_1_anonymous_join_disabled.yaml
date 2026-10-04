@@ -1,0 +1,36 @@
+id: "8.5.1"
+title: "Ensure anonymous users cannot join meetings"
+service: teams
+level: L2
+profile: "E5 Level 2"
+execution: Automated
+severity: high
+description: |
+  Verify that anonymous users are prevented from joining Teams
+  meetings without authentication.
+rationale: |
+  Anonymous meeting access allows anyone with a meeting link to
+  join without authentication, enabling eavesdropping on sensitive
+  discussions and potential data exposure. Requiring authentication
+  ensures all meeting participants are identifiable.
+impact: |
+  External participants must sign in to join meetings, which adds
+  friction for external collaborators who do not have Microsoft
+  accounts.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting settings and
+  disable "Anonymous users can join a meeting".
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-settings-in-teams"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.1"
+cis_controls:
+  - "v8: 6.1"
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-8-5-1-anonymous-join-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - teams_meeting_settings

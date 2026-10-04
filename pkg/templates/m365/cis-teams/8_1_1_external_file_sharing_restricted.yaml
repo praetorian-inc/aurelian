@@ -1,0 +1,36 @@
+id: "8.1.1"
+title: "Ensure external file sharing in Teams is enabled for only approved cloud storage services"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that external file sharing in Microsoft Teams is restricted
+  to only approved cloud storage services, preventing data sharing
+  via unmanaged third-party providers.
+rationale: |
+  Allowing unrestricted external file sharing enables users to store
+  and share organizational data through unmanaged cloud services,
+  bypassing DLP policies and creating data exfiltration paths outside
+  organizational governance.
+impact: |
+  Users will be limited to approved storage providers for file
+  sharing in Teams. Third-party services like Dropbox or Google Drive
+  may be blocked.
+remediation: |
+  Navigate to Teams Admin Center > Messaging policies and configure
+  cloud storage settings to allow only approved providers.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/cloud-storage"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.1.1"
+cis_controls:
+  - "v8: 3.3"
+guard:
+  finding_slug: "m365-cis-8-1-1-external-file-sharing-restricted"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-200"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_client_config

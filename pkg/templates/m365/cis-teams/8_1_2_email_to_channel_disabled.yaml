@@ -1,0 +1,35 @@
+id: "8.1.2"
+title: "Ensure users cannot send emails to a channel email address"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the ability to send emails to a Teams channel email
+  address is disabled to prevent uncontrolled inbound content.
+rationale: |
+  Channel email addresses allow anyone with the address to post
+  content into a Teams channel. This can be abused to deliver
+  phishing content, spam, or malicious files directly into Teams
+  channels without standard email protection controls.
+impact: |
+  Users will no longer be able to forward emails directly to Teams
+  channels via email. Alternative workflows using connectors or
+  manual sharing must be used.
+remediation: |
+  Navigate to Teams Admin Center > Teams settings and disable
+  "Users can send emails to a channel email address".
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/enable-features-office-365"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.1.2"
+cis_controls:
+  - "v8: 9.3"
+guard:
+  finding_slug: "m365-cis-8-1-2-email-to-channel-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_settings

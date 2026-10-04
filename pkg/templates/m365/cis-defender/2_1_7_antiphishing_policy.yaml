@@ -1,0 +1,38 @@
+id: "2.1.7"
+title: "Ensure anti-phishing policy is enabled"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that an anti-phishing policy is enabled with mailbox
+  intelligence, spoof intelligence, and impersonation protection
+  configured to protect all users.
+rationale: |
+  Phishing remains the primary initial access vector for most attacks.
+  Anti-phishing policies use machine learning and heuristics to detect
+  impersonation attempts, spoofed senders, and other phishing
+  techniques that bypass basic email filtering.
+impact: |
+  Some legitimate emails may be flagged as phishing attempts. Users
+  and administrators may need to review quarantined messages.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Anti-phishing and configure a policy with mailbox
+  intelligence, spoof intelligence, and impersonation protection
+  enabled for all users.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/anti-phishing-policies-about"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.7"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-1-7-antiphishing-policy"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-1188"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - anti_phishing_policies
