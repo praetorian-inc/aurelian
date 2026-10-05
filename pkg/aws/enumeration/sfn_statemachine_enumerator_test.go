@@ -74,7 +74,7 @@ func TestSFNStateMachineEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	t.Run("non-stateMachine resource returns error", func(t *testing.T) {
 		err := enum.EnumerateByARN("arn:aws:states:us-east-1:123456789012:activity:myActivity", out)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid Step Functions state machine ARN resource")
+		assert.Contains(t, err.Error(), "invalid step functions state machine ARN resource")
 	})
 
 	t.Run("ARN missing region returns error", func(t *testing.T) {

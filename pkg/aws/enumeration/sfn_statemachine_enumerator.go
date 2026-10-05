@@ -49,10 +49,10 @@ func (l *SFNStateMachineEnumerator) EnumerateByARN(arn string, out *pipeline.P[o
 		return fmt.Errorf("parse ARN %q: %w", arn, err)
 	}
 	if _, ok := strings.CutPrefix(parsed.Resource, "stateMachine:"); !ok {
-		return fmt.Errorf("invalid Step Functions state machine ARN resource: %q", parsed.Resource)
+		return fmt.Errorf("invalid step functions state machine ARN resource: %q", parsed.Resource)
 	}
 	if parsed.Region == "" {
-		return fmt.Errorf("Step Functions state machine ARN missing region: %q", arn)
+		return fmt.Errorf("step functions state machine ARN missing region: %q", arn)
 	}
 
 	cfg, err := l.provider.GetAWSConfig(parsed.Region)
