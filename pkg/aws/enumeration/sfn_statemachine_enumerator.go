@@ -2,10 +2,14 @@ package enumeration
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
+	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -38,6 +42,36 @@ func NewSFNStateMachineEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfi
 // ResourceType returns the CloudControl type string for Step Functions state machines.
 func (l *SFNStateMachineEnumerator) ResourceType() string {
 	return "AWS::StepFunctions::StateMachine"
+}
+
+// EnumerateByARN describes a single state machine by ARN and emits it.
+func (l *SFNStateMachineEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSResource]) error {
+	parsed, err := awsarn.Parse(arn)
+	if err != nil {
+		return fmt.Errorf("parse ARN %q: %w", arn, err)
+	}
+	if _, ok := strings.CutPrefix(parsed.Resource, "stateMachine:"); !ok {
+		return fmt.Errorf("invalid step functions state machine ARN resource: %q", parsed.Resource)
+	}
+	if parsed.Region == "" {
+		return fmt.Errorf("step functions state machine ARN missing region: %q", arn)
+	}
+
+	cfg, err := l.provider.GetAWSConfig(parsed.Region)
+	if err != nil {
+		return fmt.Errorf("create Step Functions client for %s: %w", parsed.Region, err)
+	}
+	result, err := describeStateMachineWithKMSFallback(sfn.NewFromConfig(*cfg), aws.String(arn))
+	if err != nil {
+		if op := ClassifySkippable(err, "stepfunctions", "DescribeStateMachine", parsed.Region); op != nil {
+			l.skipReport.Record(*op)
+			return nil
+		}
+		return fmt.Errorf("describe state machine %s: %w", arn, err)
+	}
+
+	out.Send(buildSFNStateMachineResource(result, parsed.AccountID, parsed.Region))
+	return nil
 }
 
 // EnumerateAll enumerates all Step Functions state machines owned by the account across configured regions.
@@ -80,10 +114,7 @@ func (l *SFNStateMachineEnumerator) listStateMachinesInRegion(region, accountID 
 			if arn == "" {
 				continue
 			}
-			// The summary carries the ARN but NOT the role; describe per-ARN.
-			detail, err := client.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
-				StateMachineArn: summary.StateMachineArn,
-			})
+			detail, err := describeStateMachineWithKMSFallback(client, summary.StateMachineArn)
 			if err != nil {
 				if op := ClassifySkippable(err, "stepfunctions", "DescribeStateMachine", region); op != nil {
 					skipped = append(skipped, *op)
@@ -97,6 +128,30 @@ func (l *SFNStateMachineEnumerator) listStateMachinesInRegion(region, accountID 
 
 	l.skipReport.RecordBatch(skipped)
 	return nil
+}
+
+// describeStateMachineWithKMSFallback calls DescribeStateMachine with full data.
+// If the call fails due to a KMS permission or state error (encrypted state machine
+// the caller cannot decrypt), it retries with METADATA_ONLY to still capture the
+// machine's name, ARN, and RoleArn without requiring kms:Decrypt.
+func describeStateMachineWithKMSFallback(client *sfn.Client, machineARN *string) (*sfn.DescribeStateMachineOutput, error) {
+	result, err := client.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
+		StateMachineArn: machineARN,
+	})
+	if err != nil && isKMSError(err) {
+		return client.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
+			StateMachineArn: machineARN,
+			IncludedData:    sfntypes.IncludedDataMetadataOnly,
+		})
+	}
+	return result, err
+}
+
+func isKMSError(err error) bool {
+	var kmsAccess *sfntypes.KmsAccessDeniedException
+	var kmsState *sfntypes.KmsInvalidStateException
+	var kmsThrottle *sfntypes.KmsThrottlingException
+	return errors.As(err, &kmsAccess) || errors.As(err, &kmsState) || errors.As(err, &kmsThrottle)
 }
 
 func buildSFNStateMachineResource(detail *sfn.DescribeStateMachineOutput, accountID, region string) output.AWSResource {
