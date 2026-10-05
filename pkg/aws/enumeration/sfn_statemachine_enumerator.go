@@ -3,8 +3,10 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -38,6 +40,38 @@ func NewSFNStateMachineEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfi
 // ResourceType returns the CloudControl type string for Step Functions state machines.
 func (l *SFNStateMachineEnumerator) ResourceType() string {
 	return "AWS::StepFunctions::StateMachine"
+}
+
+// EnumerateByARN describes a single state machine by ARN and emits it.
+func (l *SFNStateMachineEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSResource]) error {
+	parsed, err := awsarn.Parse(arn)
+	if err != nil {
+		return fmt.Errorf("parse ARN %q: %w", arn, err)
+	}
+	if _, ok := strings.CutPrefix(parsed.Resource, "stateMachine:"); !ok {
+		return fmt.Errorf("invalid Step Functions state machine ARN resource: %q", parsed.Resource)
+	}
+	if parsed.Region == "" {
+		return fmt.Errorf("Step Functions state machine ARN missing region: %q", arn)
+	}
+
+	cfg, err := l.provider.GetAWSConfig(parsed.Region)
+	if err != nil {
+		return fmt.Errorf("create Step Functions client for %s: %w", parsed.Region, err)
+	}
+	result, err := sfn.NewFromConfig(*cfg).DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{
+		StateMachineArn: aws.String(arn),
+	})
+	if err != nil {
+		if op := ClassifySkippable(err, "stepfunctions", "DescribeStateMachine", parsed.Region); op != nil {
+			l.skipReport.Record(*op)
+			return nil
+		}
+		return fmt.Errorf("describe state machine %s: %w", arn, err)
+	}
+
+	out.Send(buildSFNStateMachineResource(result, parsed.AccountID, parsed.Region))
+	return nil
 }
 
 // EnumerateAll enumerates all Step Functions state machines owned by the account across configured regions.
