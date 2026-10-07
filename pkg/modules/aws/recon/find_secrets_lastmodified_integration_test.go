@@ -5,6 +5,7 @@ package recon
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,12 +53,17 @@ func TestAWSFindSecretsLastModified(t *testing.T) {
 			},
 		},
 		{
+			// State machines are enumerated natively (LAB-7141), so ResourceID
+			// is the name and the ARN is the identity Guard keys on.
 			resourceType: "AWS::StepFunctions::StateMachine",
 			match: func(t *testing.T, r output.AWSResource) bool {
-				if r.ResourceID != fixture.Output("state_machine_arn") {
+				if r.ARN != fixture.Output("state_machine_arn") {
 					return false
 				}
-				assert.Equal(t, fixture.Output("state_machine_arn"), r.ARN, "state machine ARN must be unchanged")
+				arn := fixture.Output("state_machine_arn")
+				name := arn[strings.LastIndex(arn, ":")+1:]
+				assert.Equal(t, name, r.ResourceID, "state machine ResourceID must be its name")
+				assert.NotEmpty(t, r.Properties["RoleArn"], "the native enumerator must still capture RoleArn")
 				return true
 			},
 		},

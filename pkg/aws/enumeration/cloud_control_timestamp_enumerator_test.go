@@ -11,8 +11,14 @@ import (
 )
 
 // Guard keys assets by ARN and stores Properties verbatim, and extractors read
-// CloudControl identifiers: the dispatcher's output for the stamped types must
-// equal plain CloudControl's in everything but LastModified.
+// CloudControl identifiers: for the types that stay on CloudControl, the
+// dispatcher's output must equal plain CloudControl's in everything but
+// LastModified.
+//
+// State machines are deliberately excluded: they are enumerated natively so
+// RoleArn is captured (LAB-7141), so their identity and Properties differ from
+// CloudControl's by design. See TestSFNStateMachineLastModified_* for their
+// stamping.
 func TestNewEnumerator_StampedTypesMatchCloudControlExceptLastModified(t *testing.T) {
 	stamp := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 
@@ -36,14 +42,6 @@ func TestNewEnumerator_StampedTypesMatchCloudControlExceptLastModified(t *testin
 			description:  logGroup("/app/api"),
 			stub: func(_ *testing.T, fake *fakeAWS) {
 				fake.reply("DescribeLogStreams", logStreams(millis(stamp)))
-			},
-		},
-		{
-			resourceType: "AWS::StepFunctions::StateMachine",
-			arn:          sfnOrders,
-			description:  sfnStateMachine(sfnOrders),
-			stub: func(t *testing.T, fake *fakeAWS) {
-				fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnOrders: sfnExecution(epoch(stamp), "")}))
 			},
 		},
 	}

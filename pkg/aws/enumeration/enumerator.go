@@ -91,7 +91,10 @@ func NewEnumeratorWithProvider(opts plugin.AWSCommonRecon, provider *AWSConfigPr
 	e.Register(NewRAMResourceShareEnumerator(opts, provider, skipReport))
 	e.Register(NewEC2InstanceTimestampEnumerator(cc, provider, skipReport))
 	e.Register(NewLogGroupTimestampEnumerator(cc, provider, skipReport))
-	e.Register(NewSFNStateMachineTimestampEnumerator(cc, provider, skipReport))
+	// State machines are enumerated natively, not through CloudControl, because
+	// CloudControl omits RoleArn (LAB-7141); the native enumerator stamps
+	// LastModified itself from the DescribeStateMachine it already makes.
+	e.Register(NewSFNStateMachineEnumerator(opts, provider, skipReport))
 
 	return e
 }

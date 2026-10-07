@@ -21,18 +21,57 @@ const (
 	sfnIdle      = sfnARNPrefix + "idle"
 )
 
-func sfnStateMachine(arn string) string {
-	name := strings.TrimPrefix(arn, sfnARNPrefix)
-	return ccDescription(arn, fmt.Sprintf(`{"Arn":%q,"StateMachineName":%q,"StateMachineType":"STANDARD"}`, arn, name))
+func sfnName(arn string) string {
+	return strings.TrimPrefix(arn, sfnARNPrefix)
 }
 
 func epoch(t time.Time) string {
 	return fmt.Sprintf("%d", t.Unix())
 }
 
-// sfnExecution renders one execution; empty start/stop omit the field.
+// sfnListStateMachines renders the ListStateMachines summaries the native
+// enumerator pages through; it reads only StateMachineArn from each.
+func sfnListStateMachines(arns ...string) string {
+	items := make([]string, 0, len(arns))
+	for _, arn := range arns {
+		items = append(items, fmt.Sprintf(`{"stateMachineArn":%q,"name":%q,"type":"STANDARD"}`, arn, sfnName(arn)))
+	}
+	return `{"stateMachines":[` + strings.Join(items, ",") + `]}`
+}
+
+// sfnDescribe renders DescribeStateMachine output; an empty creationDate omits
+// the field.
+func sfnDescribe(arn, creationDate string) string {
+	body := fmt.Sprintf(`{"stateMachineArn":%q,"name":%q,"definition":"{}","roleArn":"arn:aws:iam::123456789012:role/r","type":"STANDARD"`, arn, sfnName(arn))
+	if creationDate != "" {
+		body += `,"creationDate":` + creationDate
+	}
+	return body + "}"
+}
+
+// sfnDescribeByMachine answers DescribeStateMachine per state machine ARN, so a
+// region can mix machines with and without a contracted CreationDate.
+func sfnDescribeByMachine(t *testing.T, creationDates map[string]string) func(string) fakeAWSResponse {
+	return func(body string) fakeAWSResponse {
+		arn, ok := sfnRequestARN(t, "DescribeStateMachine", body)
+		if !ok {
+			return sfnUnexpected()
+		}
+		created, found := creationDates[arn]
+		if !found {
+			assert.Fail(t, "unexpected DescribeStateMachine", "state machine %q", arn)
+			return sfnUnexpected()
+		}
+		return fakeAWSResponse{status: http.StatusOK, body: sfnDescribe(arn, created)}
+	}
+}
+
+// sfnExecution renders one execution; an empty start or stop omits that field.
 func sfnExecution(start, stop string) string {
-	fields := []string{`"executionArn":"arn:aws:states:us-east-1:123456789012:execution:orders:run-1"`, `"name":"run-1"`, `"status":"SUCCEEDED"`, `"stateMachineArn":"` + sfnOrders + `"`}
+	fields := []string{
+		`"executionArn":"arn:aws:states:us-east-1:123456789012:execution:orders:run-1"`,
+		`"name":"run-1"`, `"status":"SUCCEEDED"`, `"stateMachineArn":"` + sfnOrders + `"`,
+	}
 	if start != "" {
 		fields = append(fields, `"startDate":`+start)
 	}
@@ -47,36 +86,56 @@ const sfnNoExecutions = `{"executions":[]}`
 // sfnExecutionsByMachine answers ListExecutions per state machine ARN.
 func sfnExecutionsByMachine(t *testing.T, responses map[string]string) func(string) fakeAWSResponse {
 	return func(body string) fakeAWSResponse {
-		var input struct {
-			StateMachineArn string `json:"stateMachineArn"`
+		arn, ok := sfnRequestARN(t, "ListExecutions", body)
+		if !ok {
+			return sfnUnexpected()
 		}
-		require.NoError(t, json.Unmarshal([]byte(body), &input))
-		resp, ok := responses[input.StateMachineArn]
-		require.True(t, ok, "unexpected ListExecutions for %s", input.StateMachineArn)
+		resp, found := responses[arn]
+		if !found {
+			assert.Fail(t, "unexpected ListExecutions", "state machine %q", arn)
+			return sfnUnexpected()
+		}
 		return fakeAWSResponse{status: http.StatusOK, body: resp}
 	}
 }
 
-func sfnListStateMachines(creationDates map[string]string) string {
-	items := make([]string, 0, len(creationDates))
-	for arn, created := range creationDates {
-		item := fmt.Sprintf(`{"stateMachineArn":%q,"name":%q,"type":"STANDARD"`, arn, strings.TrimPrefix(arn, sfnARNPrefix))
-		if created != "" {
-			item += `,"creationDate":` + created
-		}
-		items = append(items, item+"}")
+// sfnRequestARN reads the request's stateMachineArn. These handlers run on the
+// SDK's goroutine, where require's FailNow would hang the pipeline instead of
+// failing the test, so an unexpected call is reported with assert and answered
+// with an error the enumerator can surface.
+func sfnRequestARN(t *testing.T, operation, body string) (string, bool) {
+	var input struct {
+		StateMachineArn string `json:"stateMachineArn"`
 	}
-	return `{"stateMachines":[` + strings.Join(items, ",") + `]}`
+	if err := json.Unmarshal([]byte(body), &input); err != nil {
+		assert.Fail(t, "undecodable request body", "%s: %v", operation, err)
+		return "", false
+	}
+	return input.StateMachineArn, true
 }
 
-func newSFNTimestampFixture(t *testing.T) (*fakeAWS, *SkipReport, *CloudControlTimestampEnumerator) {
+func sfnUnexpected() fakeAWSResponse {
+	return fakeAWSResponse{status: http.StatusBadRequest, body: jsonError("UnexpectedCall")}
+}
+
+func newSFNFixture(t *testing.T) (*fakeAWS, *SkipReport, *SFNStateMachineEnumerator) {
 	fake := newFakeAWS(t)
 	provider := newFakeProvider(fake, "us-east-1")
 	skipReport := NewSkipReport()
-	return fake, skipReport, NewSFNStateMachineTimestampEnumerator(newFakeCloudControl(provider, skipReport), provider, skipReport)
+	return fake, skipReport, NewSFNStateMachineEnumerator(provider.AWSCommonRecon, provider, skipReport)
 }
 
-func TestSFNStateMachineTimestamp_UsesLaterOfNewestExecutionStartAndStop(t *testing.T) {
+// byARN keys resources by ARN, the identity Guard stores; ResourceID is the
+// state machine's name.
+func byARN(resources []output.AWSResource) map[string]output.AWSResource {
+	m := make(map[string]output.AWSResource, len(resources))
+	for _, r := range resources {
+		m[r.ARN] = r
+	}
+	return m
+}
+
+func TestSFNStateMachineLastModified_UsesLaterOfNewestExecutionStartAndStop(t *testing.T) {
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	stop := time.Date(2026, 9, 1, 11, 30, 0, 0, time.UTC)
 	created := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -91,10 +150,10 @@ func TestSFNStateMachineTimestamp_UsesLaterOfNewestExecutionStartAndStop(t *test
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			fake, _, enum := newSFNTimestampFixture(t)
-			fake.reply("ListResources", ccListResources("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnOrders)))
+			fake, _, enum := newSFNFixture(t)
+			fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders))
+			fake.reply("DescribeStateMachine", sfnDescribe(sfnOrders, epoch(created)))
 			fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnOrders: tc.executions}))
-			fake.reply("ListStateMachines", sfnListStateMachines(map[string]string{sfnOrders: epoch(created)}))
 
 			resources, err := collectFakeResources(t, enum.EnumerateAll)
 
@@ -102,97 +161,85 @@ func TestSFNStateMachineTimestamp_UsesLaterOfNewestExecutionStartAndStop(t *test
 			require.Len(t, resources, 1)
 			require.NotNil(t, resources[0].LastModified)
 			assert.Equal(t, tc.want, resources[0].LastModified.UTC())
+			assert.Equal(t, sfnOrders, resources[0].ARN)
+			assert.Equal(t, "orders", resources[0].ResourceID, "the native enumerator keys ResourceID by name")
 
 			requests := fake.requests("ListExecutions")
 			require.Len(t, requests, 1)
 			var input map[string]any
 			require.NoError(t, json.Unmarshal([]byte(requests[0]), &input))
-			assert.Equal(t, sfnOrders, input["stateMachineArn"], "CloudControl's identifier (the ARN) is the state machine looked up")
+			assert.Equal(t, sfnOrders, input["stateMachineArn"], "the state machine is looked up by ARN, not name")
 			assert.EqualValues(t, 1, input["maxResults"], "only the newest execution is read")
 		})
 	}
 }
 
-func TestSFNStateMachineTimestamp_NoExecutionsFallsBackToCreationDate(t *testing.T) {
+func TestSFNStateMachineLastModified_NoExecutionsFallsBackToCreationDate(t *testing.T) {
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 
-	fake, _, enum := newSFNTimestampFixture(t)
-	fake.reply("ListResources", ccListResources("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnOrders), sfnStateMachine(sfnIdle)))
+	fake, _, enum := newSFNFixture(t)
+	fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders, sfnIdle))
+	fake.on("DescribeStateMachine", sfnDescribeByMachine(t, map[string]string{
+		sfnOrders: epoch(start),
+		sfnIdle:   epoch(created),
+	}))
 	fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{
 		sfnOrders: sfnExecution(epoch(start), ""),
 		sfnIdle:   sfnNoExecutions,
 	}))
-	fake.reply("ListStateMachines", sfnListStateMachines(map[string]string{sfnOrders: epoch(start), sfnIdle: epoch(created)}))
 
 	resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 	require.NoError(t, err)
-	got := byResourceID(resources)
+	got := byARN(resources)
 	require.Len(t, got, 2)
 	require.NotNil(t, got[sfnIdle].LastModified)
-	assert.Equal(t, created, got[sfnIdle].LastModified.UTC())
+	assert.Equal(t, created, got[sfnIdle].LastModified.UTC(), "a machine that never ran keeps its CreationDate")
 	require.NotNil(t, got[sfnOrders].LastModified)
 	assert.Equal(t, start, got[sfnOrders].LastModified.UTC())
 }
 
-func TestSFNStateMachineTimestamp_StateMachineCreatedAfterListIsDescribed(t *testing.T) {
-	created := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
-
-	fake, _, enum := newSFNTimestampFixture(t)
-	fake.reply("ListResources", ccListResources("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnIdle)))
-	fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnIdle: sfnNoExecutions}))
-	fake.reply("ListStateMachines", sfnListStateMachines(map[string]string{}))
-	fake.reply("DescribeStateMachine", fmt.Sprintf(`{"stateMachineArn":%q,"name":"idle","definition":"{}","roleArn":"arn:aws:iam::123456789012:role/r","type":"STANDARD","creationDate":%s}`, sfnIdle, epoch(created)))
-
-	resources, err := collectFakeResources(t, enum.EnumerateAll)
-
-	require.NoError(t, err)
-	require.Len(t, resources, 1)
-	require.NotNil(t, resources[0].LastModified)
-	assert.Equal(t, created, resources[0].LastModified.UTC())
-}
-
-func TestSFNStateMachineTimestamp_MissingContractedFieldEmitsStateMachineUnstamped(t *testing.T) {
+func TestSFNStateMachineLastModified_MissingContractedFieldEmitsStateMachineUnstamped(t *testing.T) {
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name          string
-		executions    string
-		creationDates map[string]string
-		wantErrField  string
+		name         string
+		executions   string
+		creationDate string
+		wantErrField string
 	}{
 		{
-			name:          "execution without StartDate",
-			executions:    sfnExecution("", epoch(start)),
-			creationDates: map[string]string{sfnOrders: epoch(start)},
-			wantErrField:  "StartDate",
+			name:         "execution without StartDate",
+			executions:   sfnExecution("", epoch(start)),
+			creationDate: epoch(start),
+			wantErrField: "StartDate",
 		},
 		{
-			name:          "listed state machine without CreationDate",
-			executions:    sfnNoExecutions,
-			creationDates: map[string]string{sfnOrders: ""},
-			wantErrField:  "CreationDate",
+			name:         "described state machine without CreationDate",
+			executions:   sfnNoExecutions,
+			creationDate: "",
+			wantErrField: "CreationDate",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := captureLogs(t)
-			fake, _, enum := newSFNTimestampFixture(t)
-			fake.reply("ListResources", ccListResources("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnOrders)))
+			fake, _, enum := newSFNFixture(t)
+			fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders))
+			fake.reply("DescribeStateMachine", sfnDescribe(sfnOrders, tc.creationDate))
 			fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnOrders: tc.executions}))
-			fake.reply("ListStateMachines", sfnListStateMachines(tc.creationDates))
 
 			resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 			require.NoError(t, err, "a missing contracted field must not fail the region listing")
 			require.Len(t, resources, 1, "the state machine is still emitted")
-			assert.Equal(t, sfnOrders, resources[0].ResourceID)
+			assert.Equal(t, sfnOrders, resources[0].ARN)
 			assert.Nil(t, resources[0].LastModified, "an unstampable state machine is always scanned")
 
 			failures := logs.timestampFailures(slog.LevelError)
 			require.Len(t, failures, 1)
-			assert.Equal(t, sfnOrders, failures[0].attrs["resource_id"])
+			assert.Equal(t, sfnOrders, failures[0].attrs["arn"])
 			assert.Contains(t, failures[0].attrs["error"], tc.wantErrField)
 		})
 	}
@@ -200,18 +247,25 @@ func TestSFNStateMachineTimestamp_MissingContractedFieldEmitsStateMachineUnstamp
 
 // One state machine in the region lacks its contracted CreationDate; only it
 // loses LastModified, its neighbour is stamped, and the listing succeeds.
-func TestSFNStateMachineTimestamp_MissingFieldIsIsolatedToThatResource(t *testing.T) {
+func TestSFNStateMachineLastModified_MissingFieldIsIsolatedToThatResource(t *testing.T) {
 	logs := captureLogs(t)
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
-	fake, _, enum := newSFNTimestampFixture(t)
-	fake.reply("ListResources", ccListResources("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnOrders), sfnStateMachine(sfnIdle)))
-	fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnOrders: sfnNoExecutions, sfnIdle: sfnNoExecutions}))
-	fake.reply("ListStateMachines", sfnListStateMachines(map[string]string{sfnOrders: epoch(created), sfnIdle: ""}))
+
+	fake, _, enum := newSFNFixture(t)
+	fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders, sfnIdle))
+	fake.on("DescribeStateMachine", sfnDescribeByMachine(t, map[string]string{
+		sfnOrders: epoch(created),
+		sfnIdle:   "",
+	}))
+	fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{
+		sfnOrders: sfnNoExecutions,
+		sfnIdle:   sfnNoExecutions,
+	}))
 
 	resources, err := collectFakeResources(t, enum.EnumerateAll)
 
 	require.NoError(t, err)
-	got := byResourceID(resources)
+	got := byARN(resources)
 	require.Len(t, got, 2, "both state machines are emitted")
 	require.Contains(t, got, sfnOrders)
 	require.Contains(t, got, sfnIdle)
@@ -221,14 +275,15 @@ func TestSFNStateMachineTimestamp_MissingFieldIsIsolatedToThatResource(t *testin
 
 	failures := logs.timestampFailures(slog.LevelError)
 	require.Len(t, failures, 1, "exactly the bad resource is logged")
-	require.NotEmpty(t, got[sfnIdle].ARN)
-	assert.Equal(t, got[sfnIdle].ARN, failures[0].attrs["arn"])
-	assert.Equal(t, sfnIdle, failures[0].attrs["resource_id"])
+	assert.Equal(t, sfnIdle, failures[0].attrs["arn"])
+	assert.Equal(t, "idle", failures[0].attrs["resource_id"])
 	assert.Equal(t, "AWS::StepFunctions::StateMachine", failures[0].attrs["resource_type"])
 	assert.Equal(t, "us-east-1", failures[0].attrs["region"])
 }
 
-func TestSFNStateMachineTimestamp_ListExecutionsFailureLeavesStateMachineUnstamped(t *testing.T) {
+func TestSFNStateMachineLastModified_ListExecutionsFailureLeavesStateMachineUnstamped(t *testing.T) {
+	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
+
 	tests := []struct {
 		name     string
 		code     string
@@ -239,8 +294,9 @@ func TestSFNStateMachineTimestamp_ListExecutionsFailureLeavesStateMachineUnstamp
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			fake, skipReport, enum := newSFNTimestampFixture(t)
-			fake.reply("ListResources", ccListResources("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnOrders)))
+			fake, skipReport, enum := newSFNFixture(t)
+			fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders))
+			fake.reply("DescribeStateMachine", sfnDescribe(sfnOrders, epoch(created)))
 			fake.fail("ListExecutions", http.StatusBadRequest, jsonError(tc.code))
 
 			resources, err := collectFakeResources(t, enum.EnumerateAll)
@@ -257,21 +313,13 @@ func TestSFNStateMachineTimestamp_ListExecutionsFailureLeavesStateMachineUnstamp
 	}
 }
 
-func TestSFNStateMachineTimestamp_EnumerateByARN(t *testing.T) {
+func TestSFNStateMachineLastModified_EnumerateByARN(t *testing.T) {
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
-	describe := func(creationDate string) string {
-		body := fmt.Sprintf(`{"stateMachineArn":%q,"name":"idle","definition":"{}","roleArn":"arn:aws:iam::123456789012:role/r","type":"STANDARD"`, sfnIdle)
-		if creationDate != "" {
-			body += `,"creationDate":` + creationDate
-		}
-		return body + "}"
-	}
 
 	t.Run("no executions uses DescribeStateMachine CreationDate", func(t *testing.T) {
-		fake, _, enum := newSFNTimestampFixture(t)
-		fake.reply("GetResource", ccGetResource("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnIdle)))
+		fake, _, enum := newSFNFixture(t)
+		fake.reply("DescribeStateMachine", sfnDescribe(sfnIdle, epoch(created)))
 		fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnIdle: sfnNoExecutions}))
-		fake.reply("DescribeStateMachine", describe(epoch(created)))
 
 		resources, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 			return enum.EnumerateByARN(sfnIdle, out)
@@ -286,10 +334,9 @@ func TestSFNStateMachineTimestamp_EnumerateByARN(t *testing.T) {
 
 	t.Run("DescribeStateMachine without CreationDate emits the state machine unstamped", func(t *testing.T) {
 		logs := captureLogs(t)
-		fake, _, enum := newSFNTimestampFixture(t)
-		fake.reply("GetResource", ccGetResource("AWS::StepFunctions::StateMachine", sfnStateMachine(sfnIdle)))
+		fake, _, enum := newSFNFixture(t)
+		fake.reply("DescribeStateMachine", sfnDescribe(sfnIdle, ""))
 		fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnIdle: sfnNoExecutions}))
-		fake.reply("DescribeStateMachine", describe(""))
 
 		resources, err := collectFakeResources(t, func(out *pipeline.P[output.AWSResource]) error {
 			return enum.EnumerateByARN(sfnIdle, out)
@@ -297,12 +344,12 @@ func TestSFNStateMachineTimestamp_EnumerateByARN(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Len(t, resources, 1, "the state machine is still emitted")
-		assert.Equal(t, sfnIdle, resources[0].ResourceID)
+		assert.Equal(t, sfnIdle, resources[0].ARN)
 		assert.Nil(t, resources[0].LastModified)
 
 		failures := logs.timestampFailures(slog.LevelError)
 		require.Len(t, failures, 1)
-		assert.Equal(t, sfnIdle, failures[0].attrs["resource_id"])
+		assert.Equal(t, sfnIdle, failures[0].attrs["arn"])
 		assert.Contains(t, failures[0].attrs["error"], "CreationDate")
 	})
 }
