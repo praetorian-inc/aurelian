@@ -201,7 +201,11 @@ func buildSFNStateMachineResource(detail *sfn.DescribeStateMachineOutput, accoun
 // A failure affects only this resource: it is recorded or logged and
 // LastModified is left nil, so the state machine is always scanned.
 func (l *SFNStateMachineEnumerator) stampLastModified(client *sfn.Client, region string, r *output.AWSResource, detail *sfn.DescribeStateMachineOutput) {
-	// ListExecutions returns the most recent execution first.
+	// ListExecutions returns the newest execution first, sorting running
+	// executions by redriveDate or startDate and finished ones by stopDate. The
+	// latest of those three on the first item is therefore the newest activity
+	// across every execution, so one result is enough; a redriven execution is
+	// included because its redriveDate is what AWS sorted it by.
 	resp, err := client.ListExecutions(context.Background(), &sfn.ListExecutionsInput{
 		StateMachineArn: aws.String(r.ARN),
 		MaxResults:      1,
@@ -225,6 +229,9 @@ func (l *SFNStateMachineEnumerator) stampLastModified(client *sfn.Client, region
 		latest := *newest.StartDate
 		if newest.StopDate != nil && newest.StopDate.After(latest) {
 			latest = *newest.StopDate
+		}
+		if newest.RedriveDate != nil && newest.RedriveDate.After(latest) {
+			latest = *newest.RedriveDate
 		}
 		r.LastModified = &latest
 		return

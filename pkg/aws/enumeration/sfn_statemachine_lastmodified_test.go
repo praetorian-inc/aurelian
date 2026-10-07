@@ -68,6 +68,12 @@ func sfnDescribeByMachine(t *testing.T, creationDates map[string]string) func(st
 
 // sfnExecution renders one execution; an empty start or stop omits that field.
 func sfnExecution(start, stop string) string {
+	return sfnRedrivenExecution(start, stop, "")
+}
+
+// sfnRedrivenExecution renders one execution carrying a redriveDate, the key
+// AWS sorts a redriven running execution by. An empty field is omitted.
+func sfnRedrivenExecution(start, stop, redrive string) string {
 	fields := []string{
 		`"executionArn":"arn:aws:states:us-east-1:123456789012:execution:orders:run-1"`,
 		`"name":"run-1"`, `"status":"SUCCEEDED"`, `"stateMachineArn":"` + sfnOrders + `"`,
@@ -77,6 +83,9 @@ func sfnExecution(start, stop string) string {
 	}
 	if stop != "" {
 		fields = append(fields, `"stopDate":`+stop)
+	}
+	if redrive != "" {
+		fields = append(fields, `"redriveDate":`+redrive)
 	}
 	return `{"executions":[{` + strings.Join(fields, ",") + `}]}`
 }
@@ -138,6 +147,7 @@ func byARN(resources []output.AWSResource) map[string]output.AWSResource {
 func TestSFNStateMachineLastModified_UsesLaterOfNewestExecutionStartAndStop(t *testing.T) {
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	stop := time.Date(2026, 9, 1, 11, 30, 0, 0, time.UTC)
+	redriven := time.Date(2026, 9, 2, 8, 15, 0, 0, time.UTC)
 	created := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -147,6 +157,20 @@ func TestSFNStateMachineLastModified_UsesLaterOfNewestExecutionStartAndStop(t *t
 	}{
 		{name: "stopped execution uses stop time", executions: sfnExecution(epoch(start), epoch(stop)), want: stop},
 		{name: "running execution uses start time", executions: sfnExecution(epoch(start), ""), want: start},
+		// AWS sorts a redriven running execution by its redriveDate, so that is
+		// the key the first result was chosen by: ignoring it would report a
+		// time earlier than an execution AWS ranked below this one, and Guard
+		// would skip content that had in fact changed.
+		{
+			name:       "redriven running execution uses redrive time",
+			executions: sfnRedrivenExecution(epoch(start), "", epoch(redriven)),
+			want:       redriven,
+		},
+		{
+			name:       "redrive time older than the stop time is ignored",
+			executions: sfnRedrivenExecution(epoch(start), epoch(stop), epoch(start.Add(time.Minute))),
+			want:       stop,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
