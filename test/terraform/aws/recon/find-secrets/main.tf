@@ -275,8 +275,8 @@ resource "null_resource" "start_sfn_execution" {
 # 8. SSM Parameter — plaintext secret (String type)
 # ============================================================
 resource "aws_ssm_parameter" "string_with_secret" {
-  name  = "/${local.prefix}/fake-api-key"
-  type  = "String"
+  name = "/${local.prefix}/fake-api-key"
+  type = "String"
   # .env-style value so Titus has key-name context to match against.
   value = "AWS_ACCESS_KEY_ID=${local.fake_aws_key}\nAWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
 }
@@ -286,4 +286,79 @@ resource "aws_ssm_parameter" "securestring_no_scan" {
   name  = "/${local.prefix}/secure-param"
   type  = "SecureString"
   value = local.fake_aws_secret
+}
+
+# ============================================================
+# 9. SSM Document — secret only in a NON-default version
+# ============================================================
+# Version 1 (the default) is clean. Version 2 is created out-of-band via
+# update-document and carries the secret; the default version is deliberately
+# left at 1 so only a scanner that walks every version finds it.
+resource "aws_ssm_document" "versioned" {
+  name            = "${local.prefix}-versioned-doc"
+  document_type   = "Command"
+  document_format = "JSON"
+
+  content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Versioned test document (v1 clean)"
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "runClean"
+      inputs = {
+        runCommand = ["echo clean"]
+      }
+    }]
+  })
+
+  # Terraform content updates would also move the default version; ignore the
+  # out-of-band version 2 so plan/apply never fights it.
+  lifecycle {
+    ignore_changes = [content]
+  }
+}
+
+locals {
+  ssm_versioned_v2_content = jsonencode({
+    schemaVersion = "2.2"
+    description   = "Versioned test document (v2 with secret)"
+    mainSteps = [{
+      action = "aws:runShellScript"
+      name   = "runWithSecret"
+      inputs = {
+        runCommand = [
+          "export AWS_ACCESS_KEY_ID=${local.fake_aws_key} AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}",
+        ]
+      }
+    }]
+  })
+}
+
+# Create version 2 without promoting it to default. Guarded so a re-run does
+# not attempt a duplicate update; any AWS CLI failure fails the apply.
+resource "null_resource" "ssm_versioned_doc_v2" {
+  depends_on = [aws_ssm_document.versioned]
+
+  triggers = {
+    document_arn = aws_ssm_document.versioned.arn
+  }
+
+  provisioner "local-exec" {
+    command = <<-CMD
+      set -eu
+      v2_count=$(aws ssm list-document-versions \
+        --region ${var.region} \
+        --name "${aws_ssm_document.versioned.name}" \
+        --query "length(DocumentVersions[?DocumentVersion=='2'])" \
+        --output text)
+      if [ "$v2_count" = "0" ]; then
+        aws ssm update-document \
+          --region ${var.region} \
+          --name "${aws_ssm_document.versioned.name}" \
+          --document-version '$LATEST' \
+          --document-format JSON \
+          --content '${local.ssm_versioned_v2_content}'
+      fi
+    CMD
+  }
 }

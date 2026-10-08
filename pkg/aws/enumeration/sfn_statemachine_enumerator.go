@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -61,7 +62,8 @@ func (l *SFNStateMachineEnumerator) EnumerateByARN(arn string, out *pipeline.P[o
 	if err != nil {
 		return fmt.Errorf("create Step Functions client for %s: %w", parsed.Region, err)
 	}
-	result, err := describeStateMachineWithKMSFallback(sfn.NewFromConfig(*cfg), aws.String(arn))
+	client := sfn.NewFromConfig(*cfg)
+	result, err := describeStateMachineWithKMSFallback(client, aws.String(arn))
 	if err != nil {
 		if op := ClassifySkippable(err, "stepfunctions", "DescribeStateMachine", parsed.Region); op != nil {
 			l.skipReport.Record(*op)
@@ -70,7 +72,9 @@ func (l *SFNStateMachineEnumerator) EnumerateByARN(arn string, out *pipeline.P[o
 		return fmt.Errorf("describe state machine %s: %w", arn, err)
 	}
 
-	out.Send(buildSFNStateMachineResource(result, parsed.AccountID, parsed.Region))
+	resource := buildSFNStateMachineResource(result, parsed.AccountID, parsed.Region)
+	l.stampLastModified(client, parsed.Region, &resource, result)
+	out.Send(resource)
 	return nil
 }
 
@@ -122,7 +126,9 @@ func (l *SFNStateMachineEnumerator) listStateMachinesInRegion(region, accountID 
 				}
 				return fmt.Errorf("describe state machine %s in %s: %w", arn, region, err)
 			}
-			out.Send(buildSFNStateMachineResource(detail, accountID, region))
+			resource := buildSFNStateMachineResource(detail, accountID, region)
+			l.stampLastModified(client, region, &resource, detail)
+			out.Send(resource)
 		}
 	}
 
@@ -179,4 +185,63 @@ func buildSFNStateMachineResource(detail *sfn.DescribeStateMachineOutput, accoun
 			"RoleArn": aws.ToString(detail.RoleArn),
 		},
 	}
+}
+
+// stampLastModified sets r.LastModified to the later of the newest execution's
+// start and stop times, falling back to the state machine's CreationDate when
+// it has never run.
+//
+// find-secrets scans execution input and output only (see extractSFN), so the
+// newest execution bounds everything it can read; the definition is never
+// scanned, so UpdateStateMachine needs no signal here. A machine with no
+// executions yields no scan input at all, and CreationDate is a safe floor for
+// it. The CreationDate comes from the DescribeStateMachine this enumerator
+// already makes, so stamping costs one ListExecutions per state machine.
+//
+// A failure affects only this resource: it is recorded or logged and
+// LastModified is left nil, so the state machine is always scanned.
+func (l *SFNStateMachineEnumerator) stampLastModified(client *sfn.Client, region string, r *output.AWSResource, detail *sfn.DescribeStateMachineOutput) {
+	// ListExecutions returns the newest execution first, sorting running
+	// executions by redriveDate or startDate and finished ones by stopDate. The
+	// latest of those three on the first item is therefore the newest activity
+	// across every execution, so one result is enough; a redriven execution is
+	// included because its redriveDate is what AWS sorted it by.
+	resp, err := client.ListExecutions(context.Background(), &sfn.ListExecutionsInput{
+		StateMachineArn: aws.String(r.ARN),
+		MaxResults:      1,
+	})
+	if err != nil {
+		if op := ClassifySkippable(err, "stepfunctions", "ListExecutions", region); op != nil {
+			l.skipReport.Record(*op)
+			return
+		}
+		logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "ListExecutions", region, r)
+		return
+	}
+
+	if len(resp.Executions) > 0 {
+		newest := resp.Executions[0]
+		if newest.StartDate == nil {
+			logTimestampFailure(slog.LevelError, fmt.Errorf("ListExecutions returned execution %s of %s without StartDate",
+				aws.ToString(newest.ExecutionArn), r.ARN), "", "", region, r)
+			return
+		}
+		latest := *newest.StartDate
+		if newest.StopDate != nil && newest.StopDate.After(latest) {
+			latest = *newest.StopDate
+		}
+		if newest.RedriveDate != nil && newest.RedriveDate.After(latest) {
+			latest = *newest.RedriveDate
+		}
+		r.LastModified = &latest
+		return
+	}
+
+	if detail.CreationDate == nil {
+		logTimestampFailure(slog.LevelError, fmt.Errorf("DescribeStateMachine returned %s in %s without CreationDate",
+			r.ARN, region), "", "", region, r)
+		return
+	}
+	created := *detail.CreationDate
+	r.LastModified = &created
 }

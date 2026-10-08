@@ -3,7 +3,9 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -14,6 +16,16 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
+
+// ssmDefaultDocumentVersion selects the document's default version, which the
+// emitted Properties describe on both enumeration paths.
+const ssmDefaultDocumentVersion = "$DEFAULT"
+
+// ssmLatestDocumentVersion selects the newest document version. Its
+// CreatedDate is the document's LastModified: the extractor scans every
+// version, and the default version's CreatedDate does not move when the
+// default changes.
+const ssmLatestDocumentVersion = "$LATEST"
 
 // SSMDocumentEnumerator enumerates SSM documents owned by the account using the
 // native SSM SDK, filtering to Owner=Self to exclude AWS-managed and third-party
@@ -74,7 +86,8 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 	client := ssm.NewFromConfig(*cfg)
 
 	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
-		Name: aws.String(docName),
+		Name:            aws.String(docName),
+		DocumentVersion: aws.String(ssmDefaultDocumentVersion),
 	})
 	if err != nil {
 		if op := ClassifySkippable(err, "ssm", "DescribeDocument", parsed.Region); op != nil {
@@ -85,7 +98,7 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 	}
 
 	doc := result.Document
-	out.Send(output.AWSResource{
+	r := output.AWSResource{
 		ResourceType: "AWS::SSM::Document",
 		ResourceID:   aws.ToString(doc.Name),
 		ARN:          fmt.Sprintf("arn:aws:ssm:%s:%s:document/%s", parsed.Region, parsed.AccountID, aws.ToString(doc.Name)),
@@ -98,7 +111,9 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 			"DocumentVersion": aws.ToString(doc.DocumentVersion),
 			"DocumentType":    string(doc.DocumentType),
 		},
-	})
+	}
+	r.LastModified = e.latestVersionCreatedDate(client, &r)
+	out.Send(r)
 	return nil
 }
 
@@ -131,7 +146,7 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 
 		for _, doc := range page.DocumentIdentifiers {
 			name := aws.ToString(doc.Name)
-			out.Send(output.AWSResource{
+			r := output.AWSResource{
 				ResourceType: "AWS::SSM::Document",
 				ResourceID:   name,
 				ARN:          fmt.Sprintf("arn:aws:ssm:%s:%s:document/%s", region, accountID, name),
@@ -144,10 +159,37 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 					"DocumentVersion": aws.ToString(doc.DocumentVersion),
 					"DocumentType":    string(doc.DocumentType),
 				},
-			})
+			}
+			r.LastModified = e.latestVersionCreatedDate(client, &r)
+			out.Send(r)
 		}
 	}
 
 	e.skipReport.RecordBatch(skipped)
 	return nil
+}
+
+// latestVersionCreatedDate reads the newest version's CreatedDate, which moves
+// whenever a version is added. The extractor scans every version, so a new
+// version anywhere must invalidate the resource; the default version's
+// CreatedDate stays put when the default is promoted or rolled back.
+// A failure is logged and yields nil, so the resource is always scanned.
+func (e *SSMDocumentEnumerator) latestVersionCreatedDate(client *ssm.Client, r *output.AWSResource) *time.Time {
+	region, name := r.Region, r.ResourceID
+	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
+		Name:            aws.String(name),
+		DocumentVersion: aws.String(ssmLatestDocumentVersion),
+	})
+	if err != nil {
+		if op := ClassifySkippable(err, "ssm", "DescribeDocument", region); op != nil {
+			e.skipReport.Record(*op)
+			return nil
+		}
+		logTimestampFailure(slog.LevelWarn, err, "ssm", "DescribeDocument", region, r)
+		return nil
+	}
+	if result.Document == nil {
+		return nil
+	}
+	return result.Document.CreatedDate
 }

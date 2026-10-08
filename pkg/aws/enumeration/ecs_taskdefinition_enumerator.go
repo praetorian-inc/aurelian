@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -173,7 +174,20 @@ func buildECSTaskDefinitionResource(td *ecstypes.TaskDefinition, accountID, regi
 		AccountRef:   accountID,
 		Region:       region,
 		DisplayName:  family,
-		LastModified: td.RegisteredAt,
+		LastModified: ecsTaskDefinitionLastModified(td),
 		Properties:   properties,
 	}, nil
+}
+
+// ecsImmutableLastModified is a fixed time for revisions without RegisteredAt.
+// Revisions are immutable, so a constant lets Guard scan each once; a moving
+// fallback such as time.Now would rescan it on every run.
+var ecsImmutableLastModified = time.Unix(0, 0).UTC()
+
+func ecsTaskDefinitionLastModified(td *ecstypes.TaskDefinition) *time.Time {
+	if td.RegisteredAt != nil {
+		return td.RegisteredAt
+	}
+	epoch := ecsImmutableLastModified
+	return &epoch
 }
