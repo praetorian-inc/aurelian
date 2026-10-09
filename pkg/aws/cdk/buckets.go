@@ -11,6 +11,7 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	smithy "github.com/aws/smithy-go"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func validateBucket(ctx context.Context, client *s3.Client, role RoleInfo) *output.Risk {
@@ -61,13 +62,64 @@ func verifyBucketOwnership(ctx context.Context, client *s3.Client, bucketName, e
 		}
 		return false
 	}
-	// If we can read the bucket policy, verify our account ID appears in it.
-	// A policy referencing a different account is suspicious.
+	// Parse the bucket policy and verify the expected account ID appears
+	// in the Principal field of an Allow statement, not just anywhere in the JSON.
 	if result.Policy != nil {
-		return strings.Contains(*result.Policy, expectedAccountID)
+		return policyHasPrincipalForAccount(*result.Policy, expectedAccountID)
 	}
 	return false
 }
+
+// policyHasPrincipalForAccount parses a bucket policy JSON and checks whether
+// the expectedAccountID is referenced in the Principal.AWS field of any Allow
+// statement. This prevents an attacker from bypassing ownership checks by
+// placing the account ID in arbitrary policy fields.
+func policyHasPrincipalForAccount(policyJSON, expectedAccountID string) bool {
+	policy, err := parsePolicyDoc(policyJSON)
+	if err != nil {
+		slog.Debug("failed to parse bucket policy", "error", err)
+		return false
+	}
+
+	if policy.Statement == nil {
+		return false
+	}
+
+	expectedARNPrefix := fmt.Sprintf("arn:aws:iam::%s:", expectedAccountID)
+
+	for _, stmt := range *policy.Statement {
+		if !strings.EqualFold(stmt.Effect, "Allow") {
+			continue
+		}
+		if stmt.Principal == nil {
+			continue
+		}
+		if principalContainsAccount(stmt.Principal.AWS, expectedAccountID, expectedARNPrefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// principalContainsAccount checks if the given DynaString of principals
+// contains the expected account ID in a valid format (account ID directly,
+// or as part of an IAM ARN like arn:aws:iam::ACCOUNT:root).
+func principalContainsAccount(principals *types.DynaString, accountID, arnPrefix string) bool {
+	if principals == nil {
+		return false
+	}
+	for _, p := range *principals {
+		if p == accountID {
+			return true
+		}
+		if strings.HasPrefix(p, arnPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
 
 func generateBucketTakeoverRisk(role RoleInfo) *output.Risk {
 	accountArn := fmt.Sprintf("arn:aws:iam::%s:root", role.AccountID)
