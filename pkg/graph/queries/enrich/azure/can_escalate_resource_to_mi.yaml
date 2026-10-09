@@ -1,0 +1,19 @@
+id: azure/enrich/can-escalate-resource-to-mi
+name: Azure Resource to Managed Identity Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Azure resources with attached managed identities can have their IMDS endpoint
+  accessed to steal the MI token. Creates CAN_ESCALATE edges from resources
+  to their attached managed identities (both system and user-assigned).
+severity: high
+order: 94
+cypher: |
+  MATCH (resource:AzureResource)-[:CONTAINS]->(mi:ManagedIdentity)
+  WITH DISTINCT resource, mi
+  MERGE (resource)-[r:CAN_ESCALATE {method: 'ResourceAttachedIdentity'}]->(mi)
+  ON CREATE SET
+    r.condition = 'Resource compromise provides IMDS access to steal attached Managed Identity token',
+    r.category = 'ManagedIdentity'
+  RETURN count(r) AS created

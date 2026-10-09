@@ -1,0 +1,23 @@
+id: azure/enrich/can-escalate-graph-group-write
+name: Graph API Group.ReadWrite.All Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Service principals with Group.ReadWrite.All can modify group memberships
+  to add users to privileged groups.
+severity: high
+order: 74
+cypher: |
+  MATCH (attacker:ServicePrincipal)-[perm:HAS_PERMISSION {source: 'Microsoft Graph App Role'}]->(resource:ServicePrincipal)
+  WHERE resource.displayName = 'Microsoft Graph' OR resource.appId = '00000003-0000-0000-c000-000000000000'
+  SET attacker._canEscalate = true
+  WITH attacker
+  MATCH (target:Group)
+  WHERE target <> attacker
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphGroupReadWrite'}]->(target)
+  ON CREATE SET
+    r.condition = 'Service Principal with Group.ReadWrite.All can modify group memberships to add users to privileged groups',
+    r.category = 'GraphPermission'
+  RETURN count(r) AS created

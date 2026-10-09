@@ -1,0 +1,25 @@
+id: azure/enrich/can-escalate-rbac-owner
+name: Azure RBAC Owner Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Owner role at any scope provides full control over Azure resources within
+  that scope and can assign roles. Creates CAN_ESCALATE edges from Owner
+  principals to resources within the scope hierarchy.
+severity: critical
+order: 80
+cypher: |
+  MATCH (attacker)-[perm:HAS_PERMISSION {source: 'Azure RBAC'}]->(scope)
+  WHERE perm.roleDefinitionId CONTAINS '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
+  SET attacker._canEscalate = true
+  WITH DISTINCT attacker, scope, perm
+  OPTIONAL MATCH (scope)-[:CONTAINS*0..3]->(target)
+  WHERE target <> attacker AND target IS NOT NULL
+  WITH attacker, coalesce(target, scope) AS escalateTarget, perm
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'AzureOwner'}]->(escalateTarget)
+  ON CREATE SET
+    r.condition = 'Owner role provides full control including role assignment within scope',
+    r.category = 'RBAC',
+    r.source = perm.source
+  RETURN count(r) AS created
