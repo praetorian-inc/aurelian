@@ -14,10 +14,15 @@ var (
 
 type CrossRegionActor struct {
 	Concurrency int
+	Service     string
 }
 
 func NewCrossRegionActor(concurrency int) *CrossRegionActor {
 	return &CrossRegionActor{Concurrency: concurrency}
+}
+
+func NewCrossRegionActorForService(concurrency int, service string) *CrossRegionActor {
+	return &CrossRegionActor{Concurrency: concurrency, Service: service}
 }
 
 func (c *CrossRegionActor) ActInRegions(regions []string, action func(region string) error) error {
@@ -35,7 +40,6 @@ func (c *CrossRegionActor) ActInRegions(regions []string, action func(region str
 	return g.Wait()
 }
 
-// ActInRegion acquires the per-region rate limiter, runs action, then releases.
 func (c *CrossRegionActor) ActInRegion(region string, action func() error) error {
 	limiter := c.getLimiter(region)
 	release, err := limiter.Acquire(context.Background(), region)
@@ -46,9 +50,16 @@ func (c *CrossRegionActor) ActInRegion(region string, action func() error) error
 	return action()
 }
 
+func (c *CrossRegionActor) limiterKey(region string) string {
+	return region + "\x00" + c.Service
+}
+
 func (c *CrossRegionActor) getLimiter(region string) *AWSRegionLimiter {
+	key := c.limiterKey(region)
+	concurrency := c.concurrencyOrDefault()
+
 	crossRegionLimitersMu.RLock()
-	limiter, ok := crossRegionLimiters[region]
+	limiter, ok := crossRegionLimiters[key]
 	crossRegionLimitersMu.RUnlock()
 	if ok {
 		return limiter
@@ -56,12 +67,12 @@ func (c *CrossRegionActor) getLimiter(region string) *AWSRegionLimiter {
 
 	crossRegionLimitersMu.Lock()
 	defer crossRegionLimitersMu.Unlock()
-	if limiter, ok = crossRegionLimiters[region]; ok {
+	if limiter, ok = crossRegionLimiters[key]; ok {
 		return limiter
 	}
 
-	limiter = NewAWSRegionLimiter(c.concurrencyOrDefault())
-	crossRegionLimiters[region] = limiter
+	limiter = NewAWSRegionLimiter(concurrency)
+	crossRegionLimiters[key] = limiter
 	return limiter
 }
 
