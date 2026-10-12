@@ -56,14 +56,6 @@ func loadRules(rulesetID string, disabledRules []string) ([]*types.Rule, error) 
 	return rules, nil
 }
 
-func newPersistentScanner(dbPath string, rulesetID string, disabledRules []string) (*persistentScanner, error) {
-	rules, err := loadRules(rulesetID, disabledRules)
-	if err != nil {
-		return nil, err
-	}
-	return newPersistentScannerFromRules(dbPath, rules)
-}
-
 func newPersistentScannerFromRules(dbPath string, rules []*types.Rule) (*persistentScanner, error) {
 	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)

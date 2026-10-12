@@ -35,35 +35,11 @@ type SecretScanResult struct {
 
 // Start creates a new persistent scanner and stores it as a field.
 func (s *SecretScanner) Start(cfg ScannerConfig) error {
-	s.failOnError = false
-	ps, err := newPersistentScanner(cfg.DBPath, cfg.Ruleset, cfg.DisabledTitusRules)
+	rules, err := loadRules(cfg.Ruleset, cfg.DisabledTitusRules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
-
-	extraIgnoreLines := []string{}
-	if cfg.IgnoreFile == "" {
-		extraIgnoreLines = aurelianIgnoreExtraLines
-	}
-
-	ig, err := ignore.CompilePatterns(cfg.IgnoreFile, extraIgnoreLines...)
-	if err != nil {
-		_ = ps.close()
-		return fmt.Errorf("failed to compile ignore patterns: %w", err)
-	}
-
-	s.ps = ps
-	s.validate = cfg.Validate
-	s.ignorePath = ig.MatchesPath
-
-	if cfg.Validate {
-		s.engine = validator.NewDefaultEngine(4)
-		slog.Info("secret scanner started with validation enabled", "db", ps.dbPath)
-	} else {
-		slog.Info("secret scanner started", "db", ps.dbPath)
-	}
-
-	return nil
+	return s.startFromRules(cfg, rules)
 }
 
 func (s *SecretScanner) startFromRules(cfg ScannerConfig, rules []*types.Rule) error {
