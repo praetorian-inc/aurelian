@@ -29,4 +29,5 @@ jobs:
       build-cmd-path: .
       build-binary-name: aurelian
       golangci-lint-timeout: 10m
+      test-flags: ${{ github.event_name == 'pull_request' && '-race -coverprofile=coverage.out -covermode=atomic' || '-race -coverprofile=coverage.out -covermode=atomic -tags static_analysis' }}
     secrets: inherit
