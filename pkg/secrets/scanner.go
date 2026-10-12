@@ -66,6 +66,38 @@ func (s *SecretScanner) Start(cfg ScannerConfig) error {
 	return nil
 }
 
+func (s *SecretScanner) startFromRules(cfg ScannerConfig, rules []*types.Rule) error {
+	s.failOnError = false
+	ps, err := newPersistentScannerFromRules(cfg.DBPath, rules)
+	if err != nil {
+		return fmt.Errorf("failed to create Titus scanner: %w", err)
+	}
+
+	extraIgnoreLines := []string{}
+	if cfg.IgnoreFile == "" {
+		extraIgnoreLines = aurelianIgnoreExtraLines
+	}
+
+	ig, err := ignore.CompilePatterns(cfg.IgnoreFile, extraIgnoreLines...)
+	if err != nil {
+		_ = ps.close()
+		return fmt.Errorf("failed to compile ignore patterns: %w", err)
+	}
+
+	s.ps = ps
+	s.validate = cfg.Validate
+	s.ignorePath = ig.MatchesPath
+
+	if cfg.Validate {
+		s.engine = validator.NewDefaultEngine(4)
+		slog.Info("secret scanner started with validation enabled", "db", ps.dbPath)
+	} else {
+		slog.Info("secret scanner started", "db", ps.dbPath)
+	}
+
+	return nil
+}
+
 // DBPath returns the path to the SQLite database, or empty string if not started.
 func (s *SecretScanner) DBPath() string {
 	if s.ps == nil {
