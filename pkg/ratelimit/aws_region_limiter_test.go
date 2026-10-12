@@ -240,8 +240,8 @@ func TestCrossRegionActor_PerServiceIndependence(t *testing.T) {
 
 	// S3 should still be fully available — independent semaphore
 	s3Limiter := s3Actor.getLimiter(region)
-	rel3, err := s3Limiter.Acquire(ctx, region)
-	require.NoError(t, err)
+	rel3, ok := s3Limiter.TryAcquire(region)
+	require.True(t, ok, "s3 must acquire independently of lambda")
 	assert.Equal(t, 1, s3Limiter.ActiveCount(region))
 
 	rel1()
