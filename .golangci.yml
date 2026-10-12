@@ -1,0 +1,15 @@
+version: "2"
+
+run:
+  timeout: 10m
+  modules-download-mode: readonly
+
+linters:
+  default: standard
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+    paths:
+      - third_party
+      - vendor
