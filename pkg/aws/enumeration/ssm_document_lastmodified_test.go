@@ -58,6 +58,7 @@ func newSSMDocumentFixture(t *testing.T) (*fakeAWS, *SkipReport, *SSMDocumentEnu
 }
 
 func TestSSMDocument_ListStampsLatestVersionCreatedDate(t *testing.T) {
+	t.Parallel()
 	latestCreated := time.Date(2026, 8, 8, 8, 8, 8, 0, time.UTC)
 	fake, skipReport, enum := newSSMDocumentFixture(t)
 	fake.reply("ListDocuments", ssmListOneDocument)
@@ -79,6 +80,7 @@ func TestSSMDocument_ListStampsLatestVersionCreatedDate(t *testing.T) {
 }
 
 func TestSSMDocument_DescribeFailureLeavesDocumentUnstampedButEmitted(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		code     string
@@ -89,6 +91,7 @@ func TestSSMDocument_DescribeFailureLeavesDocumentUnstampedButEmitted(t *testing
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			fake, skipReport, enum := newSSMDocumentFixture(t)
 			fake.reply("ListDocuments", ssmListOneDocument)
 			fake.fail("DescribeDocument", http.StatusBadRequest, jsonError(tc.code))
@@ -108,6 +111,7 @@ func TestSSMDocument_DescribeFailureLeavesDocumentUnstampedButEmitted(t *testing
 }
 
 func TestSSMDocument_EnumerateByARNPropertiesFromDefaultLastModifiedFromLatest(t *testing.T) {
+	t.Parallel()
 	defaultCreated := time.Date(2026, 1, 1, 1, 1, 1, 0, time.UTC)
 	latestCreated := time.Date(2026, 9, 9, 9, 9, 9, 0, time.UTC)
 	fake, skipReport, enum := newSSMDocumentFixture(t)
@@ -133,6 +137,7 @@ func TestSSMDocument_EnumerateByARNPropertiesFromDefaultLastModifiedFromLatest(t
 }
 
 func TestSSMDocument_EnumerateByARNLatestDescribeFailureLeavesUnstamped(t *testing.T) {
+	t.Parallel()
 	fake, _, enum := newSSMDocumentFixture(t)
 	fake.on("DescribeDocument", func(body string) fakeAWSResponse {
 		if strings.Contains(body, `"$LATEST"`) {

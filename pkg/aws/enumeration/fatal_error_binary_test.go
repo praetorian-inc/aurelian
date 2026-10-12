@@ -25,6 +25,7 @@ import (
 // This tests the complete chain at binary level: fatal error during
 // enumeration → classifier → dispatcher → pipeline abort → CLI error.
 func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
+	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 

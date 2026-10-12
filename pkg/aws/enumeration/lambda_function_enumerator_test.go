@@ -10,6 +10,7 @@ import (
 )
 
 func TestBuildLambdaFunctionResource(t *testing.T) {
+	t.Parallel()
 	fn := lambdatypes.FunctionConfiguration{
 		FunctionName: aws.String("pl-prod-lambda-003-target"),
 		FunctionArn:  aws.String("arn:aws:lambda:us-east-1:123456789012:function:pl-prod-lambda-003-target"),
@@ -33,9 +34,12 @@ func TestBuildLambdaFunctionResource(t *testing.T) {
 }
 
 func TestBuildLambdaFunctionResourceNoRole(t *testing.T) {
+	t.Parallel(
 	// A function with no execution role emits an empty Role string (fail-closed):
 	// resource_to_role.yaml will not match an empty string to any role ARN, so no
 	// HAS_ROLE edge is created.
+	)
+
 	fn := lambdatypes.FunctionConfiguration{
 		FunctionName: aws.String("pl-norole"),
 		FunctionArn:  aws.String("arn:aws:lambda:us-west-2:123456789012:function:pl-norole"),

@@ -16,17 +16,20 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestCopyStatementsWithOrigin_NilInput(t *testing.T) {
+	t.Parallel()
 	result := copyStatementsWithOrigin(nil, "arn:aws:iam::111122223333:user/alice")
 	assert.Nil(t, result)
 }
 
 func TestCopyStatementsWithOrigin_EmptyInput(t *testing.T) {
+	t.Parallel()
 	empty := &types.PolicyStatementList{}
 	result := copyStatementsWithOrigin(empty, "arn:aws:iam::111122223333:user/alice")
 	assert.Nil(t, result)
 }
 
 func TestCopyStatementsWithOrigin_SetsOriginArn(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"s3:GetObject"}
 	resource := types.DynaString{"*"}
 	stmts := &types.PolicyStatementList{
@@ -55,6 +58,7 @@ func TestCopyStatementsWithOrigin_SetsOriginArn(t *testing.T) {
 }
 
 func TestCopyStatementsWithOrigin_PreservesStatementFields(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"iam:PassRole"}
 	resource := types.DynaString{"arn:aws:iam::111122223333:role/*"}
 	stmts := &types.PolicyStatementList{
@@ -80,6 +84,7 @@ func TestCopyStatementsWithOrigin_PreservesStatementFields(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCollectInlineStatements_Empty(t *testing.T) {
+	t.Parallel()
 	result := collectInlineStatements(nil, "arn:aws:iam::111122223333:user/alice")
 	assert.Nil(t, result)
 
@@ -88,6 +93,7 @@ func TestCollectInlineStatements_Empty(t *testing.T) {
 }
 
 func TestCollectInlineStatements_NilPolicyDocument(t *testing.T) {
+	t.Parallel()
 	policies := []types.InlinePolicy{
 		{
 			PolicyName:     "NilStmtPolicy",
@@ -99,6 +105,7 @@ func TestCollectInlineStatements_NilPolicyDocument(t *testing.T) {
 }
 
 func TestCollectInlineStatements_WithStatements(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"s3:GetObject"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{
@@ -124,6 +131,7 @@ func TestCollectInlineStatements_WithStatements(t *testing.T) {
 }
 
 func TestCollectInlineStatements_MultiplePolicies(t *testing.T) {
+	t.Parallel()
 	action1 := types.DynaString{"s3:GetObject"}
 	resource1 := types.DynaString{"*"}
 	stmts1 := types.PolicyStatementList{
@@ -150,6 +158,7 @@ func TestCollectInlineStatements_MultiplePolicies(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCollectManagedPolicyStatements_Empty(t *testing.T) {
+	t.Parallel()
 	state := buildMinimalState()
 	result := collectManagedPolicyStatements(state, nil)
 	assert.Nil(t, result)
@@ -159,6 +168,7 @@ func TestCollectManagedPolicyStatements_Empty(t *testing.T) {
 }
 
 func TestCollectManagedPolicyStatements_PolicyNotFound(t *testing.T) {
+	t.Parallel()
 	state := buildMinimalState()
 	policies := []types.ManagedPolicy{
 		{PolicyName: "DoesNotExist", PolicyArn: "arn:aws:iam::111122223333:policy/Nonexistent"},
@@ -168,6 +178,7 @@ func TestCollectManagedPolicyStatements_PolicyNotFound(t *testing.T) {
 }
 
 func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"iam:PassRole"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{
@@ -204,6 +215,7 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 }
 
 func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T) {
+	t.Parallel()
 	policyArn := "arn:aws:iam::111122223333:policy/NoDefault"
 	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
 		{
@@ -233,12 +245,14 @@ func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T)
 // ---------------------------------------------------------------------------
 
 func TestCollectBoundaryStatements_ZeroValue(t *testing.T) {
+	t.Parallel()
 	state := buildMinimalState()
 	result := collectBoundaryStatements(state, types.ManagedPolicy{})
 	assert.Nil(t, result)
 }
 
 func TestCollectBoundaryStatements_PolicyNotFound(t *testing.T) {
+	t.Parallel()
 	state := buildMinimalState()
 	result := collectBoundaryStatements(state, types.ManagedPolicy{
 		PolicyName: "Missing",
@@ -248,6 +262,7 @@ func TestCollectBoundaryStatements_PolicyNotFound(t *testing.T) {
 }
 
 func TestCollectBoundaryStatements_Found(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"s3:*"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{

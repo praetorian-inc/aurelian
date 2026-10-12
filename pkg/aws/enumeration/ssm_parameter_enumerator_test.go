@@ -25,6 +25,7 @@ func (f *fakeDescribeParamsTransport) RoundTrip(_ *http.Request) (*http.Response
 }
 
 func TestSSMParameterEnumerator_ResourceType(t *testing.T) {
+	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-1"},
 		Concurrency: 2,
@@ -38,6 +39,7 @@ func TestSSMParameterEnumerator_ResourceType(t *testing.T) {
 }
 
 func TestNewEnumerator_RegistersSSMParameter(t *testing.T) {
+	t.Parallel()
 	e := NewEnumerator(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}})
 	enumerator, ok := e.enumerators["AWS::SSM::Parameter"]
 	require.True(t, ok, "NewEnumerator should register an enumerator for AWS::SSM::Parameter")
@@ -45,33 +47,44 @@ func TestNewEnumerator_RegistersSSMParameter(t *testing.T) {
 }
 
 func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
+	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 	enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 	out := pipeline.New[output.AWSResource]()
 
 	t.Run("bad ARN returns error", func(t *testing.T) {
+		t.Parallel()
 		err := enum.EnumerateByARN("not-an-arn", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse ARN")
 	})
 
 	t.Run("non-parameter resource returns error", func(t *testing.T) {
+		t.Parallel(
 		// Valid SSM ARN but resource type is "document/", not "parameter/"
+		)
+
 		err := enum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:document/MyDoc", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid SSM parameter ARN resource")
 	})
 
 	t.Run("ARN missing region returns error", func(t *testing.T) {
+		t.Parallel(
 		// Construct a valid ARN with empty region
+		)
+
 		err := enum.EnumerateByARN("arn:aws:ssm::123456789012:parameter/my-param", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing region")
 	})
 
 	t.Run("SecureString parameter is filtered", func(t *testing.T) {
+		t.Parallel(
 		// Inject a fake HTTP transport so DescribeParameters returns a SecureString parameter
 		// without hitting real AWS. The provider.configs map is package-internal and accessible here.
+		)
+
 		body := `{"Parameters":[{"Name":"/prefix/secure-param","Type":"SecureString","Tier":"Standard","DataType":"text"}]}`
 		fakeCfg := aws.Config{
 			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
@@ -92,7 +105,10 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	})
 
 	t.Run("parameter with empty name is skipped", func(t *testing.T) {
+		t.Parallel(
 		// AWS always populates Name, but guard against a nil pointer returning "".
+		)
+
 		body := `{"Parameters":[{"Type":"String","Tier":"Standard"}]}`
 		fakeCfg := aws.Config{
 			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
@@ -114,11 +130,12 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 }
 
 func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
-		name         string
-		arn          string
-		apiName      string // Name the fake API returns
-		wantID       string
+		name          string
+		arn           string
+		apiName       string // Name the fake API returns
+		wantID        string
 		wantARNSuffix string
 	}{
 		{
@@ -139,6 +156,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			body := `{"Parameters":[{"Name":"` + tc.apiName + `","Type":"String","Tier":"Standard"}]}`
 			fakeCfg := aws.Config{
 				HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
@@ -166,7 +184,9 @@ func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
 }
 
 func TestSSMParameterEnumerator_ListParametersInRegion(t *testing.T) {
+	t.Parallel()
 	t.Run("emits parameter with correct shape", func(t *testing.T) {
+		t.Parallel()
 		body := `{"Parameters":[{"Name":"/my/param","Type":"String","Tier":"Standard","DataType":"text"}]}`
 		fakeCfg := aws.Config{
 			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
@@ -197,6 +217,7 @@ func TestSSMParameterEnumerator_ListParametersInRegion(t *testing.T) {
 	})
 
 	t.Run("skips parameter with empty name", func(t *testing.T) {
+		t.Parallel()
 		body := `{"Parameters":[{"Type":"String","Tier":"Standard"}]}`
 		fakeCfg := aws.Config{
 			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},

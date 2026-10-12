@@ -33,6 +33,7 @@ import (
 //   - SSA (fallback): heuristic taint tracing through the SSA value graph.
 //     Used when z3 is not installed (e.g. CI).
 func TestClassifySkippableExactlyOnce(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("z3"); err == nil {
 		t.Log("z3 found — using Z3 solver for formal verification")
 		testClassifySkippableExactlyOnce_Z3(t)

@@ -62,6 +62,7 @@ func (m *mockOrganizationsClient) ListTargetsForPolicy(ctx context.Context, para
 }
 
 func TestCollectOrganizationHierarchy_Success(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
 			return &organizations.ListRootsOutput{
@@ -132,6 +133,7 @@ func TestCollectOrganizationHierarchy_Success(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_ListRootsError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
 			return nil, fmt.Errorf("access denied")
@@ -146,6 +148,7 @@ func TestCollectOrganizationHierarchy_ListRootsError(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_NoRoots(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
 			return &organizations.ListRootsOutput{
@@ -162,6 +165,7 @@ func TestCollectOrganizationHierarchy_NoRoots(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_ListOUsError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
 			return &organizations.ListRootsOutput{
@@ -183,6 +187,7 @@ func TestCollectOrganizationHierarchy_ListOUsError(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_ListAccountsError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
 			return &organizations.ListRootsOutput{
@@ -207,6 +212,7 @@ func TestCollectOrganizationHierarchy_ListAccountsError(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_ChildOUProcessingError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
 			return &organizations.ListRootsOutput{
@@ -239,6 +245,7 @@ func TestCollectOrganizationHierarchy_ChildOUProcessingError(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_OUPagination(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
@@ -283,6 +290,7 @@ func TestCollectOrganizationHierarchy_OUPagination(t *testing.T) {
 }
 
 func TestCollectOrganizationHierarchy_AccountPagination(t *testing.T) {
+	t.Parallel()
 	acctCallCount := 0
 	mock := &mockOrganizationsClient{
 		listRootsFunc: func(ctx context.Context, params *organizations.ListRootsInput, optFns ...func(*organizations.Options)) (*organizations.ListRootsOutput, error) {
@@ -324,6 +332,7 @@ func TestCollectOrganizationHierarchy_AccountPagination(t *testing.T) {
 }
 
 func TestCollectPolicies_Success(t *testing.T) {
+	t.Parallel()
 	policyContent := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`
 
 	mock := &mockOrganizationsClient{
@@ -387,6 +396,7 @@ func TestCollectPolicies_Success(t *testing.T) {
 }
 
 func TestCollectPolicies_ListPoliciesError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listPoliciesFunc: func(ctx context.Context, params *organizations.ListPoliciesInput, optFns ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error) {
 			return nil, fmt.Errorf("list policies failed")
@@ -401,6 +411,7 @@ func TestCollectPolicies_ListPoliciesError(t *testing.T) {
 }
 
 func TestCollectPolicies_DescribePolicyError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listPoliciesFunc: func(ctx context.Context, params *organizations.ListPoliciesInput, optFns ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error) {
 			return &organizations.ListPoliciesOutput{
@@ -431,6 +442,7 @@ func TestCollectPolicies_DescribePolicyError(t *testing.T) {
 }
 
 func TestCollectPolicies_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listPoliciesFunc: func(ctx context.Context, params *organizations.ListPoliciesInput, optFns ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error) {
 			return &organizations.ListPoliciesOutput{
@@ -465,6 +477,7 @@ func TestCollectPolicies_InvalidJSON(t *testing.T) {
 }
 
 func TestCollectPolicies_ListTargetsError(t *testing.T) {
+	t.Parallel()
 	policyContent := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}`
 
 	mock := &mockOrganizationsClient{
@@ -504,6 +517,7 @@ func TestCollectPolicies_ListTargetsError(t *testing.T) {
 }
 
 func TestListPolicies_Pagination(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	mock := &mockOrganizationsClient{
 		listPoliciesFunc: func(ctx context.Context, params *organizations.ListPoliciesInput, optFns ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error) {
@@ -548,6 +562,7 @@ func TestListPolicies_Pagination(t *testing.T) {
 }
 
 func TestListPolicies_Error(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listPoliciesFunc: func(ctx context.Context, params *organizations.ListPoliciesInput, optFns ...func(*organizations.Options)) (*organizations.ListPoliciesOutput, error) {
 			return nil, fmt.Errorf("listing failed")
@@ -562,6 +577,7 @@ func TestListPolicies_Error(t *testing.T) {
 }
 
 func TestListPolicyTargets_Pagination(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	mock := &mockOrganizationsClient{
 		listTargetsForPolicyFunc: func(ctx context.Context, params *organizations.ListTargetsForPolicyInput, optFns ...func(*organizations.Options)) (*organizations.ListTargetsForPolicyOutput, error) {
@@ -610,6 +626,7 @@ func TestListPolicyTargets_Pagination(t *testing.T) {
 }
 
 func TestListPolicyTargets_Error(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		listTargetsForPolicyFunc: func(ctx context.Context, params *organizations.ListTargetsForPolicyInput, optFns ...func(*organizations.Options)) (*organizations.ListTargetsForPolicyOutput, error) {
 			return nil, fmt.Errorf("target listing failed")
@@ -624,6 +641,7 @@ func TestListPolicyTargets_Error(t *testing.T) {
 }
 
 func TestGetPolicyContent_Function(t *testing.T) {
+	t.Parallel()
 	policyContent := `{"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"s3:*","Resource":"*"}]}`
 	mock := &mockOrganizationsClient{
 		describePolicyFunc: func(ctx context.Context, params *organizations.DescribePolicyInput, optFns ...func(*organizations.Options)) (*organizations.DescribePolicyOutput, error) {
@@ -646,6 +664,7 @@ func TestGetPolicyContent_Function(t *testing.T) {
 }
 
 func TestGetPolicyContent_FunctionError(t *testing.T) {
+	t.Parallel()
 	mock := &mockOrganizationsClient{
 		describePolicyFunc: func(ctx context.Context, params *organizations.DescribePolicyInput, optFns ...func(*organizations.Options)) (*organizations.DescribePolicyOutput, error) {
 			return nil, fmt.Errorf("describe failed")
@@ -660,6 +679,7 @@ func TestGetPolicyContent_FunctionError(t *testing.T) {
 }
 
 func TestBuildOrgPoliciesFromHierarchy(t *testing.T) {
+	t.Parallel()
 	fullAccessArn := "arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"
 	denyS3Arn := "arn:aws:organizations::111111111111:policy/service_control_policy/p-deny-s3"
 	rcpArn := "arn:aws:organizations::111111111111:policy/resource_control_policy/p-rcp"
@@ -790,6 +810,7 @@ func TestBuildOrgPoliciesFromHierarchy(t *testing.T) {
 }
 
 func TestBuildOrgPoliciesFromHierarchy_EmptyHierarchy(t *testing.T) {
+	t.Parallel()
 	rootOU := &OrgUnit{
 		ID:   "r-root",
 		Name: "Root",
@@ -809,6 +830,7 @@ func TestBuildOrgPoliciesFromHierarchy_EmptyHierarchy(t *testing.T) {
 }
 
 func TestMapTargetsToPolicies(t *testing.T) {
+	t.Parallel()
 	policies := []PolicyData{
 		{
 			PolicySummary: PolicySummaryRef{
@@ -843,6 +865,7 @@ func TestMapTargetsToPolicies(t *testing.T) {
 }
 
 func TestMapTargetsToPolicies_Empty(t *testing.T) {
+	t.Parallel()
 	result := mapTargetsToPolicies([]PolicyData{})
 	if len(result) != 0 {
 		t.Errorf("expected empty map, got %d entries", len(result))
@@ -850,6 +873,7 @@ func TestMapTargetsToPolicies_Empty(t *testing.T) {
 }
 
 func TestPolicyTypeToString(t *testing.T) {
+	t.Parallel()
 	pt := awstypes.PolicyTypeServiceControlPolicy
 	result := policyTypeToString(pt)
 	if result == nil {
@@ -861,6 +885,7 @@ func TestPolicyTypeToString(t *testing.T) {
 }
 
 func TestBoolPtr(t *testing.T) {
+	t.Parallel()
 	trueVal := boolPtr(true)
 	if trueVal == nil || !*trueVal {
 		t.Error("expected true pointer")

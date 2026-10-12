@@ -25,12 +25,14 @@ func newRelationshipMap(rels []output.AWSIAMRelationship) store.Map[output.AWSIA
 // ---------------------------------------------------------------------------
 
 func TestNewPermissionIndex_Empty(t *testing.T) {
+	t.Parallel()
 	idx := newPermissionIndex(store.Map[output.AWSIAMRelationship]{})
 	assert.NotNil(t, idx.principalResources)
 	assert.Len(t, idx.principalResources, 0)
 }
 
 func TestNewPermissionIndex_PopulatesCorrectly(t *testing.T) {
+	t.Parallel()
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice"}},
@@ -60,6 +62,7 @@ func TestNewPermissionIndex_PopulatesCorrectly(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHasActionOnResource(t *testing.T) {
+	t.Parallel()
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "user-a"}},
@@ -80,6 +83,7 @@ func TestHasActionOnResource(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHasActionOnAnyResource(t *testing.T) {
+	t.Parallel()
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "user-a"}},
@@ -105,6 +109,7 @@ func TestHasActionOnAnyResource(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStmtAllowsAction_AllowWithMatchingAction(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:CreateProject"}
 	stmt := types.PolicyStatement{
 		Effect: "Allow",
@@ -114,6 +119,7 @@ func TestStmtAllowsAction_AllowWithMatchingAction(t *testing.T) {
 }
 
 func TestStmtAllowsAction_AllowWithWildcard(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:*"}
 	stmt := types.PolicyStatement{
 		Effect: "Allow",
@@ -123,6 +129,7 @@ func TestStmtAllowsAction_AllowWithWildcard(t *testing.T) {
 }
 
 func TestStmtAllowsAction_AllowWithStarWildcard(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"*"}
 	stmt := types.PolicyStatement{
 		Effect: "Allow",
@@ -132,6 +139,7 @@ func TestStmtAllowsAction_AllowWithStarWildcard(t *testing.T) {
 }
 
 func TestStmtAllowsAction_DenyDoesNotMatch(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:CreateProject"}
 	stmt := types.PolicyStatement{
 		Effect: "Deny",
@@ -141,6 +149,7 @@ func TestStmtAllowsAction_DenyDoesNotMatch(t *testing.T) {
 }
 
 func TestStmtAllowsAction_NonMatchingAction(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"s3:GetObject"}
 	stmt := types.PolicyStatement{
 		Effect: "Allow",
@@ -150,6 +159,7 @@ func TestStmtAllowsAction_NonMatchingAction(t *testing.T) {
 }
 
 func TestStmtAllowsAction_NotAction_NotExcluded(t *testing.T) {
+	t.Parallel()
 	notAction := types.DynaString{"iam:*"}
 	stmt := types.PolicyStatement{
 		Effect:    "Allow",
@@ -160,6 +170,7 @@ func TestStmtAllowsAction_NotAction_NotExcluded(t *testing.T) {
 }
 
 func TestStmtAllowsAction_NotAction_Excluded(t *testing.T) {
+	t.Parallel()
 	notAction := types.DynaString{"codebuild:*"}
 	stmt := types.PolicyStatement{
 		Effect:    "Allow",
@@ -170,6 +181,7 @@ func TestStmtAllowsAction_NotAction_Excluded(t *testing.T) {
 }
 
 func TestStmtAllowsAction_NilActionAndNilNotAction(t *testing.T) {
+	t.Parallel()
 	stmt := types.PolicyStatement{
 		Effect: "Allow",
 	}
@@ -181,10 +193,12 @@ func TestStmtAllowsAction_NilActionAndNilNotAction(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResourcePatternsOverlap_BothWildcard(t *testing.T) {
+	t.Parallel()
 	assert.True(t, resourcePatternsOverlap([]string{"*"}, []string{"*"}))
 }
 
 func TestResourcePatternsOverlap_OneWildcard(t *testing.T) {
+	t.Parallel()
 	assert.True(t, resourcePatternsOverlap(
 		[]string{"arn:aws:codebuild:us-east-1:111122223333:project/*"},
 		[]string{"*"},
@@ -192,6 +206,7 @@ func TestResourcePatternsOverlap_OneWildcard(t *testing.T) {
 }
 
 func TestResourcePatternsOverlap_CompatibleARNs(t *testing.T) {
+	t.Parallel()
 	assert.True(t, resourcePatternsOverlap(
 		[]string{"arn:aws:codebuild:us-east-1:111122223333:project/*"},
 		[]string{"arn:aws:codebuild:us-east-1:111122223333:project/my-project"},
@@ -199,6 +214,7 @@ func TestResourcePatternsOverlap_CompatibleARNs(t *testing.T) {
 }
 
 func TestResourcePatternsOverlap_DifferentRegions(t *testing.T) {
+	t.Parallel()
 	assert.False(t, resourcePatternsOverlap(
 		[]string{"arn:aws:codebuild:us-east-1:111122223333:project/foo"},
 		[]string{"arn:aws:codebuild:eu-west-1:111122223333:project/foo"},
@@ -206,6 +222,7 @@ func TestResourcePatternsOverlap_DifferentRegions(t *testing.T) {
 }
 
 func TestResourcePatternsOverlap_DifferentAccounts(t *testing.T) {
+	t.Parallel()
 	assert.False(t, resourcePatternsOverlap(
 		[]string{"arn:aws:codebuild:us-east-1:111122223333:project/foo"},
 		[]string{"arn:aws:codebuild:us-east-1:999988887777:project/foo"},
@@ -213,12 +230,14 @@ func TestResourcePatternsOverlap_DifferentAccounts(t *testing.T) {
 }
 
 func TestResourcePatternsOverlap_EmptySlices(t *testing.T) {
+	t.Parallel()
 	assert.False(t, resourcePatternsOverlap(nil, nil))
 	assert.False(t, resourcePatternsOverlap([]string{"*"}, nil))
 	assert.False(t, resourcePatternsOverlap(nil, []string{"*"}))
 }
 
 func TestResourcePatternsOverlap_MultiplePatternsAtLeastOneOverlaps(t *testing.T) {
+	t.Parallel()
 	assert.True(t, resourcePatternsOverlap(
 		[]string{
 			"arn:aws:codebuild:eu-west-1:111122223333:project/*",
@@ -233,30 +252,37 @@ func TestResourcePatternsOverlap_MultiplePatternsAtLeastOneOverlaps(t *testing.T
 // ---------------------------------------------------------------------------
 
 func TestArnPatternsCompatible_Star(t *testing.T) {
+	t.Parallel()
 	assert.True(t, arnPatternsCompatible("*", "anything"))
 	assert.True(t, arnPatternsCompatible("anything", "*"))
 	assert.True(t, arnPatternsCompatible("*", "*"))
 }
 
 func TestArnPatternsCompatible_SameFullARN(t *testing.T) {
+	t.Parallel()
 	a := "arn:aws:codebuild:us-east-1:111122223333:project/foo"
 	assert.True(t, arnPatternsCompatible(a, a))
 }
 
 func TestArnPatternsCompatible_DifferentService(t *testing.T) {
+	t.Parallel()
 	a := "arn:aws:codebuild:us-east-1:111122223333:project/foo"
 	b := "arn:aws:s3:us-east-1:111122223333:bucket/foo"
 	assert.False(t, arnPatternsCompatible(a, b))
 }
 
 func TestArnPatternsCompatible_WildcardRegion(t *testing.T) {
+	t.Parallel()
 	a := "arn:aws:codebuild:*:111122223333:project/foo"
 	b := "arn:aws:codebuild:us-east-1:111122223333:project/foo"
 	assert.True(t, arnPatternsCompatible(a, b))
 }
 
 func TestArnPatternsCompatible_TooFewParts(t *testing.T) {
+	t.Parallel(
 	// If either ARN has fewer than 5 colon-separated parts, return true (permissive)
+	)
+
 	assert.True(t, arnPatternsCompatible("short", "arn:aws:s3:::bucket"))
 	assert.True(t, arnPatternsCompatible("arn:aws:s3:::bucket", "short"))
 }
@@ -266,7 +292,10 @@ func TestArnPatternsCompatible_TooFewParts(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSynthesizeCreateThenUsePermissions_NoPrincipalWithCreate(t *testing.T) {
+	t.Parallel(
 	// No one has codebuild:CreateProject, so no synthetic edges
+	)
+
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice"}},
@@ -281,7 +310,10 @@ func TestSynthesizeCreateThenUsePermissions_NoPrincipalWithCreate(t *testing.T) 
 }
 
 func TestSynthesizeCreateThenUsePermissions_HasCreateButAlreadyHasUse(t *testing.T) {
+	t.Parallel(
 	// User has codebuild:CreateProject and already has codebuild:StartBuild, so no synthetic edge
+	)
+
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:role/build-role"}},
@@ -300,11 +332,14 @@ func TestSynthesizeCreateThenUsePermissions_HasCreateButAlreadyHasUse(t *testing
 }
 
 func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
+	t.Parallel(
 	// Build a GAAD where a role has:
 	// - codebuild:CreateProject on * (identity policy)
 	// - codebuild:StartBuild on * (identity policy)
 	// And results show codebuild:CreateProject allowed on codebuild.amazonaws.com
 	// but NOT codebuild:StartBuild (no matching resource exists yet)
+	)
+
 	createAction := types.DynaString{"codebuild:CreateProject", "codebuild:StartBuild", "codebuild:StartBuildBatch"}
 	createResource := types.DynaString{"*"}
 	createStmts := types.PolicyStatementList{
@@ -370,7 +405,10 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 }
 
 func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
+	t.Parallel(
 	// Role has codebuild:CreateProject but NOT codebuild:StartBuild in identity policies
+	)
+
 	createAction := types.DynaString{"codebuild:CreateProject"}
 	createResource := types.DynaString{"*"}
 	createStmts := types.PolicyStatementList{
@@ -422,10 +460,13 @@ func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
 }
 
 func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) {
+	t.Parallel(
 	// Role has:
 	// - codebuild:CreateProject on arn:aws:codebuild:us-east-1:111122223333:project/*
 	// - codebuild:StartBuild on arn:aws:codebuild:eu-west-1:111122223333:project/*
 	// The resource patterns don't overlap (different regions), so no synthetic edge.
+	)
+
 	createAction := types.DynaString{"codebuild:CreateProject"}
 	createResource := types.DynaString{"arn:aws:codebuild:us-east-1:111122223333:project/*"}
 	createStmts := types.PolicyStatementList{
@@ -494,6 +535,7 @@ func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) 
 // ---------------------------------------------------------------------------
 
 func TestGetStmtResources_Role(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:CreateProject"}
 	resource := types.DynaString{"arn:aws:codebuild:us-east-1:111122223333:project/*"}
 	stmts := types.PolicyStatementList{
@@ -531,6 +573,7 @@ func TestGetStmtResources_Role(t *testing.T) {
 }
 
 func TestGetStmtResources_RoleManagedPolicy(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:StartBuild"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{
@@ -573,6 +616,7 @@ func TestGetStmtResources_RoleManagedPolicy(t *testing.T) {
 }
 
 func TestGetStmtResources_User(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:CreateProject"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{
@@ -599,6 +643,7 @@ func TestGetStmtResources_User(t *testing.T) {
 }
 
 func TestGetStmtResources_UserGroupPolicy(t *testing.T) {
+	t.Parallel()
 	action := types.DynaString{"codebuild:StartBuild"}
 	resource := types.DynaString{"arn:aws:codebuild:*:111122223333:project/*"}
 	stmts := types.PolicyStatementList{
@@ -632,7 +677,10 @@ func TestGetStmtResources_UserGroupPolicy(t *testing.T) {
 }
 
 func TestGetStmtResources_NilResource(t *testing.T) {
+	t.Parallel(
 	// If a statement has Action but no Resource field, it implies "*"
+	)
+
 	action := types.DynaString{"codebuild:CreateProject"}
 	stmts := types.PolicyStatementList{
 		{Effect: "Allow", Action: &action},
@@ -666,6 +714,7 @@ func TestGetStmtResources_NilResource(t *testing.T) {
 }
 
 func TestGetStmtResources_UnknownPrincipal(t *testing.T) {
+	t.Parallel()
 	state := buildMinimalState()
 	resources := getStmtResources("arn:aws:iam::111122223333:user/unknown", "codebuild:CreateProject", state)
 	assert.Nil(t, resources)

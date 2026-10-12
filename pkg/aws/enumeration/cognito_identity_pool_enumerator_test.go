@@ -7,9 +7,12 @@ import (
 )
 
 func TestBuildIdentityPoolResourceUnauthEnabled(t *testing.T) {
+	t.Parallel(
 	// GetIdentityPoolRoles keys roles by "authenticated"/"unauthenticated"; the builder
 	// suffixes "Role" so the bound ARNs land as quoted values resource_service_role.yaml
 	// substring-matches to create the (IdentityPool)-[:HAS_ROLE]->(Role) edges.
+	)
+
 	boundRoles := map[string]string{
 		"authenticated":   "arn:aws:iam::123456789012:role/pl-prod-idp-007-auth-role",
 		"unauthenticated": "arn:aws:iam::123456789012:role/pl-prod-idp-007-unauth-role",
@@ -30,7 +33,10 @@ func TestBuildIdentityPoolResourceUnauthEnabled(t *testing.T) {
 }
 
 func TestBuildIdentityPoolResourceUnauthDisabled(t *testing.T) {
+	t.Parallel(
 	// Auth-only pool: AllowUnauthenticatedIdentities false; only the authenticated role is bound.
+	)
+
 	boundRoles := map[string]string{
 		"authenticated": "arn:aws:iam::123456789012:role/pl-prod-idp-008-auth-role",
 	}
@@ -46,8 +52,11 @@ func TestBuildIdentityPoolResourceUnauthDisabled(t *testing.T) {
 }
 
 func TestBuildIdentityPoolResourceSkipsEmptyRoleARN(t *testing.T) {
+	t.Parallel(
 	// An empty role ARN is fail-closed: no property is emitted, so resource_service_role.yaml
 	// cannot match it to any role.
+	)
+
 	boundRoles := map[string]string{
 		"authenticated":   "arn:aws:iam::123456789012:role/pl-prod-idp-009-auth-role",
 		"unauthenticated": "",

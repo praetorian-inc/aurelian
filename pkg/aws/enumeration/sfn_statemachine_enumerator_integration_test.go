@@ -14,6 +14,7 @@ import (
 )
 
 func TestSFNStateMachineEnumerator_Integration(t *testing.T) {
+	t.Parallel()
 	profiles := []struct {
 		name    string
 		profile string
@@ -25,6 +26,7 @@ func TestSFNStateMachineEnumerator_Integration(t *testing.T) {
 
 	for _, p := range profiles {
 		t.Run(p.name, func(t *testing.T) {
+			t.Parallel()
 			opts := plugin.AWSCommonRecon{
 				Regions:     p.regions,
 				Concurrency: len(p.regions),
@@ -34,6 +36,7 @@ func TestSFNStateMachineEnumerator_Integration(t *testing.T) {
 			enum := NewSFNStateMachineEnumerator(opts, provider, NewSkipReport())
 
 			t.Run("EnumerateAll returns state machines with RoleArn", func(t *testing.T) {
+				t.Parallel()
 				results, err := collectSFNResults(func(out *pipeline.P[output.AWSResource]) error {
 					return enum.EnumerateAll(out)
 				})
@@ -59,6 +62,7 @@ func TestSFNStateMachineEnumerator_Integration(t *testing.T) {
 			})
 
 			t.Run("EnumerateByARN round-trips", func(t *testing.T) {
+				t.Parallel()
 				allResults, err := collectSFNResults(func(out *pipeline.P[output.AWSResource]) error {
 					return enum.EnumerateAll(out)
 				})
@@ -83,6 +87,7 @@ func TestSFNStateMachineEnumerator_Integration(t *testing.T) {
 }
 
 func TestSFNStateMachineEnumerator_Perf(t *testing.T) {
+	t.Parallel()
 	profiles := []struct {
 		name    string
 		profile string
@@ -94,6 +99,7 @@ func TestSFNStateMachineEnumerator_Perf(t *testing.T) {
 
 	for _, p := range profiles {
 		t.Run(p.name, func(t *testing.T) {
+			t.Parallel()
 			opts := plugin.AWSCommonRecon{
 				Regions:     p.regions,
 				Concurrency: len(p.regions),
@@ -103,6 +109,7 @@ func TestSFNStateMachineEnumerator_Perf(t *testing.T) {
 			enum := NewSFNStateMachineEnumerator(opts, provider, NewSkipReport())
 
 			t.Run("EnumerateAll perf", func(t *testing.T) {
+				t.Parallel()
 				start := time.Now()
 				results, err := collectSFNResults(func(out *pipeline.P[output.AWSResource]) error {
 					return enum.EnumerateAll(out)
@@ -117,6 +124,7 @@ func TestSFNStateMachineEnumerator_Perf(t *testing.T) {
 			})
 
 			t.Run("EnumerateByARN perf", func(t *testing.T) {
+				t.Parallel()
 				allResults, err := collectSFNResults(func(out *pipeline.P[output.AWSResource]) error {
 					return enum.EnumerateAll(out)
 				})

@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildCodeBuildProjectResource(t *testing.T) {
+	t.Parallel()
 	project := codebuildtypes.Project{
 		Name:        aws.String("build-proj"),
 		Arn:         aws.String("arn:aws:codebuild:us-east-2:123456789012:project/build-proj"),
@@ -30,7 +31,10 @@ func TestBuildCodeBuildProjectResource(t *testing.T) {
 }
 
 func TestBuildCodeBuildProjectResourceNoRole(t *testing.T) {
+	t.Parallel(
 	// A roleless project emits an empty ServiceRole — fail-closed: no ARN to match, no edge.
+	)
+
 	project := codebuildtypes.Project{
 		Name: aws.String("roleless"),
 		Arn:  aws.String("arn:aws:codebuild:us-west-2:123456789012:project/roleless"),
@@ -43,7 +47,10 @@ func TestBuildCodeBuildProjectResourceNoRole(t *testing.T) {
 }
 
 func TestBuildCodeBuildProjectResourceNilArn(t *testing.T) {
+	t.Parallel(
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
+	)
+
 	project := codebuildtypes.Project{
 		Name: aws.String("no-arn"),
 	}
@@ -56,6 +63,7 @@ func TestBuildCodeBuildProjectResourceNilArn(t *testing.T) {
 }
 
 func TestChunkStrings(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, [][]string{{"a", "b"}, {"c"}}, chunkStrings([]string{"a", "b", "c"}, 2))
 	assert.Equal(t, [][]string{{"a", "b", "c"}}, chunkStrings([]string{"a", "b", "c"}, 3))
 	assert.Equal(t, [][]string{{"a", "b", "c"}}, chunkStrings([]string{"a", "b", "c"}, 10))

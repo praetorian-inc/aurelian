@@ -11,6 +11,7 @@ import (
 )
 
 func TestBuildECSTaskDefinitionResource_MissingRegisteredAtUsesFixedEpoch(t *testing.T) {
+	t.Parallel()
 	td := &ecstypes.TaskDefinition{
 		Family:            aws.String("legacy"),
 		TaskDefinitionArn: aws.String("arn:aws:ecs:us-east-1:123456789012:task-definition/legacy:1"),

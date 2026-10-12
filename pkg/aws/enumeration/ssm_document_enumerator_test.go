@@ -8,6 +8,7 @@ import (
 )
 
 func TestSSMDocumentEnumerator_ResourceType(t *testing.T) {
+	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-1"},
 		Concurrency: 2,

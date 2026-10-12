@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildJobDefinitionResource(t *testing.T) {
+	t.Parallel()
 	jd := batchtypes.JobDefinition{
 		JobDefinitionName: aws.String("etl-job"),
 		JobDefinitionArn:  aws.String("arn:aws:batch:us-east-2:123456789012:job-definition/etl-job:3"),
@@ -36,9 +37,12 @@ func TestBuildJobDefinitionResource(t *testing.T) {
 }
 
 func TestBuildJobDefinitionResourceNoRole(t *testing.T) {
+	t.Parallel(
 	// A job definition with no roles (containers run as the agent's creds) emits empty
 	// role ARNs, the fail-closed case: resource_service_role.yaml will not match an
 	// empty string to any role ARN, so no HAS_ROLE edge is created.
+	)
+
 	jd := batchtypes.JobDefinition{
 		JobDefinitionName:   aws.String("roleless"),
 		JobDefinitionArn:    aws.String("arn:aws:batch:us-west-2:123456789012:job-definition/roleless:1"),
@@ -52,7 +56,10 @@ func TestBuildJobDefinitionResourceNoRole(t *testing.T) {
 }
 
 func TestBuildJobDefinitionResourceNilFields(t *testing.T) {
+	t.Parallel(
 	// nil ContainerProperties / ARN must not panic; ARN falls back to a synthesized form.
+	)
+
 	jd := batchtypes.JobDefinition{
 		JobDefinitionName: aws.String("no-arn"),
 	}

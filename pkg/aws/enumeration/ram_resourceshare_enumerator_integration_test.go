@@ -14,6 +14,7 @@ import (
 )
 
 func TestRAMResourceShareEnumerator(t *testing.T) {
+	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/ram-resource-share")
 	fixture.Setup()
 

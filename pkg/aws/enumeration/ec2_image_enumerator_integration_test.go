@@ -14,6 +14,7 @@ import (
 )
 
 func TestEC2ImageEnumerator(t *testing.T) {
+	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/public-ami")
 	fixture.Setup()
 
@@ -27,6 +28,7 @@ func TestEC2ImageEnumerator(t *testing.T) {
 	}, provider, NewSkipReport())
 
 	t.Run("EnumerateAll discovers owned AMIs", func(t *testing.T) {
+		t.Parallel()
 		results, err := collectImageResults(func(out *pipeline.P[output.AWSResource]) error {
 			return enum.EnumerateAll(out)
 		})
@@ -65,6 +67,7 @@ func TestEC2ImageEnumerator(t *testing.T) {
 	})
 
 	t.Run("EnumerateByARN fetches single AMI", func(t *testing.T) {
+		t.Parallel()
 		allResults, err := collectImageResults(func(out *pipeline.P[output.AWSResource]) error {
 			return enum.EnumerateAll(out)
 		})
@@ -84,6 +87,7 @@ func TestEC2ImageEnumerator(t *testing.T) {
 	})
 
 	t.Run("ResourceType", func(t *testing.T) {
+		t.Parallel()
 		assert.Equal(t, "AWS::EC2::Image", enum.ResourceType())
 	})
 }

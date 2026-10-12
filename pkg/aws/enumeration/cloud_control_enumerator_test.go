@@ -7,6 +7,7 @@ import (
 )
 
 func TestResolveARNTarget_ServiceMappedRegionKept(t *testing.T) {
+	t.Parallel()
 	cc := &CloudControlEnumerator{}
 
 	region, typ, id, err := cc.resolveARNTarget("arn:aws:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0")
@@ -17,6 +18,7 @@ func TestResolveARNTarget_ServiceMappedRegionKept(t *testing.T) {
 }
 
 func TestResolveARNTarget_GlobalTypeForcesUsEast1(t *testing.T) {
+	t.Parallel()
 	cc := &CloudControlEnumerator{}
 
 	region, typ, _, err := cc.resolveARNTarget("arn:aws:iam::123456789012:role/Admin")
@@ -26,6 +28,7 @@ func TestResolveARNTarget_GlobalTypeForcesUsEast1(t *testing.T) {
 }
 
 func TestResolveARNTarget_UnknownServiceFails(t *testing.T) {
+	t.Parallel()
 	cc := &CloudControlEnumerator{}
 
 	_, _, _, err := cc.resolveARNTarget("arn:aws:definitelynotreal:us-east-1:123456789012:thing/id")
@@ -33,6 +36,7 @@ func TestResolveARNTarget_UnknownServiceFails(t *testing.T) {
 }
 
 func TestResolveARNTarget_InvalidARNFails(t *testing.T) {
+	t.Parallel()
 	cc := &CloudControlEnumerator{}
 
 	_, _, _, err := cc.resolveARNTarget("not-an-arn")

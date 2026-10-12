@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildLaunchTemplateResourceARNProfile(t *testing.T) {
+	t.Parallel()
 	tmpl := ec2types.LaunchTemplate{
 		LaunchTemplateId:   aws.String("lt-0abc123"),
 		LaunchTemplateName: aws.String("pl-prod-lt-005"),
@@ -29,6 +30,7 @@ func TestBuildLaunchTemplateResourceARNProfile(t *testing.T) {
 }
 
 func TestBuildLaunchTemplateResourceNameProfile(t *testing.T) {
+	t.Parallel()
 	tmpl := ec2types.LaunchTemplate{
 		LaunchTemplateId:   aws.String("lt-0def456"),
 		LaunchTemplateName: aws.String("pl-prod-lt-006"),
@@ -42,9 +44,12 @@ func TestBuildLaunchTemplateResourceNameProfile(t *testing.T) {
 }
 
 func TestBuildLaunchTemplateResourceNoProfile(t *testing.T) {
+	t.Parallel(
 	// A template whose default version binds no instance profile emits an empty
 	// IamInstanceProfile (fail-closed): set_launch_template_role.yaml excludes the empty
 	// string outright so no HAS_ROLE edge is created. The resource is still emitted.
+	)
+
 	tmpl := ec2types.LaunchTemplate{
 		LaunchTemplateId:   aws.String("lt-0noprofile"),
 		LaunchTemplateName: aws.String("pl-noprofile"),

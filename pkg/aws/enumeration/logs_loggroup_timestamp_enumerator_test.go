@@ -44,6 +44,7 @@ func newLogGroupTimestampFixture(t *testing.T) (*fakeAWS, *SkipReport, *CloudCon
 }
 
 func TestLogGroupTimestamp_UsesNewestIngestionTimeAcrossSampledStreams(t *testing.T) {
+	t.Parallel()
 	older := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	newest := time.Date(2026, 9, 1, 12, 34, 56, 789_000_000, time.UTC)
 	middle := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
@@ -62,6 +63,7 @@ func TestLogGroupTimestamp_UsesNewestIngestionTimeAcrossSampledStreams(t *testin
 }
 
 func TestLogGroupTimestamp_SamplesTheStreamsTheExtractorReads(t *testing.T) {
+	t.Parallel()
 	fake, _, enum := newLogGroupTimestampFixture(t)
 	fake.reply("ListResources", ccListResources("AWS::Logs::LogGroup", logGroup("/app/api")))
 	fake.reply("DescribeLogStreams", logStreams(millis(time.Now())))
@@ -80,12 +82,14 @@ func TestLogGroupTimestamp_SamplesTheStreamsTheExtractorReads(t *testing.T) {
 }
 
 func TestLogGroupTimestamp_NoIngestionTimeLeavesLastModifiedNil(t *testing.T) {
+	t.Parallel()
 	tests := map[string]string{
 		"all streams lack lastIngestionTime": logStreams(nil, nil),
 		"group has no streams":               logStreams(),
 	}
 	for name, body := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			fake, _, enum := newLogGroupTimestampFixture(t)
 			fake.reply("ListResources", ccListResources("AWS::Logs::LogGroup", logGroup("/app/api")))
 			fake.reply("DescribeLogStreams", body)
@@ -100,6 +104,7 @@ func TestLogGroupTimestamp_NoIngestionTimeLeavesLastModifiedNil(t *testing.T) {
 }
 
 func TestLogGroupTimestamp_DescribeFailureLeavesGroupUnstampedButEmitted(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		code     string
@@ -110,6 +115,7 @@ func TestLogGroupTimestamp_DescribeFailureLeavesGroupUnstampedButEmitted(t *test
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			fake, skipReport, enum := newLogGroupTimestampFixture(t)
 			fake.reply("ListResources", ccListResources("AWS::Logs::LogGroup", logGroup("/app/api")))
 			fake.fail("DescribeLogStreams", http.StatusBadRequest, jsonError(tc.code))
@@ -129,6 +135,7 @@ func TestLogGroupTimestamp_DescribeFailureLeavesGroupUnstampedButEmitted(t *test
 }
 
 func TestLogGroupTimestamp_EnumerateByARNStampsTheGroup(t *testing.T) {
+	t.Parallel()
 	ingested := time.Date(2026, 9, 20, 1, 2, 3, 0, time.UTC)
 	fake, _, enum := newLogGroupTimestampFixture(t)
 	fake.reply("GetResource", ccGetResource("AWS::Logs::LogGroup", logGroup("/app/api")))

@@ -35,6 +35,7 @@ func createRequestContext(principalArn string) *RequestContext {
 }
 
 func TestPolicyEvaluator_BasicIdentityPolicy(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect: "Allow",
@@ -81,6 +82,7 @@ func TestPolicyEvaluator_BasicIdentityPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ExplicitDenyOverridesAllow(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -109,7 +111,10 @@ func TestPolicyEvaluator_ExplicitDenyOverridesAllow(t *testing.T) {
 }
 
 func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
+	t.Parallel(
 	// Identity policy allows S3 and EC2
+	)
+
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -186,6 +191,7 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -323,7 +329,10 @@ func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ResourceControlPolicy(t *testing.T) {
+	t.Parallel(
 	// Set up same policies but add debug prints
+	)
+
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -466,6 +475,7 @@ func TestPolicyEvaluator_ResourceControlPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ResourceBasedPolicy(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{}
 
 	resource := "arn:aws:s3::111122223333:example-bucket/file.txt"
@@ -517,7 +527,10 @@ func TestPolicyEvaluator_ResourceBasedPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
+	t.Parallel(
 	// Create OrgPolicies structure with both allow and deny statements
+	)
+
 	orgPolicies := &orgpolicies.OrgPolicies{
 		SCPs: []orgpolicies.PolicyData{
 			{
@@ -656,6 +669,7 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := createRequestContext(tt.principalArn)
 			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.resource))
 			req := &EvaluationRequest{
@@ -680,7 +694,10 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
+	t.Parallel(
 	// Create OrgPolicies structure with region guardrails
+	)
+
 	orgPolicies := &orgpolicies.OrgPolicies{
 		SCPs: []orgpolicies.PolicyData{
 			{
@@ -826,6 +843,7 @@ func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			req := &EvaluationRequest{
 				Action:             tt.action,
 				Resource:           tt.resource,
@@ -848,6 +866,7 @@ func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
 }
 
 func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
+	t.Parallel()
 	targetRoleArn := "arn:aws:iam::111122223333:role/role-name"
 
 	// Define the assume role trust policy - this should be in ResourcePolicies
@@ -933,6 +952,7 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := createRequestContext(tt.principalArn)
 			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.resource))
 
@@ -959,7 +979,9 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SNSResourcePolicy(t *testing.T) {
+	t.Parallel(
 	// Create the SNS resource policy
+	)
 
 	rawPolicy := `{
   "Version": "2008-10-17",
@@ -1067,6 +1089,7 @@ func TestPolicyEvaluator_SNSResourcePolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect: "Allow",
@@ -1109,7 +1132,10 @@ func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
+	t.Parallel(
 	// Create OrgPolicies structure with deny bedrock:* policy
+	)
+
 	orgPolicies := &orgpolicies.OrgPolicies{
 		SCPs: []orgpolicies.PolicyData{
 			{
@@ -1248,6 +1274,7 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 }
 
 func TestHasExplicitPrincipalAllow(t *testing.T) {
+	t.Parallel()
 	evaluator := NewPolicyEvaluator(&PolicyData{})
 
 	tests := []struct {
@@ -1361,6 +1388,7 @@ func TestHasExplicitPrincipalAllow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := evaluator.hasExplicitPrincipalAllow(tt.statements, tt.principalArn)
 			assert.Equal(t, tt.want, got)
 		})
@@ -1375,6 +1403,7 @@ func TestHasExplicitPrincipalAllow(t *testing.T) {
 // This is a regression test for the bug where same-account AssumeRole edges were created
 // even when the target role's trust policy did not allow the source role.
 func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.T) {
+	t.Parallel()
 	accountID := "460568892256"
 	sourceRoleArn := "arn:aws:iam::" + accountID + ":role/attacker-role"
 	allowedRoleArn := "arn:aws:iam::" + accountID + ":role/allowed-role"
@@ -1556,6 +1585,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := createRequestContext(tt.principalArn)
 			ctx.PrincipalAccount = accountID
 			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.target))
@@ -1589,6 +1619,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.
 // TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow tests the real GAAD flow
 // where trust policies are populated via NewPolicyData -> AddResourcePolicies
 func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
+	t.Parallel()
 	accountID := "460568892256"
 	attackerRoleArn := "arn:aws:iam::" + accountID + ":role/privesc-method24-sts-assumerole-attacker-55gvbw"
 	restrictedRoleArn := "arn:aws:iam::" + accountID + ":role/privesc-method24-test-restricted-role-55gvbw"
@@ -1734,6 +1765,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := createRequestContext(attackerRoleArn)
 			ctx.PrincipalAccount = accountID
 			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.targetRole))
@@ -1777,6 +1809,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 // cross-account AssumeRole correctly requires both identity and trust policy allows.
 // This test should pass (cross-account logic is correct).
 func TestPolicyEvaluator_CrossAccountAssumeRole_TrustPolicyValidation(t *testing.T) {
+	t.Parallel()
 	sourceAccountID := "111122223333"
 	targetAccountID := "999988887777"
 	sourceRoleArn := "arn:aws:iam::" + sourceAccountID + ":role/cross-account-attacker"
@@ -1834,6 +1867,7 @@ func TestPolicyEvaluator_CrossAccountAssumeRole_TrustPolicyValidation(t *testing
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := createRequestContext(tt.principalArn)
 			ctx.PrincipalAccount = sourceAccountID
 			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(targetRoleArn))
@@ -1860,18 +1894,22 @@ func TestPolicyEvaluator_CrossAccountAssumeRole_TrustPolicyValidation(t *testing
 }
 
 func TestPolicyToStatementList(t *testing.T) {
+	t.Parallel()
 	t.Run("nil policy returns nil", func(t *testing.T) {
+		t.Parallel()
 		result := policyToStatementList(nil)
 		assert.Nil(t, result)
 	})
 
 	t.Run("policy with nil statement returns nil", func(t *testing.T) {
+		t.Parallel()
 		p := &types.Policy{Version: "2012-10-17"}
 		result := policyToStatementList(p)
 		assert.Nil(t, result)
 	})
 
 	t.Run("valid policy returns statement list", func(t *testing.T) {
+		t.Parallel()
 		stmts := &types.PolicyStatementList{
 			{Effect: "Allow", Action: types.NewDynaString([]string{"s3:GetObject"})},
 		}
@@ -1883,6 +1921,7 @@ func TestPolicyToStatementList(t *testing.T) {
 }
 
 func TestPolicyEvaluator_InvalidActionForResource(t *testing.T) {
+	t.Parallel()
 	evaluator := NewPolicyEvaluator(&PolicyData{})
 
 	identityStatements := &types.PolicyStatementList{
@@ -1907,6 +1946,7 @@ func TestPolicyEvaluator_InvalidActionForResource(t *testing.T) {
 }
 
 func TestPolicyEvaluator_CrossAccountAssumeRole(t *testing.T) {
+	t.Parallel()
 	sourceAccountID := "111122223333"
 	targetAccountID := "999988887777"
 	targetRoleArn := "arn:aws:iam::" + targetAccountID + ":role/target-role"
@@ -1958,6 +1998,7 @@ func TestPolicyEvaluator_CrossAccountAssumeRole(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SameAccountNonAssumeRole_ExplicitPrincipalAllow(t *testing.T) {
+	t.Parallel()
 	resource := "arn:aws:s3::111122223333:my-bucket/file.txt"
 
 	// Resource policy explicitly allows the principal
@@ -1997,6 +2038,7 @@ func TestPolicyEvaluator_SameAccountNonAssumeRole_ExplicitPrincipalAllow(t *test
 }
 
 func TestPolicyEvaluator_RCPDenyPath(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -2072,6 +2114,7 @@ func TestPolicyEvaluator_RCPDenyPath(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ParentSCPNoAllowPath(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -2154,6 +2197,7 @@ func TestPolicyEvaluator_ParentSCPNoAllowPath(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ParentRCPNoAllowPath(t *testing.T) {
+	t.Parallel()
 	identityStatements := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -2234,6 +2278,7 @@ func TestPolicyEvaluator_ParentRCPNoAllowPath(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SSMDocumentRestrictions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                     string
 		action                   string
@@ -2356,6 +2401,7 @@ func TestPolicyEvaluator_SSMDocumentRestrictions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			evaluator := NewPolicyEvaluator(&PolicyData{})
 
 			// Choose an appropriate resource based on the action

@@ -5,6 +5,7 @@ import (
 )
 
 func TestSSMSendCommandMapping(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name     string
 		action   string
@@ -33,6 +34,7 @@ func TestSSMSendCommandMapping(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := IsValidActionForResource(tc.action, tc.resource)
 			if result != tc.expected {
 				t.Errorf("Expected %v, but got %v for action %s and resource %s",
@@ -43,14 +45,20 @@ func TestSSMSendCommandMapping(t *testing.T) {
 }
 
 func TestSSMSendCommandPrivilegeEscalation(t *testing.T) {
+	t.Parallel(
 	// Test that ssm:SendCommand is in the privilege escalation list
+	)
+
 	if !IsPrivEscAction("ssm:SendCommand") {
 		t.Error("ssm:SendCommand should be recognized as a privilege escalation action")
 	}
 }
 
 func TestSSMSendCommandResourcePatterns(t *testing.T) {
+	t.Parallel(
 	// Test that ssm:SendCommand returns EC2 instance patterns
+	)
+
 	action := Action("ssm:SendCommand")
 	patterns := GetResourcePatternsFromAction(action)
 

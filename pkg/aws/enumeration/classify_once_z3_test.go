@@ -77,11 +77,11 @@ const (
 
 // vfNode is a node in the value-flow graph.
 type vfNode struct {
-	id       int
-	kind     nodeKind
-	pos      token.Position // source position for diagnostics
-	label    string         // human-readable label (function + instruction)
-	ssaVal   ssa.Value      // the SSA value this node represents (may be nil for synthetic nodes)
+	id     int
+	kind   nodeKind
+	pos    token.Position // source position for diagnostics
+	label  string         // human-readable label (function + instruction)
+	ssaVal ssa.Value      // the SSA value this node represents (may be nil for synthetic nodes)
 }
 
 // vfEdge is a directed edge in the value-flow graph.
@@ -107,7 +107,7 @@ type vfBuilder struct {
 	classifyFn *ssa.Function
 	cg         *callgraph.Graph
 	visited    map[ssa.Value]int // SSA value → node ID (dedup)
-	originFn   *ssa.Function    // function containing the original error source
+	originFn   *ssa.Function     // function containing the original error source
 }
 
 func newVFBuilder(fset *token.FileSet, classifyFn *ssa.Function, cg *callgraph.Graph) *vfBuilder {
@@ -1536,6 +1536,7 @@ func testClassifySkippableExactlyOnce_Z3(t *testing.T) {
 // (count=2), classify-then-leak, wrong error classified, etc.
 // Requires z3 — skips if not installed.
 func TestClassifySkippableExactlyOnce_BugPatterns(t *testing.T) {
+	t.Parallel()
 	a := loadZ3Analysis(t)
 
 	var bugSources []z3ErrSource
@@ -1561,6 +1562,7 @@ func TestClassifySkippableExactlyOnce_BugPatterns(t *testing.T) {
 
 	for _, src := range bugSources {
 		t.Run(fmt.Sprintf("%s_%s", src.fn.Name(), src.label), func(t *testing.T) {
+			t.Parallel()
 			violation := a.verifySource(t, src)
 			parentName := ""
 			if p := src.fn.Parent(); p != nil {

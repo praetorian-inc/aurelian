@@ -9,9 +9,11 @@ import (
 )
 
 func TestActionExpander_Expand(t *testing.T) {
+	t.Parallel()
 	expander := &ActionExpander{}
 
 	t.Run("Expand Actions wildcard match", func(t *testing.T) {
+		t.Parallel()
 		knownActions := []string{"lambda:InvokeFunction", "lambda:InvokeAsync", "lambda:InvokeFunctionUrl"}
 
 		results, err := expander.Expand("lambda:i*")
@@ -25,6 +27,7 @@ func TestActionExpander_Expand(t *testing.T) {
 	})
 
 	t.Run("ExpandActions multiple wildcard and case insensitivity", func(t *testing.T) {
+		t.Parallel()
 		knownActions := []string{"lambda:InvokeFunction", "lambda:InvokeAsync", "lambda:InvokeFunctionUrl"}
 
 		results, err := expander.Expand("lambda:i*voKe*")
@@ -39,6 +42,7 @@ func TestActionExpander_Expand(t *testing.T) {
 	})
 
 	t.Run("ExpandActions wildcard", func(t *testing.T) {
+		t.Parallel()
 		results, err := expander.Expand("*")
 		require.NoError(t, err)
 
@@ -46,6 +50,7 @@ func TestActionExpander_Expand(t *testing.T) {
 	})
 
 	t.Run("Expand no wildcard passthrough", func(t *testing.T) {
+		t.Parallel()
 		results, err := expander.Expand("s3:GetObject")
 		require.NoError(t, err)
 

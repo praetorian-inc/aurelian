@@ -8,6 +8,7 @@ import (
 )
 
 func TestEvaluateStatement(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		stmt              *types.PolicyStatement
@@ -699,6 +700,7 @@ func TestEvaluateStatement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.NoError(t, tt.context.PopulateDefaultRequestConditionKeys(tt.requestedResource))
 			got := evaluateStatement(tt.stmt, tt.requestedAction, tt.requestedResource, tt.context)
 			t.Logf("EvaluateStatement: ExplicitAllow: %v, ExplicitDeny: %v, ImplicitDeny: %v, MatchedAction: %v, MatchedResource: %v, MatchedPrincipal: %v", got.ExplicitAllow, got.ExplicitDeny, got.ImplicitDeny, got.MatchedAction, got.MatchedResource, got.MatchedPrincipal)
@@ -720,6 +722,7 @@ func TestEvaluateStatement(t *testing.T) {
 }
 
 func TestMatchesPattern(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		pattern string
 		input   string
@@ -765,6 +768,7 @@ func TestMatchesPattern(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.pattern+"_"+tc.input, func(t *testing.T) {
+			t.Parallel()
 			result := MatchesPattern(tc.pattern, tc.input)
 			if result != tc.matched {
 				t.Errorf("Expected %v, but got %v for pattern %s and input %s", tc.matched, result, tc.pattern, tc.input)
@@ -774,6 +778,7 @@ func TestMatchesPattern(t *testing.T) {
 }
 
 func TestMatchesPattern_RegexMetacharacterEscaping(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		pattern string
@@ -857,6 +862,7 @@ func TestMatchesPattern_RegexMetacharacterEscaping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := MatchesPattern(tt.pattern, tt.input)
 			assert.Equal(t, tt.want, got, "MatchesPattern(%q, %q)", tt.pattern, tt.input)
 		})
@@ -864,6 +870,7 @@ func TestMatchesPattern_RegexMetacharacterEscaping(t *testing.T) {
 }
 
 func TestMatchesActions(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		actions         *types.DynaString
 		requestedAction string
@@ -909,6 +916,7 @@ func TestMatchesActions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.requestedAction, func(t *testing.T) {
+			t.Parallel()
 			result := matchesActions(tc.actions, tc.requestedAction)
 			if result != tc.matched {
 				t.Errorf("Expected %v, but got %v for actions %v and requestedAction %s", tc.matched, result, *tc.actions, tc.requestedAction)
@@ -917,6 +925,7 @@ func TestMatchesActions(t *testing.T) {
 	}
 }
 func TestDeterminePrincipalType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		arn      string
@@ -937,6 +946,7 @@ func TestDeterminePrincipalType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := determinePrincipalType(tt.arn)
 			if result != tt.expected {
 				t.Errorf("determinePrincipalType(%q) = %q, want %q", tt.arn, result, tt.expected)
@@ -946,6 +956,7 @@ func TestDeterminePrincipalType(t *testing.T) {
 }
 
 func TestGetServiceNameFromArn(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		arn      string
@@ -962,6 +973,7 @@ func TestGetServiceNameFromArn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := getServiceNameFromArn(tt.arn)
 			if result != tt.expected {
 				t.Errorf("getServiceNameFromArn(%q) = %q, want %q", tt.arn, result, tt.expected)
@@ -971,6 +983,7 @@ func TestGetServiceNameFromArn(t *testing.T) {
 }
 
 func TestNewRequestContext(t *testing.T) {
+	t.Parallel()
 	ctx := NewRequestContext()
 	assert.NotNil(t, ctx)
 	assert.NotNil(t, ctx.PrincipalTags)
@@ -984,6 +997,7 @@ func TestNewRequestContext(t *testing.T) {
 }
 
 func TestGetUsernameFromArn(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		arn  string
@@ -1023,6 +1037,7 @@ func TestGetUsernameFromArn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := getUsernameFromArn(tt.arn)
 			assert.Equal(t, tt.want, got)
 		})
@@ -1030,6 +1045,7 @@ func TestGetUsernameFromArn(t *testing.T) {
 }
 
 func TestMatchesPrincipal(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name               string
 		principal          *types.Principal
@@ -1102,6 +1118,7 @@ func TestMatchesPrincipal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := matchesPrincipal(tt.principal, tt.requestedPrincipal)
 			assert.Equal(t, tt.want, got)
 		})
@@ -1109,8 +1126,11 @@ func TestMatchesPrincipal(t *testing.T) {
 }
 
 func TestPopulateDefaultRequestConditionKeys_ServicePrincipal(t *testing.T) {
+	t.Parallel(
 	// Service principal should set ViaAWSService and CalledVia
 	// Use an ARN with the service name in the service field so getServiceNameFromArn finds it
+	)
+
 	ctx := &RequestContext{
 		PrincipalArn: "arn:aws:lambda.amazonaws.com:us-east-1:lambda.amazonaws.com:function/my-func",
 	}
@@ -1123,6 +1143,7 @@ func TestPopulateDefaultRequestConditionKeys_ServicePrincipal(t *testing.T) {
 }
 
 func TestPopulateDefaultRequestConditionKeys_FederatedUser(t *testing.T) {
+	t.Parallel()
 	ctx := &RequestContext{
 		PrincipalArn: "arn:aws:sts::123456789012:federated-user/my-user",
 	}
@@ -1133,6 +1154,7 @@ func TestPopulateDefaultRequestConditionKeys_FederatedUser(t *testing.T) {
 }
 
 func TestPopulateDefaultRequestConditionKeys_RoleTokenIssueTime(t *testing.T) {
+	t.Parallel()
 	ctx := &RequestContext{
 		PrincipalArn: "arn:aws:iam::123456789012:role/my-role",
 	}
@@ -1143,6 +1165,7 @@ func TestPopulateDefaultRequestConditionKeys_RoleTokenIssueTime(t *testing.T) {
 }
 
 func TestPopulateDefaultRequestConditionKeys_RoleSessionTokenIssueTime(t *testing.T) {
+	t.Parallel()
 	ctx := &RequestContext{
 		PrincipalArn: "arn:aws:sts::123456789012:assumed-role/my-role/session-name",
 	}
@@ -1153,6 +1176,7 @@ func TestPopulateDefaultRequestConditionKeys_RoleSessionTokenIssueTime(t *testin
 }
 
 func TestPopulateDefaultRequestConditionKeys_ZeroCurrentTimeDefaultsToNow(t *testing.T) {
+	t.Parallel()
 	ctx := &RequestContext{
 		PrincipalArn: "arn:aws:iam::123456789012:user/test-user",
 		// CurrentTime is zero value
@@ -1164,6 +1188,7 @@ func TestPopulateDefaultRequestConditionKeys_ZeroCurrentTimeDefaultsToNow(t *tes
 }
 
 func TestMatchesResources(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name              string
 		resources         *types.DynaString
@@ -1211,6 +1236,7 @@ func TestMatchesResources(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.requestedResource, func(t *testing.T) {
+			t.Parallel()
 			result := MatchesResources(tc.resources, tc.requestedResource)
 			if result != tc.matched {
 				t.Errorf("Expected %v, but got %v for resources %v and requestedResource %s", tc.matched, result, *tc.resources, tc.requestedResource)

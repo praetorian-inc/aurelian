@@ -13,6 +13,7 @@ import (
 )
 
 func Test_Enumerator_EnumerateByType_UsesReconListFixture(t *testing.T) {
+	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -89,6 +90,7 @@ func Test_Enumerator_EnumerateByType_UsesReconListFixture(t *testing.T) {
 }
 
 func Test_Enumerator_EnumerateByARN_UsesReconListFixture(t *testing.T) {
+	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 

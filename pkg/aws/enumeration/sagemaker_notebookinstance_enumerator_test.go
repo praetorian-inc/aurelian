@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildSageMakerNotebookInstanceResource(t *testing.T) {
+	t.Parallel()
 	detail := &sagemaker.DescribeNotebookInstanceOutput{
 		NotebookInstanceName: aws.String("ds-notebook"),
 		NotebookInstanceArn:  aws.String("arn:aws:sagemaker:us-east-2:123456789012:notebook-instance/ds-notebook"),
@@ -30,7 +31,10 @@ func TestBuildSageMakerNotebookInstanceResource(t *testing.T) {
 }
 
 func TestBuildSageMakerNotebookInstanceResourceNilArn(t *testing.T) {
+	t.Parallel(
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
+	)
+
 	detail := &sagemaker.DescribeNotebookInstanceOutput{
 		NotebookInstanceName: aws.String("no-arn-nb"),
 		RoleArn:              aws.String("arn:aws:iam::123456789012:role/sagemaker-exec-role"),
@@ -44,7 +48,10 @@ func TestBuildSageMakerNotebookInstanceResourceNilArn(t *testing.T) {
 }
 
 func TestBuildSageMakerNotebookInstanceResourceNilRole(t *testing.T) {
+	t.Parallel(
 	// A nil RoleArn must not panic and emits an empty value (fail-closed).
+	)
+
 	detail := &sagemaker.DescribeNotebookInstanceOutput{
 		NotebookInstanceName: aws.String("no-role-nb"),
 		NotebookInstanceArn:  aws.String("arn:aws:sagemaker:us-west-2:123456789012:notebook-instance/no-role-nb"),

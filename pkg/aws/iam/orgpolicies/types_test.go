@@ -194,6 +194,7 @@ func buildTestOrgPolicies() *OrgPolicies {
 }
 
 func TestGetAccount_Found(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	acct := op.GetAccount("111111111111")
 	if acct == nil {
@@ -211,6 +212,7 @@ func TestGetAccount_Found(t *testing.T) {
 }
 
 func TestGetAccount_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	acct := op.GetAccount("999999999999")
 	if acct != nil {
@@ -219,6 +221,7 @@ func TestGetAccount_NotFound(t *testing.T) {
 }
 
 func TestGetAccount_OUTargetSkipped(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	// r-root is an OU, not an ACCOUNT, so GetAccount should not find it
 	acct := op.GetAccount("r-root")
@@ -228,6 +231,7 @@ func TestGetAccount_OUTargetSkipped(t *testing.T) {
 }
 
 func TestGetPolicyForTarget_Found(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	target := op.GetPolicyForTarget("111111111111")
 	if target == nil {
@@ -242,6 +246,7 @@ func TestGetPolicyForTarget_Found(t *testing.T) {
 }
 
 func TestGetPolicyForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	target := op.GetPolicyForTarget("999999999999")
 	if target != nil {
@@ -250,6 +255,7 @@ func TestGetPolicyForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetPolicyContent_SCP(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	arn := "arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"
 	content := op.GetPolicyContent(arn, "scps")
@@ -268,6 +274,7 @@ func TestGetPolicyContent_SCP(t *testing.T) {
 }
 
 func TestGetPolicyContent_RCP(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	arn := "arn:aws:organizations::111111111111:policy/resource_control_policy/p-child-rcp"
 	content := op.GetPolicyContent(arn, "rcps")
@@ -283,6 +290,7 @@ func TestGetPolicyContent_RCP(t *testing.T) {
 }
 
 func TestGetPolicyContent_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	content := op.GetPolicyContent("arn:aws:nonexistent", "scps")
 	if content != nil {
@@ -291,6 +299,7 @@ func TestGetPolicyContent_NotFound(t *testing.T) {
 }
 
 func TestGetPolicyContent_UnknownType(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	content := op.GetPolicyContent("arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess", "unknown")
 	if content != nil {
@@ -299,6 +308,7 @@ func TestGetPolicyContent_UnknownType(t *testing.T) {
 }
 
 func TestGetDirectScpStatementsForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectScpStatementsForTarget("111111111111")
 	if stmts == nil {
@@ -318,6 +328,7 @@ func TestGetDirectScpStatementsForTarget(t *testing.T) {
 }
 
 func TestGetDirectScpStatementsForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectScpStatementsForTarget("999999999999")
 	if stmts != nil {
@@ -326,6 +337,7 @@ func TestGetDirectScpStatementsForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetParentScpStatementsForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetParentScpStatementsForTarget("111111111111")
 	if stmts == nil {
@@ -349,6 +361,7 @@ func TestGetParentScpStatementsForTarget(t *testing.T) {
 }
 
 func TestGetParentScpStatementsForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetParentScpStatementsForTarget("999999999999")
 	if stmts != nil {
@@ -357,6 +370,7 @@ func TestGetParentScpStatementsForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetMergedParentScpsForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	merged := op.GetMergedParentScpsForTarget("111111111111")
 	if merged == nil {
@@ -383,6 +397,7 @@ func TestGetMergedParentScpsForTarget(t *testing.T) {
 }
 
 func TestGetMergedParentScpsForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	merged := op.GetMergedParentScpsForTarget("999999999999")
 	if merged != nil {
@@ -391,6 +406,7 @@ func TestGetMergedParentScpsForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetMergedParentRcpsForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	merged := op.GetMergedParentRcpsForTarget("111111111111")
 	if merged == nil {
@@ -411,6 +427,7 @@ func TestGetMergedParentRcpsForTarget(t *testing.T) {
 }
 
 func TestGetMergedParentRcpsForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	merged := op.GetMergedParentRcpsForTarget("999999999999")
 	if merged != nil {
@@ -419,6 +436,7 @@ func TestGetMergedParentRcpsForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetAllScpPoliciesForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	all := op.GetAllScpPoliciesForTarget("111111111111")
 	if all == nil {
@@ -444,6 +462,7 @@ func TestGetAllScpPoliciesForTarget(t *testing.T) {
 }
 
 func TestGetAllScpPoliciesForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	all := op.GetAllScpPoliciesForTarget("999999999999")
 	if all != nil {
@@ -452,6 +471,7 @@ func TestGetAllScpPoliciesForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetDirectRcpStatementsForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectRcpStatementsForTarget("111111111111")
 	if stmts == nil {
@@ -470,6 +490,7 @@ func TestGetDirectRcpStatementsForTarget(t *testing.T) {
 }
 
 func TestGetDirectRcpStatementsForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectRcpStatementsForTarget("999999999999")
 	if stmts != nil {
@@ -478,6 +499,7 @@ func TestGetDirectRcpStatementsForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetParentRcpStatementsForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetParentRcpStatementsForTarget("111111111111")
 	if stmts == nil {
@@ -493,6 +515,7 @@ func TestGetParentRcpStatementsForTarget(t *testing.T) {
 }
 
 func TestGetParentRcpStatementsForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	stmts := op.GetParentRcpStatementsForTarget("999999999999")
 	if stmts != nil {
@@ -501,6 +524,7 @@ func TestGetParentRcpStatementsForTarget_NotFound(t *testing.T) {
 }
 
 func TestGetAllRcpPoliciesForTarget(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	all := op.GetAllRcpPoliciesForTarget("111111111111")
 	if all == nil {
@@ -523,6 +547,7 @@ func TestGetAllRcpPoliciesForTarget(t *testing.T) {
 }
 
 func TestGetAllRcpPoliciesForTarget_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	all := op.GetAllRcpPoliciesForTarget("999999999999")
 	if all != nil {
@@ -531,6 +556,7 @@ func TestGetAllRcpPoliciesForTarget_NotFound(t *testing.T) {
 }
 
 func TestTargetHasParentAllowed_Found(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	result := op.TargetHasParentAllowed("111111111111")
 	// The function is a stub that always returns false
@@ -540,6 +566,7 @@ func TestTargetHasParentAllowed_Found(t *testing.T) {
 }
 
 func TestTargetHasParentAllowed_NotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	result := op.TargetHasParentAllowed("999999999999")
 	if result {
@@ -548,6 +575,7 @@ func TestTargetHasParentAllowed_NotFound(t *testing.T) {
 }
 
 func TestNewDefaultOrgPolicies(t *testing.T) {
+	t.Parallel()
 	op := NewDefaultOrgPolicies()
 	if op == nil {
 		t.Fatal("expected non-nil default OrgPolicies")
@@ -598,7 +626,10 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 }
 
 func TestGetDirectScpStatementsForTarget_NoDirectPolicies(t *testing.T) {
+	t.Parallel(
 	// OU target (r-root) has FullAWSAccess direct SCP
+	)
+
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectScpStatementsForTarget("r-root")
 	// r-root has no Account field, so GetPolicyForTarget won't find it (requires Account != nil)
@@ -611,6 +642,7 @@ func TestGetDirectScpStatementsForTarget_NoDirectPolicies(t *testing.T) {
 }
 
 func TestGetPolicyContent_RCPNotFound(t *testing.T) {
+	t.Parallel()
 	op := buildTestOrgPolicies()
 	content := op.GetPolicyContent("arn:aws:nonexistent", "rcps")
 	if content != nil {
@@ -619,6 +651,7 @@ func TestGetPolicyContent_RCPNotFound(t *testing.T) {
 }
 
 func TestEmptyOrgPolicies(t *testing.T) {
+	t.Parallel()
 	op := &OrgPolicies{
 		SCPs:    []PolicyData{},
 		RCPs:    []PolicyData{},
@@ -663,6 +696,7 @@ func TestEmptyOrgPolicies(t *testing.T) {
 }
 
 func TestStrPtr(t *testing.T) {
+	t.Parallel()
 	s := "hello"
 	ptr := strPtr(s)
 	if ptr == nil {

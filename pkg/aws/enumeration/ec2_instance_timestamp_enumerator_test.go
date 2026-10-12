@@ -42,6 +42,7 @@ func newEC2TimestampFixture(t *testing.T) (*fakeAWS, *SkipReport, *CloudControlT
 }
 
 func TestEC2InstanceTimestamp_EnumerateAllStampsEachInstanceWithItsLaunchTime(t *testing.T) {
+	t.Parallel()
 	fake, skipReport, enum := newEC2TimestampFixture(t)
 	fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-aaa"), ec2Instance("i-bbb"), ec2Instance("i-gone")))
 	// i-gone was terminated between the CloudControl list and DescribeInstances.
@@ -65,6 +66,7 @@ func TestEC2InstanceTimestamp_EnumerateAllStampsEachInstanceWithItsLaunchTime(t 
 }
 
 func TestEC2InstanceTimestamp_MissingLaunchTimeEmitsInstanceUnstamped(t *testing.T) {
+
 	logs := captureLogs(t)
 	fake, _, enum := newEC2TimestampFixture(t)
 	fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-nolaunch")))
@@ -87,6 +89,7 @@ func TestEC2InstanceTimestamp_MissingLaunchTimeEmitsInstanceUnstamped(t *testing
 }
 
 func TestEC2InstanceTimestamp_DescribeFailureLeavesInstancesUnstamped(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		code       string
@@ -98,6 +101,7 @@ func TestEC2InstanceTimestamp_DescribeFailureLeavesInstancesUnstamped(t *testing
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			fake, skipReport, enum := newEC2TimestampFixture(t)
 			fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-aaa"), ec2Instance("i-bbb")))
 			fake.fail("DescribeInstances", tc.statusCode, ec2Error(tc.code))
@@ -119,6 +123,7 @@ func TestEC2InstanceTimestamp_DescribeFailureLeavesInstancesUnstamped(t *testing
 }
 
 func TestEC2InstanceTimestamp_EnumerateByARNDescribesOnlyThatInstance(t *testing.T) {
+	t.Parallel()
 	fake, _, enum := newEC2TimestampFixture(t)
 	fake.reply("GetResource", ccGetResource("AWS::EC2::Instance", ec2Instance("i-aaa")))
 	fake.reply("DescribeInstances", ec2DescribeInstances(map[string]string{"i-aaa": "2026-05-05T05:05:05.000Z"}))

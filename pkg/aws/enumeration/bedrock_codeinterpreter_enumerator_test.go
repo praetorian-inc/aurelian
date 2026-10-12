@@ -10,6 +10,7 @@ import (
 )
 
 func TestBuildCodeInterpreterResource(t *testing.T) {
+	t.Parallel()
 	detail := &bedrockcc.GetCodeInterpreterOutput{
 		CodeInterpreterId:  aws.String("ci-abc123"),
 		CodeInterpreterArn: aws.String("arn:aws:bedrock-agentcore:us-east-1:123456789012:code-interpreter/ci-abc123"),
@@ -34,9 +35,12 @@ func TestBuildCodeInterpreterResource(t *testing.T) {
 }
 
 func TestBuildCodeInterpreterResourceNoRole(t *testing.T) {
+	t.Parallel(
 	// A code interpreter with no execution role emits an empty ExecutionRoleArn, the
 	// fail-closed case: resource_service_role.yaml will not match an empty string to any
 	// role ARN, so no HAS_ROLE edge is created.
+	)
+
 	detail := &bedrockcc.GetCodeInterpreterOutput{
 		CodeInterpreterId:  aws.String("ci-noroleid"),
 		CodeInterpreterArn: aws.String("arn:aws:bedrock-agentcore:us-west-2:123456789012:code-interpreter/ci-noroleid"),
@@ -49,7 +53,10 @@ func TestBuildCodeInterpreterResourceNoRole(t *testing.T) {
 }
 
 func TestBuildCodeInterpreterResourceNilArn(t *testing.T) {
+	t.Parallel(
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
+	)
+
 	detail := &bedrockcc.GetCodeInterpreterOutput{
 		CodeInterpreterId: aws.String("ci-noarn"),
 	}

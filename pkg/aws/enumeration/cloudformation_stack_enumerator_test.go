@@ -10,6 +10,7 @@ import (
 )
 
 func TestBuildStackResource(t *testing.T) {
+	t.Parallel()
 	created := time.Date(2026, time.August, 23, 12, 0, 0, 0, time.UTC)
 	updated := created.Add(time.Hour)
 	stack := cfntypes.Stack{
@@ -39,9 +40,12 @@ func TestBuildStackResource(t *testing.T) {
 }
 
 func TestBuildStackResourceNoRole(t *testing.T) {
+	t.Parallel(
 	// A roleless stack (runs as the caller's creds) emits an empty RoleARN, which is the
 	// fail-closed case: resource_service_role.yaml will not match an empty string to any
 	// role ARN, so no HAS_ROLE edge is created (correct — no inherited role to escalate to).
+	)
+
 	stack := cfntypes.Stack{
 		StackName: aws.String("roleless"),
 		StackId:   aws.String("arn:aws:cloudformation:us-west-2:123456789012:stack/roleless/def-456"),
@@ -55,8 +59,11 @@ func TestBuildStackResourceNoRole(t *testing.T) {
 }
 
 func TestBuildStackResourceNilStackId(t *testing.T) {
+	t.Parallel(
 	// DescribeStacks always returns StackId, but guard nil-safety: a missing StackId
 	// falls back to a synthesized ARN so the node still keys cleanly.
+	)
+
 	stack := cfntypes.Stack{
 		StackName: aws.String("no-id"),
 	}

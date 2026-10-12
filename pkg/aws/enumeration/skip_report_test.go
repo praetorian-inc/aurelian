@@ -15,6 +15,7 @@ import (
 )
 
 func TestSkipReport_Empty(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	assert.Equal(t, 0, r.Len())
 	assert.Empty(t, r.Snapshot())
@@ -22,6 +23,7 @@ func TestSkipReport_Empty(t *testing.T) {
 }
 
 func TestSkipReport_RecordTruncatesDetail(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	long := strings.Repeat("x", 600)
 	r.Record(SkippedOp{Region: "us-east-1", Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException", Detail: long})
@@ -32,6 +34,7 @@ func TestSkipReport_RecordTruncatesDetail(t *testing.T) {
 }
 
 func TestSkipReport_RecordBatch(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	ops := []SkippedOp{
 		{Region: "us-east-1", Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException"},
@@ -48,6 +51,7 @@ func TestSkipReport_RecordBatch(t *testing.T) {
 }
 
 func TestSkipReport_RecordBatch_Empty(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.RecordBatch(nil)
 	r.RecordBatch([]SkippedOp{})
@@ -55,6 +59,7 @@ func TestSkipReport_RecordBatch_Empty(t *testing.T) {
 }
 
 func TestSkipReport_ConcurrentRecord(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 
 	const goroutines = 20
@@ -80,6 +85,7 @@ func TestSkipReport_ConcurrentRecord(t *testing.T) {
 }
 
 func TestSkipReport_ConcurrentRecordBatch(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 
 	const goroutines = 20
@@ -106,6 +112,7 @@ func TestSkipReport_ConcurrentRecordBatch(t *testing.T) {
 
 // Summary: few regions — listed inline.
 func TestSkipReport_Summary_FewRegions(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.Record(SkippedOp{Region: "ap-northeast-3", Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException"})
 	r.Record(SkippedOp{Region: "eu-south-1", Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException"})
@@ -123,6 +130,7 @@ func TestSkipReport_Summary_FewRegions(t *testing.T) {
 
 // Summary: many regions — collapsed to count.
 func TestSkipReport_Summary_ManyRegions(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	for _, region := range []string{"us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1", "eu-central-1"} {
 		r.Record(SkippedOp{Region: region, Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException"})
@@ -135,6 +143,7 @@ func TestSkipReport_Summary_ManyRegions(t *testing.T) {
 
 // Summary: exactly at threshold — still listed inline.
 func TestSkipReport_Summary_ExactThreshold(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	for _, region := range []string{"us-east-1", "us-east-2", "us-west-1", "us-west-2", "eu-west-1"} {
 		r.Record(SkippedOp{Region: region, Service: "s3", Operation: "ListBuckets", ErrorCode: "AccessDenied"})
@@ -146,6 +155,7 @@ func TestSkipReport_Summary_ExactThreshold(t *testing.T) {
 
 // Summary: multiple error codes shown with counts.
 func TestSkipReport_Summary_MultipleCodes(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.Record(SkippedOp{Region: "us-east-1", Service: "iam", Operation: "ListRoles", ErrorCode: "AccessDenied"})
 	r.Record(SkippedOp{Region: "us-east-2", Service: "iam", Operation: "ListRoles", ErrorCode: "AccessDenied"})
@@ -158,6 +168,7 @@ func TestSkipReport_Summary_MultipleCodes(t *testing.T) {
 
 // Summary: single occurrence of a code omits the ×N suffix.
 func TestSkipReport_Summary_SingleCodeNoCount(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.Record(SkippedOp{Region: "us-east-1", Service: "ec2", Operation: "DescribeImages", ErrorCode: "OptInRequired"})
 
@@ -168,6 +179,7 @@ func TestSkipReport_Summary_SingleCodeNoCount(t *testing.T) {
 
 // Summary: tie between codes — both shown alphabetically.
 func TestSkipReport_Summary_CodeTieBothShown(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.Record(SkippedOp{Region: "us-east-1", Service: "iam", Operation: "ListRoles", ErrorCode: "OptInRequired"})
 	r.Record(SkippedOp{Region: "us-east-2", Service: "iam", Operation: "ListRoles", ErrorCode: "AccessDenied"})
@@ -178,6 +190,7 @@ func TestSkipReport_Summary_CodeTieBothShown(t *testing.T) {
 }
 
 func TestClassifySkippable_Skippable(t *testing.T) {
+	t.Parallel()
 	err := &fakeAPIError{code: "AccessDeniedException", msg: "denied"}
 	op := ClassifySkippable(err, "amplify", "ListApps", "us-east-1")
 
@@ -190,6 +203,7 @@ func TestClassifySkippable_Skippable(t *testing.T) {
 }
 
 func TestClassifySkippable_NonSkippable(t *testing.T) {
+	t.Parallel()
 	err := errors.New("network connection refused")
 	op := ClassifySkippable(err, "amplify", "ListApps", "us-east-1")
 
@@ -197,6 +211,7 @@ func TestClassifySkippable_NonSkippable(t *testing.T) {
 }
 
 func TestClassifySkippable_TruncatesDetail(t *testing.T) {
+	t.Parallel()
 	longMsg := strings.Repeat("x", 600)
 	err := &fakeAPIError{code: "AccessDeniedException", msg: longMsg}
 	op := ClassifySkippable(err, "amplify", "ListApps", "us-east-1")
@@ -207,6 +222,7 @@ func TestClassifySkippable_TruncatesDetail(t *testing.T) {
 
 // WriteDetailFile: creates JSON with all fields.
 func TestSkipReport_WriteDetailFile(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.Record(SkippedOp{
 		Region: "us-east-1", Service: "amplify", Operation: "ListApps",
@@ -236,6 +252,7 @@ func TestSkipReport_WriteDetailFile(t *testing.T) {
 
 // WriteDetailFile: all recorded ops appear in the file — no loss.
 func TestSkipReport_WriteDetailFile_Completeness(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 
 	// Record a mix of services, regions, codes to verify nothing is lost.
@@ -273,6 +290,7 @@ func TestSkipReport_WriteDetailFile_Completeness(t *testing.T) {
 
 // WriteDetailFile: concurrent writes then file — nothing lost.
 func TestSkipReport_WriteDetailFile_AfterConcurrentWrites(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 
 	const goroutines = 10
@@ -312,6 +330,7 @@ func TestSkipReport_WriteDetailFile_AfterConcurrentWrites(t *testing.T) {
 // WriteDetailFile and Summary must agree: the total count in the summary
 // header must equal the number of entries in the detail file.
 func TestSkipReport_DetailAndSummaryInSync(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	r.Record(SkippedOp{Region: "us-east-1", Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException", Detail: "d1"})
 	r.Record(SkippedOp{Region: "us-west-2", Service: "amplify", Operation: "ListApps", ErrorCode: "AccessDeniedException", Detail: "d2"})
@@ -356,6 +375,7 @@ func TestSkipReport_DetailAndSummaryInSync(t *testing.T) {
 
 // WriteDetailFile: no ops — no file created.
 func TestSkipReport_WriteDetailFile_Empty(t *testing.T) {
+	t.Parallel()
 	r := NewSkipReport()
 	dir := t.TempDir()
 	require.NoError(t, r.WriteDetailFile(dir))

@@ -10,6 +10,7 @@ import (
 )
 
 func TestFromUserDL(t *testing.T) {
+	t.Parallel()
 	baseUser := types.UserDetail{
 		Arn:      "arn:aws:iam::111122223333:user/alice",
 		UserName: "alice",
@@ -18,16 +19,19 @@ func TestFromUserDL(t *testing.T) {
 	}
 
 	t.Run("with explicit accountID", func(t *testing.T) {
+		t.Parallel()
 		result := FromUserDetail(baseUser, "999988887777")
 		assert.Equal(t, "999988887777", result.AccountRef)
 	})
 
 	t.Run("with empty accountID falls back to ARN", func(t *testing.T) {
+		t.Parallel()
 		result := FromUserDetail(baseUser, "")
 		assert.Equal(t, "111122223333", result.AccountRef)
 	})
 
 	t.Run("resource fields", func(t *testing.T) {
+		t.Parallel()
 		result := FromUserDetail(baseUser, "111122223333")
 		assert.Equal(t, "AWS::IAM::User", result.ResourceType)
 		assert.Equal(t, baseUser.Arn, result.ResourceID)
@@ -36,11 +40,13 @@ func TestFromUserDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to user", func(t *testing.T) {
+		t.Parallel()
 		result := FromUserDetail(baseUser, "")
 		assert.Equal(t, baseUser, result.OriginalData)
 	})
 
 	t.Run("with inline policies", func(t *testing.T) {
+		t.Parallel()
 		user := baseUser
 		user.UserPolicyList = []types.InlinePolicy{
 			{PolicyName: "inline1", PolicyDocument: types.Policy{Version: "2012-10-17"}},
@@ -51,6 +57,7 @@ func TestFromUserDL(t *testing.T) {
 	})
 
 	t.Run("with managed policies", func(t *testing.T) {
+		t.Parallel()
 		user := baseUser
 		user.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "ReadOnlyAccess", PolicyArn: "arn:aws:iam::aws:policy/ReadOnlyAccess"},
@@ -61,6 +68,7 @@ func TestFromUserDL(t *testing.T) {
 	})
 
 	t.Run("with permissions boundary", func(t *testing.T) {
+		t.Parallel()
 		user := baseUser
 		user.PermissionsBoundary = types.ManagedPolicy{
 			PolicyName: "Boundary",
@@ -73,6 +81,7 @@ func TestFromUserDL(t *testing.T) {
 	})
 
 	t.Run("with tags", func(t *testing.T) {
+		t.Parallel()
 		user := baseUser
 		user.Tags = []types.Tag{
 			{Key: "env", Value: "prod"},
@@ -85,6 +94,7 @@ func TestFromUserDL(t *testing.T) {
 	})
 
 	t.Run("with group memberships", func(t *testing.T) {
+		t.Parallel()
 		user := baseUser
 		user.GroupList = []string{"admins", "developers"}
 		result := FromUserDetail(user, "")
@@ -95,6 +105,7 @@ func TestFromUserDL(t *testing.T) {
 }
 
 func TestFromRoleDL(t *testing.T) {
+	t.Parallel()
 	stmts := types.PolicyStatementList{
 		{Effect: "Allow", Sid: "AllowAssumeRole"},
 	}
@@ -110,6 +121,7 @@ func TestFromRoleDL(t *testing.T) {
 	}
 
 	t.Run("resource fields and AccountRef parsed from ARN", func(t *testing.T) {
+		t.Parallel()
 		result := FromRoleDetail(baseRole)
 		assert.Equal(t, "AWS::IAM::Role", result.ResourceType)
 		assert.Equal(t, baseRole.Arn, result.ResourceID)
@@ -119,17 +131,20 @@ func TestFromRoleDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to role", func(t *testing.T) {
+		t.Parallel()
 		result := FromRoleDetail(baseRole)
 		assert.Equal(t, baseRole, result.OriginalData)
 	})
 
 	t.Run("with assume role policy", func(t *testing.T) {
+		t.Parallel()
 		result := FromRoleDetail(baseRole)
 		require.NotNil(t, result.AssumeRolePolicy)
 		assert.Equal(t, "2012-10-17", result.AssumeRolePolicy.Version)
 	})
 
 	t.Run("with inline policies", func(t *testing.T) {
+		t.Parallel()
 		role := baseRole
 		role.RolePolicyList = []types.InlinePolicy{
 			{PolicyName: "role-inline", PolicyDocument: types.Policy{Version: "2012-10-17"}},
@@ -140,6 +155,7 @@ func TestFromRoleDL(t *testing.T) {
 	})
 
 	t.Run("with managed policies", func(t *testing.T) {
+		t.Parallel()
 		role := baseRole
 		role.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "AdminAccess", PolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess"},
@@ -150,6 +166,7 @@ func TestFromRoleDL(t *testing.T) {
 	})
 
 	t.Run("with instance profiles", func(t *testing.T) {
+		t.Parallel()
 		role := baseRole
 		role.InstanceProfileList = []types.InstanceProfile{
 			{
@@ -163,6 +180,7 @@ func TestFromRoleDL(t *testing.T) {
 	})
 
 	t.Run("with permissions boundary", func(t *testing.T) {
+		t.Parallel()
 		role := baseRole
 		role.PermissionsBoundary = types.ManagedPolicy{
 			PolicyName: "RoleBoundary",
@@ -174,6 +192,7 @@ func TestFromRoleDL(t *testing.T) {
 	})
 
 	t.Run("with tags", func(t *testing.T) {
+		t.Parallel()
 		role := baseRole
 		role.Tags = []types.Tag{
 			{Key: "service", Value: "lambda"},
@@ -186,6 +205,7 @@ func TestFromRoleDL(t *testing.T) {
 }
 
 func TestFromGroupDL(t *testing.T) {
+	t.Parallel()
 	baseGroup := types.GroupDetail{
 		Arn:       "arn:aws:iam::111122223333:group/developers",
 		GroupName: "developers",
@@ -194,6 +214,7 @@ func TestFromGroupDL(t *testing.T) {
 	}
 
 	t.Run("resource fields", func(t *testing.T) {
+		t.Parallel()
 		result := FromGroupDetail(baseGroup)
 		assert.Equal(t, "AWS::IAM::Group", result.ResourceType)
 		assert.Equal(t, baseGroup.Arn, result.ResourceID)
@@ -203,11 +224,13 @@ func TestFromGroupDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to group", func(t *testing.T) {
+		t.Parallel()
 		result := FromGroupDetail(baseGroup)
 		assert.Equal(t, baseGroup, result.OriginalData)
 	})
 
 	t.Run("with inline policies", func(t *testing.T) {
+		t.Parallel()
 		group := baseGroup
 		group.GroupPolicyList = []types.InlinePolicy{
 			{PolicyName: "group-inline", PolicyDocument: types.Policy{Version: "2012-10-17"}},
@@ -218,6 +241,7 @@ func TestFromGroupDL(t *testing.T) {
 	})
 
 	t.Run("with managed policies", func(t *testing.T) {
+		t.Parallel()
 		group := baseGroup
 		group.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "ViewOnlyAccess", PolicyArn: "arn:aws:iam::aws:policy/ViewOnlyAccess"},
@@ -229,6 +253,7 @@ func TestFromGroupDL(t *testing.T) {
 }
 
 func TestFromPolicyDL(t *testing.T) {
+	t.Parallel()
 	basePolicy := types.ManagedPolicyDetail{
 		PolicyName:       "MyPolicy",
 		PolicyId:         "ANPA1234567890",
@@ -239,6 +264,7 @@ func TestFromPolicyDL(t *testing.T) {
 	}
 
 	t.Run("resource fields", func(t *testing.T) {
+		t.Parallel()
 		result := FromManagedPolicyDetail(basePolicy)
 		assert.Equal(t, "AWS::IAM::ManagedPolicy", result.ResourceType)
 		assert.Equal(t, basePolicy.Arn, result.ResourceID)
@@ -248,11 +274,13 @@ func TestFromPolicyDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to policy", func(t *testing.T) {
+		t.Parallel()
 		result := FromManagedPolicyDetail(basePolicy)
 		assert.Equal(t, basePolicy, result.OriginalData)
 	})
 
 	t.Run("with policy versions", func(t *testing.T) {
+		t.Parallel()
 		policy := basePolicy
 		policy.PolicyVersionList = []types.PolicyVersion{
 			{
@@ -276,7 +304,9 @@ func TestFromPolicyDL(t *testing.T) {
 }
 
 func TestDeduplicateByARN(t *testing.T) {
+	t.Parallel()
 	t.Run("duplicates removed", func(t *testing.T) {
+		t.Parallel()
 		entities := []output.AWSIAMResource{
 			{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice", DisplayName: "alice"}},
 			{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice", DisplayName: "alice-dup"}},
@@ -286,6 +316,7 @@ func TestDeduplicateByARN(t *testing.T) {
 	})
 
 	t.Run("first entry wins", func(t *testing.T) {
+		t.Parallel()
 		entities := []output.AWSIAMResource{
 			{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice", DisplayName: "first"}},
 			{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice", DisplayName: "second"}},
@@ -296,6 +327,7 @@ func TestDeduplicateByARN(t *testing.T) {
 	})
 
 	t.Run("empty ARN falls back to ResourceID for dedup key", func(t *testing.T) {
+		t.Parallel()
 		entities := []output.AWSIAMResource{
 			{AWSResource: output.AWSResource{ARN: "", ResourceID: "resource-1", DisplayName: "first"}},
 			{AWSResource: output.AWSResource{ARN: "", ResourceID: "resource-1", DisplayName: "second"}},
@@ -306,6 +338,7 @@ func TestDeduplicateByARN(t *testing.T) {
 	})
 
 	t.Run("no duplicates retains all", func(t *testing.T) {
+		t.Parallel()
 		entities := []output.AWSIAMResource{
 			{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice"}},
 			{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/bob"}},
@@ -316,12 +349,14 @@ func TestDeduplicateByARN(t *testing.T) {
 	})
 
 	t.Run("empty input returns empty result", func(t *testing.T) {
+		t.Parallel()
 		result := DeduplicateByARN([]output.AWSIAMResource{})
 		require.Empty(t, result)
 	})
 }
 
 func TestExtractResourceTags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		r    *output.AWSResource
@@ -402,6 +437,7 @@ func TestExtractResourceTags(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := extractResourceTags(tt.r)
 			assert.Equal(t, tt.want, got)
 		})

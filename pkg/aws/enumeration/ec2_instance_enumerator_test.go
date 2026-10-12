@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildInstanceResource(t *testing.T) {
+	t.Parallel()
 	instance := ec2types.Instance{
 		InstanceId: aws.String("i-0e2d24b9aec1606c2"),
 		State:      &ec2types.InstanceState{Name: ec2types.InstanceStateNameRunning},
@@ -33,6 +34,7 @@ func TestBuildInstanceResource(t *testing.T) {
 }
 
 func TestBuildInstanceResourceNilFields(t *testing.T) {
+	t.Parallel()
 	instance := ec2types.Instance{
 		InstanceId: aws.String("i-abc123"),
 	}

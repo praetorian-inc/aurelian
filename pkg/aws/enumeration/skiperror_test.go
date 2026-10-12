@@ -21,6 +21,7 @@ func (e *fakeAPIError) ErrorMessage() string          { return e.msg }
 func (e *fakeAPIError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
 func TestIsSkippableAWSError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -66,12 +67,14 @@ func TestIsSkippableAWSError(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, IsSkippableAWSError(tc.err))
 		})
 	}
 }
 
 func TestSkipReason(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -86,6 +89,7 @@ func TestSkipReason(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.want, SkipReason(tc.err))
 		})
 	}
@@ -94,8 +98,10 @@ func TestSkipReason(t *testing.T) {
 // TestFatalErrorCodes_AllBlocked ensures every code in fatalErrorCodes
 // is correctly blocked from being skipped.
 func TestFatalErrorCodes_AllBlocked(t *testing.T) {
+	t.Parallel()
 	for code := range fatalErrorCodes {
 		t.Run(code, func(t *testing.T) {
+			t.Parallel()
 			err := &fakeAPIError{code: code, msg: "test"}
 			assert.False(t, IsSkippableAWSError(err), "fatal code %q must NOT be skippable", code)
 		})

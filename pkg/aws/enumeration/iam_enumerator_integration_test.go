@@ -13,6 +13,7 @@ import (
 )
 
 func TestIAMEnumerator_Integration(t *testing.T) {
+	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -22,6 +23,7 @@ func TestIAMEnumerator_Integration(t *testing.T) {
 	}
 
 	t.Run("discovers IAM roles", func(t *testing.T) {
+		t.Parallel()
 		enumerator := NewEnumerator(opts)
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::Role", out)
@@ -46,6 +48,7 @@ func TestIAMEnumerator_Integration(t *testing.T) {
 	})
 
 	t.Run("discovers IAM policies", func(t *testing.T) {
+		t.Parallel()
 		enumerator := NewEnumerator(opts)
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::Policy", out)
@@ -65,6 +68,7 @@ func TestIAMEnumerator_Integration(t *testing.T) {
 	})
 
 	t.Run("discovers IAM users", func(t *testing.T) {
+		t.Parallel()
 		enumerator := NewEnumerator(opts)
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::User", out)
@@ -84,6 +88,7 @@ func TestIAMEnumerator_Integration(t *testing.T) {
 	})
 
 	t.Run("only enumerates once per lifetime", func(t *testing.T) {
+		t.Parallel()
 		enumerator := NewEnumerator(opts)
 
 		// First call — should return results
