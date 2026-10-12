@@ -23,7 +23,6 @@ import (
 // Lambda but denies Amplify and SSM. Sub-tests enumerate each type and
 // assert specific fixture resources by unique ID.
 func TestSkipResilience_RestrictedRole(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -34,7 +33,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	defer enumerator.Close()
 
 	t.Run("S3_allowed", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
@@ -43,7 +41,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("IAM_roles_allowed", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::Role", out)
 		})
@@ -52,7 +49,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("Lambda_allowed", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::Lambda::Function", out)
 		})
@@ -61,7 +57,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("EC2_instances_allowed", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::EC2::Instance", out)
 		})
@@ -70,7 +65,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("Amplify_denied", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::Amplify::App", out)
 		})
@@ -79,7 +73,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("SSM_denied", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::SSM::Document", out)
 		})
@@ -88,7 +81,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("EC2_images_allowed", func(t *testing.T) {
-		t.Parallel()
 		_, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::EC2::Image", out)
 		})
@@ -98,7 +90,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	// MixedPipeline: interleave allowed and denied types, assert every
 	// fixture resource survives. Fresh enumerator (IAM sync.Once).
 	t.Run("MixedPipeline_no_resource_loss", func(t *testing.T) {
-		t.Parallel()
 		mixedEnum := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
 		defer mixedEnum.Close()
 
@@ -138,7 +129,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("SkipReport_completeness", func(t *testing.T) {
-		t.Parallel()
 		snap := enumerator.Skipped.Snapshot()
 		require.NotEmpty(t, snap)
 
@@ -153,7 +143,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	t.Run("Summary_and_detail_file", func(t *testing.T) {
-		t.Parallel()
 		summary := enumerator.Skipped.Summary()
 		require.NotEmpty(t, summary)
 
@@ -174,7 +163,6 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 
 // TestSkipResilience_ByARN_Denied tests the by-ARN code path with a denied resource.
 func TestSkipResilience_ByARN_Denied(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -196,7 +184,6 @@ func TestSkipResilience_ByARN_Denied(t *testing.T) {
 
 // TestSkipResilience_ByARN_CloudControl tests CC GetResource by ARN (happy path).
 func TestSkipResilience_ByARN_CloudControl(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -219,7 +206,6 @@ func TestSkipResilience_ByARN_CloudControl(t *testing.T) {
 
 // TestSkipResilience_ByARN_MixedAllowDeny: pipeline of allowed + denied ARNs.
 func TestSkipResilience_ByARN_MixedAllowDeny(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -247,7 +233,6 @@ func TestSkipResilience_ByARN_MixedAllowDeny(t *testing.T) {
 
 // TestSkipResilience_MultiRegion: same type denied in all scanned regions.
 func TestSkipResilience_MultiRegion(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -287,7 +272,6 @@ func TestSkipResilience_MultiRegion(t *testing.T) {
 // TestSkipResilience_PerRegionDenial: mosaic role — different services denied
 // in different regions. All regions and deny mappings come from Terraform.
 func TestSkipResilience_PerRegionDenial(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -304,7 +288,6 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 
 	// S3: allowed everywhere — all fixture buckets must survive by ARN.
 	t.Run("S3_all_regions", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
@@ -315,7 +298,6 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 	// Amplify: denied in denyAmplifyRegion, allowed elsewhere.
 	// Fixture app is in primary region — should survive if primary != deny region.
 	t.Run("Amplify_mosaic", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::Amplify::App", out)
 		})
@@ -330,7 +312,6 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 	// Lambda: denied in denyLambdaRegion (primary). Functions from
 	// secondary + tertiary regions should survive.
 	t.Run("Lambda_mosaic", func(t *testing.T) {
-		t.Parallel()
 		lambdaEnum := newRestrictedEnumerator(t, fixture, roleARN)
 		defer lambdaEnum.Close()
 
@@ -366,7 +347,6 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 
 	// SkipReport: Amplify denied in denyAmplifyRegion only.
 	t.Run("SkipReport_mosaic", func(t *testing.T) {
-		t.Parallel()
 		snap := enumerator.Skipped.Snapshot()
 		type skipKey struct{ service, region string }
 		skips := make(map[skipKey]bool)
@@ -392,7 +372,6 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 
 // TestSkipResilience_MosaicPipeline: 4 types × all regions, mosaic deny.
 func TestSkipResilience_MosaicPipeline(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -444,7 +423,6 @@ func TestSkipResilience_MosaicPipeline(t *testing.T) {
 
 // TestSkipResilience_PartialEC2Access: DescribeImages allowed, DescribeImageAttribute denied.
 func TestSkipResilience_PartialEC2Access(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -505,7 +483,6 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 // "correct pattern in dead code" and runtime wiring failures that
 // static analysis can't detect.
 func TestSkipResilience_WiringCheck(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -525,7 +502,6 @@ func TestSkipResilience_WiringCheck(t *testing.T) {
 	for i, resourceType := range resourceTypes {
 		expectedService := expectedServices[i]
 		t.Run(expectedService, func(t *testing.T) {
-			t.Parallel()
 			results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 				return enumerator.List(resourceType, out)
 			})
@@ -565,7 +541,6 @@ func TestSkipResilience_WiringCheck(t *testing.T) {
 // path than IAM-based deny — the error comes from the resource policy, not
 // the identity policy.
 func TestSkipResilience_ResourcePolicyDeny(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
@@ -580,7 +555,6 @@ func TestSkipResilience_ResourcePolicyDeny(t *testing.T) {
 
 	// By-ARN: HeadBucket is denied by bucket policy. Should skip, not abort.
 	t.Run("ByARN_bucket_policy_deny", func(t *testing.T) {
-		t.Parallel()
 		bucketARNForList := "arn:aws:s3:::" + policyDeniedBucketName
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List(bucketARNForList, out)
@@ -594,7 +568,6 @@ func TestSkipResilience_ResourcePolicyDeny(t *testing.T) {
 	// This proves that resource-policy deny only affects per-bucket ops,
 	// not the list.
 	t.Run("ListBuckets_still_returns_policy_denied_bucket", func(t *testing.T) {
-		t.Parallel()
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
@@ -611,7 +584,6 @@ func TestSkipResilience_ResourcePolicyDeny(t *testing.T) {
 
 // TestSkipResilience_CloseWritesDetailFile: defer Close() writes detail file with real errors.
 func TestSkipResilience_CloseWritesDetailFile(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
