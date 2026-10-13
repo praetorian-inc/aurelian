@@ -14,7 +14,9 @@ import (
 
 // erroringInput returns a pipeline that emits n items and then closes with err.
 // Merge's forwarder observes that error via p.Wait() and performs the
-// errOnce.Do(func() { out.err = err }) write under test.
+// errOnce.Do(func() { firstErr = err }) write under test — a write to Merge's
+// local firstErr, not to out.err. Publication of out.err happens later, in the
+// closer goroutine.
 func erroringInput(n int, err error) *P[int] {
 	p := New[int]()
 	go func() {
@@ -37,16 +39,28 @@ func goodInput(n int) *P[int] {
 	return p
 }
 
-// TestMerge_ErrorWriteRacesConcurrentWaiters hammers the happens-before edge
-// that Merge relies on to publish out.err:
+// TestMerge_ErrorWriteRacesConcurrentWaiters hammers the two happens-before
+// edges Merge chains together to get an input error out to a reader:
 //
-//	forwarder writes out.err -> wg.Done() -> wg.Wait() returns ->
-//	out.Close() -> close(out.done) -> reader's Wait() returns -> reads out.err
+//	forwarder writes firstErr (inside errOnce.Do) -> wg.Done() ->
+//	wg.Wait() returns -> closer reads firstErr -> publishStageErr ->
+//	closeWithError sets out.err inside out.closeOnce.Do -> close(out.done) ->
+//	reader's Wait() returns -> reads out.err
+//
+// The two edges are distinct and both are load-bearing:
+//
+//   - The WaitGroup edge (every forwarder's wg.Done() happens-before the
+//     closer's wg.Wait() returning) is what orders the forwarders' writes to
+//     Merge's local firstErr against the closer's single read of it.
+//   - The closeOnce edge (out.err is assigned inside out.closeOnce.Do, before
+//     close(out.done)) is what orders that assignment against every reader's
+//     read of out.err after its Wait() observes the closed done channel.
 //
 // Many concurrent readers block in merged.Wait() while a separate goroutine
 // drains the merged channel, so every reader's read of out.err is released at
-// the same instant the closer publishes. If the WaitGroup edge did not exist,
-// -race would flag the write/read pair.
+// the same instant the closer publishes. If either edge were absent -race
+// would flag the corresponding write/read pair: the forwarder/closer pair on
+// firstErr, or the closer/reader pair on out.err.
 func TestMerge_ErrorWriteRacesConcurrentWaiters(t *testing.T) {
 	sentinel := errors.New("input failure")
 
