@@ -31,10 +31,9 @@ func TestBuildECSClusterResource(t *testing.T) {
 }
 
 func TestBuildECSClusterResourceNameFromARN(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// DescribeClusters omitted ClusterName: the name is recovered from the ARN so the
 	// ResourceID still matches the cluster/<name> scope an attacker policy targets.
-	)
 
 	c := &ecstypes.Cluster{
 		ClusterArn: aws.String("arn:aws:ecs:eu-west-1:123456789012:cluster/inferred-name"),
@@ -49,9 +48,8 @@ func TestBuildECSClusterResourceNameFromARN(t *testing.T) {
 }
 
 func TestBuildECSClusterResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form keyed on the name.
-	)
 
 	c := &ecstypes.Cluster{
 		ClusterName: aws.String("no-arn-cluster"),
@@ -65,9 +63,8 @@ func TestBuildECSClusterResourceNilArn(t *testing.T) {
 }
 
 func TestBuildECSClusterResourceEmptyFields(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// All-empty cluster: no panic, empty ID/ARN, empty property values.
-	)
 
 	c := &ecstypes.Cluster{}
 

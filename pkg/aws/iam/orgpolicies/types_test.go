@@ -626,9 +626,8 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 }
 
 func TestGetDirectScpStatementsForTarget_NoDirectPolicies(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// OU target (r-root) has FullAWSAccess direct SCP
-	)
 
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectScpStatementsForTarget("r-root")

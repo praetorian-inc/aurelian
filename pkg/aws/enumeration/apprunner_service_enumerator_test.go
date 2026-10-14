@@ -34,10 +34,9 @@ func TestBuildAppRunnerServiceResource(t *testing.T) {
 }
 
 func TestBuildAppRunnerServiceResourceNilInstanceConfig(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A service with no InstanceConfiguration must not panic and emits an empty role
 	// (the default App Runner instance role is implicit, not surfaced — fail-closed).
-	)
 
 	service := &apprunnertypes.Service{
 		ServiceName: aws.String("no-config-svc"),
@@ -52,9 +51,8 @@ func TestBuildAppRunnerServiceResourceNilInstanceConfig(t *testing.T) {
 }
 
 func TestBuildAppRunnerServiceResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
-	)
 
 	service := &apprunnertypes.Service{
 		ServiceName: aws.String("no-arn-svc"),

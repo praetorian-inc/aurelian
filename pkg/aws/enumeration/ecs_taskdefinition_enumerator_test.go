@@ -59,10 +59,9 @@ func TestBuildECSTaskDefinitionResource(t *testing.T) {
 }
 
 func TestBuildECSTaskDefinitionResourceNoTaskRole(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A task definition with only an execution role leaves TaskRoleArn nil, so it
 	// cannot match a role ARN, while the populated ExecutionRoleArn still matches.
-	)
 
 	td := &ecstypes.TaskDefinition{
 		Family:            aws.String("exec-only"),
@@ -78,9 +77,8 @@ func TestBuildECSTaskDefinitionResourceNoTaskRole(t *testing.T) {
 }
 
 func TestBuildECSTaskDefinitionResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form keyed on the family.
-	)
 
 	td := &ecstypes.TaskDefinition{
 		Family: aws.String("no-arn-task"),

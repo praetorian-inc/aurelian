@@ -35,9 +35,8 @@ func TestBuildSFNStateMachineResource(t *testing.T) {
 }
 
 func TestBuildSFNStateMachineResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
-	)
 
 	detail := &sfn.DescribeStateMachineOutput{
 		Name:    aws.String("no-arn-sm"),

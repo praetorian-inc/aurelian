@@ -31,9 +31,8 @@ func TestBuildSageMakerNotebookInstanceResource(t *testing.T) {
 }
 
 func TestBuildSageMakerNotebookInstanceResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
-	)
 
 	detail := &sagemaker.DescribeNotebookInstanceOutput{
 		NotebookInstanceName: aws.String("no-arn-nb"),
@@ -48,9 +47,8 @@ func TestBuildSageMakerNotebookInstanceResourceNilArn(t *testing.T) {
 }
 
 func TestBuildSageMakerNotebookInstanceResourceNilRole(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A nil RoleArn must not panic and emits an empty value (fail-closed).
-	)
 
 	detail := &sagemaker.DescribeNotebookInstanceOutput{
 		NotebookInstanceName: aws.String("no-role-nb"),

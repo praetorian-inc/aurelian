@@ -34,9 +34,8 @@ func TestBuildStackSetResource(t *testing.T) {
 }
 
 func TestBuildStackSetResourceNoRole(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A service-managed stack set has no administration role — fail-closed: no ARN to match, no edge.
-	)
 
 	stackSet := &cfntypes.StackSet{
 		StackSetName: aws.String("service-managed"),
@@ -51,9 +50,8 @@ func TestBuildStackSetResourceNoRole(t *testing.T) {
 }
 
 func TestBuildStackSetResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
-	)
 
 	stackSet := &cfntypes.StackSet{
 		StackSetName:          aws.String("no-arn-ss"),

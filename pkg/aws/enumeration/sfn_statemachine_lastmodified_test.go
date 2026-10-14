@@ -228,7 +228,6 @@ func TestSFNStateMachineLastModified_NoExecutionsFallsBackToCreationDate(t *test
 }
 
 func TestSFNStateMachineLastModified_MissingContractedFieldEmitsStateMachineUnstamped(t *testing.T) {
-
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 
 	tests := []struct {

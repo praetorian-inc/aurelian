@@ -31,9 +31,8 @@ func TestBuildCodeBuildProjectResource(t *testing.T) {
 }
 
 func TestBuildCodeBuildProjectResourceNoRole(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A roleless project emits an empty ServiceRole — fail-closed: no ARN to match, no edge.
-	)
 
 	project := codebuildtypes.Project{
 		Name: aws.String("roleless"),
@@ -47,9 +46,8 @@ func TestBuildCodeBuildProjectResourceNoRole(t *testing.T) {
 }
 
 func TestBuildCodeBuildProjectResourceNilArn(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
-	)
 
 	project := codebuildtypes.Project{
 		Name: aws.String("no-arn"),

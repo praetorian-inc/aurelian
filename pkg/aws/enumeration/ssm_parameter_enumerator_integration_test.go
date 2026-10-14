@@ -82,9 +82,8 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	})
 
 	t.Run("EnumerateByARN filters SecureString", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// Build the SecureString ARN from the String param ARN (same account + region).
-		)
 
 		parsed, err := awsarn.Parse(paramARN)
 		require.NoError(t, err)

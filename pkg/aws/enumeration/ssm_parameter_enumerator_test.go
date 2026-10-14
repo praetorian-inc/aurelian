@@ -60,9 +60,8 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	})
 
 	t.Run("non-parameter resource returns error", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// Valid SSM ARN but resource type is "document/", not "parameter/"
-		)
 
 		err := enum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:document/MyDoc", out)
 		require.Error(t, err)
@@ -70,9 +69,8 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	})
 
 	t.Run("ARN missing region returns error", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// Construct a valid ARN with empty region
-		)
 
 		err := enum.EnumerateByARN("arn:aws:ssm::123456789012:parameter/my-param", out)
 		require.Error(t, err)
@@ -80,10 +78,9 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	})
 
 	t.Run("SecureString parameter is filtered", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// Inject a fake HTTP transport so DescribeParameters returns a SecureString parameter
 		// without hitting real AWS. The provider.configs map is package-internal and accessible here.
-		)
 
 		body := `{"Parameters":[{"Name":"/prefix/secure-param","Type":"SecureString","Tier":"Standard","DataType":"text"}]}`
 		fakeCfg := aws.Config{
@@ -105,9 +102,8 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	})
 
 	t.Run("parameter with empty name is skipped", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// AWS always populates Name, but guard against a nil pointer returning "".
-		)
 
 		body := `{"Parameters":[{"Type":"String","Tier":"Standard"}]}`
 		fakeCfg := aws.Config{

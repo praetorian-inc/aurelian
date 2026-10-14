@@ -66,7 +66,6 @@ func TestEC2InstanceTimestamp_EnumerateAllStampsEachInstanceWithItsLaunchTime(t 
 }
 
 func TestEC2InstanceTimestamp_MissingLaunchTimeEmitsInstanceUnstamped(t *testing.T) {
-
 	logs := captureLogs(t)
 	fake, _, enum := newEC2TimestampFixture(t)
 	fake.reply("ListResources", ccListResources("AWS::EC2::Instance", ec2Instance("i-nolaunch")))

@@ -24,9 +24,8 @@ func (e *ccTestSmithyError) ErrorMessage() string          { return e.msg }
 func (e *ccTestSmithyError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
 func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// A mock enumerator that returns a skippable error from EnumerateByARN.
-	)
 
 	mock := &mockResourceEnumerator{
 		resourceType:      "AWS::Lambda::Function",

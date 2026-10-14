@@ -1273,9 +1273,8 @@ func TestEvaluateConditions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel(
+			t.Parallel()
 			//tc.context.PopulateDefaultRequestConditionKeys("arn:aws:iam::123456789012:role/test-role")
-			)
 
 			result := EvaluateConditions(tc.conditions, tc.context)
 			if result.Result != tc.expected.Result {
@@ -1300,10 +1299,9 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	}
 
 	t.Run("missing key is inconclusive and allowed (fallback)", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// No PassedToServices in context. Must be satisfiable so the
 		// IAM_PASSROLE edge is built, not failed closed.
-		)
 
 		result := EvaluateConditions(
 			passedToService("StringEquals", "lambda.amazonaws.com"),
@@ -1333,10 +1331,9 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("populated trusted services match is allowed (precise)", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// Principled path: the role trusts lambda and the policy allows pass-to
 		// lambda, so the condition matches exactly.
-		)
 
 		result := EvaluateConditions(
 			passedToService("ForAnyValue:StringEquals", "lambda.amazonaws.com"),
@@ -1354,10 +1351,9 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("populated trusted services mismatch is failed (FP guard)", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// Principled path: the policy allows pass-to ec2 but the role trusts only
 		// lambda, so the pass is not usable and the condition must fail.
-		)
 
 		result := EvaluateConditions(
 			passedToService("ForAnyValue:StringEquals", "ec2.amazonaws.com"),
@@ -1375,10 +1371,9 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("unrelated missing non-critical key still fails closed (regression)", func(t *testing.T) {
-		t.Parallel(
+		t.Parallel()
 		// The permissive default must be scoped to PassRole keys only; an
 		// unrelated non-critical missing key must keep failing closed.
-		)
 
 		result := EvaluateConditions(
 			&types.Condition{

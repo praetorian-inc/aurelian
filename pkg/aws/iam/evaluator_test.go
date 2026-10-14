@@ -111,9 +111,8 @@ func TestPolicyEvaluator_ExplicitDenyOverridesAllow(t *testing.T) {
 }
 
 func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Identity policy allows S3 and EC2
-	)
 
 	identityStatements := &types.PolicyStatementList{
 		{
@@ -329,9 +328,8 @@ func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_ResourceControlPolicy(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Set up same policies but add debug prints
-	)
 
 	identityStatements := &types.PolicyStatementList{
 		{
@@ -527,9 +525,8 @@ func TestPolicyEvaluator_ResourceBasedPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Create OrgPolicies structure with both allow and deny statements
-	)
 
 	orgPolicies := &orgpolicies.OrgPolicies{
 		SCPs: []orgpolicies.PolicyData{
@@ -694,9 +691,8 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Create OrgPolicies structure with region guardrails
-	)
 
 	orgPolicies := &orgpolicies.OrgPolicies{
 		SCPs: []orgpolicies.PolicyData{
@@ -979,9 +975,8 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SNSResourcePolicy(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Create the SNS resource policy
-	)
 
 	rawPolicy := `{
   "Version": "2008-10-17",
@@ -1132,9 +1127,8 @@ func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Create OrgPolicies structure with deny bedrock:* policy
-	)
 
 	orgPolicies := &orgpolicies.OrgPolicies{
 		SCPs: []orgpolicies.PolicyData{

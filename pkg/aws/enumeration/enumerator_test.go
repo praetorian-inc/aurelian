@@ -402,9 +402,8 @@ func TestEnumerator_Close_EmptyOutputDir_NoFile(t *testing.T) {
 // IAM sync.Once denial: if IAM is denied, the cached error should be caught
 // by the dispatcher safety net on every subsequent List call for IAM types.
 func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Simulate an IAM sub-enumerator that returns AccessDeniedException.
-	)
 
 	denied := &mockResourceEnumerator{
 		resourceType:    "AWS::IAM::Role",

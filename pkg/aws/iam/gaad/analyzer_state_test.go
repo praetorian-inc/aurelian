@@ -434,9 +434,8 @@ func TestExtractActions_MultipleStatements(t *testing.T) {
 }
 
 func TestExtractActions_NilActionField(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Statement with no Action field (e.g., NotAction-only)
-	)
 
 	resource := types.DynaString{"*"}
 	notAction := types.DynaString{"iam:*"}
@@ -450,11 +449,10 @@ func TestExtractActions_NilActionField(t *testing.T) {
 }
 
 func TestExtractActions_WildcardAction(t *testing.T) {
-	t.Parallel(
+	t.Parallel()
 	// Wildcard actions like "iam:*" are expanded by the ActionExpander
 	// which fetches from the embedded action list. We test that it returns
 	// expanded actions.
-	)
 
 	action := types.DynaString{"iam:*"}
 	resource := types.DynaString{"*"}
