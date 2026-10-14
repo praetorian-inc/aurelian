@@ -7,7 +7,6 @@ import (
 )
 
 func TestAllExtractorsRegistered(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		resourceType  string
 		expectedNames []string
@@ -38,7 +37,6 @@ func TestAllExtractorsRegistered(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.resourceType, func(t *testing.T) {
-			t.Parallel()
 			extractors := getExtractors(tt.resourceType)
 			assert.NotEmpty(t, extractors, "expected extractors registered for %s", tt.resourceType)
 			names := make(map[string]bool, len(extractors))
@@ -53,7 +51,6 @@ func TestAllExtractorsRegistered(t *testing.T) {
 }
 
 func TestExtractDiagnostics_NotRegistered(t *testing.T) {
-	t.Parallel()
 	var fn extractorFunc = extractDiagnosticSettings
 	assert.NotNil(t, fn, "extractDiagnosticSettings should be a valid extractorFunc")
 }

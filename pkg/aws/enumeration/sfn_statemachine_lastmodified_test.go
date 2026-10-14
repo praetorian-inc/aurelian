@@ -145,7 +145,6 @@ func byARN(resources []output.AWSResource) map[string]output.AWSResource {
 }
 
 func TestSFNStateMachineLastModified_UsesLaterOfNewestExecutionStartAndStop(t *testing.T) {
-	t.Parallel()
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	stop := time.Date(2026, 9, 1, 11, 30, 0, 0, time.UTC)
 	redriven := time.Date(2026, 9, 2, 8, 15, 0, 0, time.UTC)
@@ -175,7 +174,6 @@ func TestSFNStateMachineLastModified_UsesLaterOfNewestExecutionStartAndStop(t *t
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			fake, _, enum := newSFNFixture(t)
 			fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders))
 			fake.reply("DescribeStateMachine", sfnDescribe(sfnOrders, epoch(created)))
@@ -201,7 +199,6 @@ func TestSFNStateMachineLastModified_UsesLaterOfNewestExecutionStartAndStop(t *t
 }
 
 func TestSFNStateMachineLastModified_NoExecutionsFallsBackToCreationDate(t *testing.T) {
-	t.Parallel()
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
 	start := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 
@@ -311,7 +308,6 @@ func TestSFNStateMachineLastModified_MissingFieldIsIsolatedToThatResource(t *tes
 }
 
 func TestSFNStateMachineLastModified_ListExecutionsFailureLeavesStateMachineUnstamped(t *testing.T) {
-	t.Parallel()
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
 
 	tests := []struct {
@@ -324,7 +320,6 @@ func TestSFNStateMachineLastModified_ListExecutionsFailureLeavesStateMachineUnst
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			fake, skipReport, enum := newSFNFixture(t)
 			fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders))
 			fake.reply("DescribeStateMachine", sfnDescribe(sfnOrders, epoch(created)))

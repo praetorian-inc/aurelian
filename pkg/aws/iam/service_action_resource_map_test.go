@@ -7,7 +7,6 @@ import (
 )
 
 func TestIsValidActionForResource(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		name     string
 		action   string
@@ -138,7 +137,6 @@ func TestIsValidActionForResource(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			result := IsValidActionForResource(tc.action, tc.resource)
 			if result != tc.expected {
 				t.Errorf("Expected %v, but got %v for action %v and resource %v", tc.expected, result, tc.action, tc.resource)
@@ -147,7 +145,6 @@ func TestIsValidActionForResource(t *testing.T) {
 	}
 }
 func TestGetResourcePatternsFromAction(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		name     string
 		action   string
@@ -208,7 +205,6 @@ func TestGetResourcePatternsFromAction(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			result := GetResourcePatternsFromAction(Action(tc.action))
 			if !equalSlices(result, tc.expected) {
 				t.Errorf("Expected %v, but got %v for action %v", tc.expected, result, tc.action)
@@ -230,7 +226,6 @@ func equalSlices(a, b []*regexp.Regexp) bool {
 }
 
 func TestResourcePatterns(t *testing.T) {
-	t.Parallel()
 	resources := []string{
 		"arn:aws:iam::123456789012:role/test",
 		"arn:aws:iam::aws:policy/AdministratorAccess",
@@ -270,7 +265,6 @@ func TestResourcePatterns(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			patterns := GetResourcePatternsFromAction(Action(tc.action))
 			t.Logf("Patterns: %v", patterns)
 			matched := []string{}

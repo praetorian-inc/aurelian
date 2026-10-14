@@ -8,7 +8,6 @@ import (
 )
 
 func TestExtractTags_NonEmpty(t *testing.T) {
-	t.Parallel()
 	r := output.AzureResource{
 		ResourceID:     "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1",
 		ResourceType:   "microsoft.compute/virtualmachines",
@@ -36,7 +35,6 @@ func TestExtractTags_NonEmpty(t *testing.T) {
 }
 
 func TestExtractTags_Empty(t *testing.T) {
-	t.Parallel()
 	r := output.AzureResource{
 		ResourceID: "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1",
 		Tags:       nil,

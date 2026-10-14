@@ -8,7 +8,6 @@ import (
 )
 
 func TestScanInputFromAzureResource(t *testing.T) {
-	t.Parallel()
 
 	r := AzureResource{
 		ResourceID:     "/subscriptions/sub-123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
@@ -28,7 +27,6 @@ func TestScanInputFromAzureResource(t *testing.T) {
 }
 
 func TestAWSResourceAccessLevelJSONSerialization(t *testing.T) {
-	t.Parallel()
 
 	resource := AWSResource{ResourceType: "AWS::S3::Bucket", ResourceID: "x", AccountRef: "123", AccessLevel: AccessLevelPublic}
 	data, err := json.Marshal(resource)

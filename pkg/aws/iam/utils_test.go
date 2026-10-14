@@ -11,7 +11,6 @@ import (
 )
 
 func TestActionService(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name   string
 		action Action
@@ -41,7 +40,6 @@ func TestActionService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got := tt.action.Service()
 			assert.Equal(t, tt.want, got)
 		})
@@ -49,9 +47,7 @@ func TestActionService(t *testing.T) {
 }
 
 func TestLoadJSONFile(t *testing.T) {
-	t.Parallel()
 	t.Run("valid JSON file", func(t *testing.T) {
-		t.Parallel()
 		type TestStruct struct {
 			Name  string `json:"name"`
 			Value int    `json:"value"`
@@ -70,7 +66,6 @@ func TestLoadJSONFile(t *testing.T) {
 	})
 
 	t.Run("file not found", func(t *testing.T) {
-		t.Parallel()
 		type TestStruct struct {
 			Name string `json:"name"`
 		}
@@ -82,7 +77,6 @@ func TestLoadJSONFile(t *testing.T) {
 	})
 
 	t.Run("invalid JSON", func(t *testing.T) {
-		t.Parallel()
 		type TestStruct struct {
 			Name string `json:"name"`
 		}
@@ -100,7 +94,6 @@ func TestLoadJSONFile(t *testing.T) {
 }
 
 func TestGetAccountFromArn(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name       string
 		arnStr     string
@@ -130,7 +123,6 @@ func TestGetAccountFromArn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			accountID := getAccountFromArn(tt.arnStr)
 			assert.Equal(t, tt.expectedID, accountID)
 		})
@@ -138,7 +130,6 @@ func TestGetAccountFromArn(t *testing.T) {
 }
 
 func TestDeepCopy(t *testing.T) {
-	t.Parallel()
 	type SampleStruct struct {
 		Field1 string
 		Field2 int
@@ -186,7 +177,6 @@ func TestDeepCopy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			err := deepCopy(tt.src, tt.dst)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -199,7 +189,6 @@ func TestDeepCopy(t *testing.T) {
 }
 
 func TestGetIdentifierForEvalRequest(t *testing.T) {
-	t.Parallel()
 	cfErd := types.NewEnrichedResourceDescription(
 		"cloudformation.amazonaws.com",
 		"AWS::Service",
@@ -228,7 +217,6 @@ func TestGetIdentifierForEvalRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			result := getIdentifierForEvalRequest(tt.erd)
 			assert.Equal(t, tt.expected, result)
 		})

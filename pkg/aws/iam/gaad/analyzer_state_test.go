@@ -122,7 +122,6 @@ func testGAAD() *types.AuthorizationAccountDetails {
 // ---------------------------------------------------------------------------
 
 func TestNewAnalyzerMemoryState(t *testing.T) {
-	t.Parallel()
 	gaad := testGAAD()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 	resources := []output.AWSResource{
@@ -148,7 +147,6 @@ func TestNewAnalyzerMemoryState(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetPolicyByArn_Found(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	policy := state.GetPolicyByArn("arn:aws:iam::111122223333:policy/PassRolePolicy")
 	require.NotNil(t, policy)
@@ -156,7 +154,6 @@ func TestGetPolicyByArn_Found(t *testing.T) {
 }
 
 func TestGetPolicyByArn_NotFound(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	policy := state.GetPolicyByArn("arn:aws:iam::111122223333:policy/DoesNotExist")
 	assert.Nil(t, policy)
@@ -167,7 +164,6 @@ func TestGetPolicyByArn_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetRole_Found(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	role := state.GetRole("arn:aws:iam::111122223333:role/test-role")
 	require.NotNil(t, role)
@@ -175,7 +171,6 @@ func TestGetRole_Found(t *testing.T) {
 }
 
 func TestGetRole_NotFound(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	role := state.GetRole("arn:aws:iam::111122223333:role/nonexistent")
 	assert.Nil(t, role)
@@ -186,7 +181,6 @@ func TestGetRole_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetUser_Found(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	user := state.GetUser("arn:aws:iam::111122223333:user/alice")
 	require.NotNil(t, user)
@@ -194,7 +188,6 @@ func TestGetUser_Found(t *testing.T) {
 }
 
 func TestGetUser_NotFound(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	user := state.GetUser("arn:aws:iam::111122223333:user/nonexistent")
 	assert.Nil(t, user)
@@ -205,7 +198,6 @@ func TestGetUser_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetGroupByName_Found(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	group := state.GetGroupByName("developers")
 	require.NotNil(t, group)
@@ -213,7 +205,6 @@ func TestGetGroupByName_Found(t *testing.T) {
 }
 
 func TestGetGroupByName_NotFound(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	group := state.GetGroupByName("nonexistent-group")
 	assert.Nil(t, group)
@@ -224,7 +215,6 @@ func TestGetGroupByName_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetResource_CloudResource(t *testing.T) {
-	t.Parallel()
 	resources := []output.AWSResource{
 		{
 			ResourceType: "AWS::S3::Bucket",
@@ -241,7 +231,6 @@ func TestGetResource_CloudResource(t *testing.T) {
 }
 
 func TestGetResource_IAMRole(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	// IAM entities from GAAD are added to the resource cache
@@ -251,7 +240,6 @@ func TestGetResource_IAMRole(t *testing.T) {
 }
 
 func TestGetResource_IAMUser(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	r := state.GetResource("arn:aws:iam::111122223333:user/alice")
 	require.NotNil(t, r)
@@ -259,7 +247,6 @@ func TestGetResource_IAMUser(t *testing.T) {
 }
 
 func TestGetResource_IAMGroup(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	r := state.GetResource("arn:aws:iam::111122223333:group/developers")
 	require.NotNil(t, r)
@@ -267,7 +254,6 @@ func TestGetResource_IAMGroup(t *testing.T) {
 }
 
 func TestGetResource_IAMPolicy(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	r := state.GetResource("arn:aws:iam::111122223333:policy/PassRolePolicy")
 	require.NotNil(t, r)
@@ -275,7 +261,6 @@ func TestGetResource_IAMPolicy(t *testing.T) {
 }
 
 func TestGetResource_Attacker(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	r := state.GetResource("attacker")
 	require.NotNil(t, r)
@@ -284,7 +269,6 @@ func TestGetResource_Attacker(t *testing.T) {
 }
 
 func TestGetResource_Service(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	// Services are added by addServicesToResourceCache
@@ -295,14 +279,12 @@ func TestGetResource_Service(t *testing.T) {
 }
 
 func TestGetResource_NotFound(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	r := state.GetResource("arn:aws:s3:::nonexistent-bucket")
 	assert.Nil(t, r)
 }
 
 func TestGetResource_FallbackToResourceID(t *testing.T) {
-	t.Parallel()
 	resources := []output.AWSResource{
 		{
 			ResourceType: "AWS::Custom::Thing",
@@ -327,7 +309,6 @@ func TestGetResource_FallbackToResourceID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetResourceDetails_Found(t *testing.T) {
-	t.Parallel()
 	resources := []output.AWSResource{
 		{
 			ResourceType: "AWS::S3::Bucket",
@@ -349,7 +330,6 @@ func TestGetResourceDetails_Found(t *testing.T) {
 }
 
 func TestGetResourceDetails_NotFoundFallsBackToARNParsing(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	accountID, tags := state.GetResourceDetails("arn:aws:iam::999988887777:role/some-role")
@@ -358,7 +338,6 @@ func TestGetResourceDetails_NotFoundFallsBackToARNParsing(t *testing.T) {
 }
 
 func TestGetResourceDetails_InvalidARN(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	accountID, tags := state.GetResourceDetails("not-an-arn")
@@ -367,7 +346,6 @@ func TestGetResourceDetails_InvalidARN(t *testing.T) {
 }
 
 func TestGetResourceDetails_ServiceARN(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	// Services like "lambda.amazonaws.com" are stored by both the service name and the generated ARN
@@ -381,7 +359,6 @@ func TestGetResourceDetails_ServiceARN(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetResourcesByAction_IAMPassRole(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	// iam:PassRole should match IAM role resources
@@ -402,7 +379,6 @@ func TestGetResourcesByAction_IAMPassRole(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExtractActions_SpecificAction(t *testing.T) {
-	t.Parallel()
 	action := types.DynaString{"iam:PassRole"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{
@@ -416,7 +392,6 @@ func TestExtractActions_SpecificAction(t *testing.T) {
 }
 
 func TestExtractActions_MultipleStatements(t *testing.T) {
-	t.Parallel()
 	action1 := types.DynaString{"iam:PassRole"}
 	action2 := types.DynaString{"s3:GetObject", "s3:PutObject"}
 	resource := types.DynaString{"*"}
@@ -434,7 +409,6 @@ func TestExtractActions_MultipleStatements(t *testing.T) {
 }
 
 func TestExtractActions_NilActionField(t *testing.T) {
-	t.Parallel()
 	// Statement with no Action field (e.g., NotAction-only)
 
 	resource := types.DynaString{"*"}
@@ -449,7 +423,6 @@ func TestExtractActions_NilActionField(t *testing.T) {
 }
 
 func TestExtractActions_WildcardAction(t *testing.T) {
-	t.Parallel()
 	// Wildcard actions like "iam:*" are expanded by the ActionExpander
 	// which fetches from the embedded action list. We test that it returns
 	// expanded actions.
@@ -472,7 +445,6 @@ func TestExtractActions_WildcardAction(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAddServicesToResourceCache(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	// Check a few common services are in the cache

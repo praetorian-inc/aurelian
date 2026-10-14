@@ -6,7 +6,6 @@ import "testing"
 // recognized as a priv-esc action. Each case fails if the corresponding allowlist
 // entry in action.go is removed.
 func TestPrivescGapActionsAllowlisted(t *testing.T) {
-	t.Parallel()
 	actions := []string{
 		"iam:DeleteAccessKey",
 		"ssm:CreateAssociation",
@@ -26,7 +25,6 @@ func TestPrivescGapActionsAllowlisted(t *testing.T) {
 	}
 	for _, action := range actions {
 		t.Run(action, func(t *testing.T) {
-			t.Parallel()
 			if !IsPrivEscAction(action) {
 				t.Errorf("%s should be recognized as a privilege escalation action", action)
 			}
@@ -38,7 +36,6 @@ func TestPrivescGapActionsAllowlisted(t *testing.T) {
 // resolve against the expected resource ARNs. Each case fails if the corresponding
 // ActionResourceMap entry is removed.
 func TestPrivescGapActionResourceMappings(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		name     string
 		action   string
@@ -199,7 +196,6 @@ func TestPrivescGapActionResourceMappings(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			result := IsValidActionForResource(tc.action, tc.resource)
 			if result != tc.expected {
 				t.Errorf("expected %v, got %v for action %s and resource %s",

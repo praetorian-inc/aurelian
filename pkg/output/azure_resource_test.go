@@ -8,14 +8,12 @@ import (
 )
 
 func TestAzureResource_ImplementsAurelianModel(t *testing.T) {
-	t.Parallel()
 
 	var _ model.AurelianModel = AzureResource{}
 	var _ model.AurelianModel = &AzureResource{}
 }
 
 func TestNewAzureResource(t *testing.T) {
-	t.Parallel()
 
 	r := NewAzureResource(
 		"sub-123",

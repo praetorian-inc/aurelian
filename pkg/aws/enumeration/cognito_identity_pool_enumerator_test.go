@@ -7,7 +7,6 @@ import (
 )
 
 func TestBuildIdentityPoolResourceUnauthEnabled(t *testing.T) {
-	t.Parallel()
 	// GetIdentityPoolRoles keys roles by "authenticated"/"unauthenticated"; the builder
 	// suffixes "Role" so the bound ARNs land as quoted values resource_service_role.yaml
 	// substring-matches to create the (IdentityPool)-[:HAS_ROLE]->(Role) edges.
@@ -32,7 +31,6 @@ func TestBuildIdentityPoolResourceUnauthEnabled(t *testing.T) {
 }
 
 func TestBuildIdentityPoolResourceUnauthDisabled(t *testing.T) {
-	t.Parallel()
 	// Auth-only pool: AllowUnauthenticatedIdentities false; only the authenticated role is bound.
 
 	boundRoles := map[string]string{
@@ -50,7 +48,6 @@ func TestBuildIdentityPoolResourceUnauthDisabled(t *testing.T) {
 }
 
 func TestBuildIdentityPoolResourceSkipsEmptyRoleARN(t *testing.T) {
-	t.Parallel()
 	// An empty role ARN is fail-closed: no property is emitted, so resource_service_role.yaml
 	// cannot match it to any role.
 

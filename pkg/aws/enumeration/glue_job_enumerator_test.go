@@ -9,7 +9,6 @@ import (
 )
 
 func TestBuildGlueJobResource(t *testing.T) {
-	t.Parallel()
 	job := gluetypes.Job{
 		Name: aws.String("etl-job"),
 		Role: aws.String("arn:aws:iam::123456789012:role/glue-job-role"),
@@ -31,7 +30,6 @@ func TestBuildGlueJobResource(t *testing.T) {
 }
 
 func TestBuildGlueJobResourceRoleName(t *testing.T) {
-	t.Parallel()
 	// A role given as a NAME (not an ARN) is captured verbatim but will NOT substring-match
 	// any role ARN — fail-closed, consistent with resource_service_role.yaml.
 
@@ -46,7 +44,6 @@ func TestBuildGlueJobResourceRoleName(t *testing.T) {
 }
 
 func TestBuildGlueJobResourceNilRole(t *testing.T) {
-	t.Parallel()
 	// A nil Role must not panic and emits an empty value.
 
 	job := gluetypes.Job{

@@ -39,7 +39,6 @@ func newTestGAADFromOpts(o newTestGAADOpts) *types.AuthorizationAccountDetails {
 // ---------------------------------------------------------------------------
 
 func TestNewGaadAnalyzer(t *testing.T) {
-	t.Parallel()
 	ga := NewGaadAnalyzer()
 	require.NotNil(t, ga)
 }
@@ -49,7 +48,6 @@ func TestNewGaadAnalyzer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAnalyze_EmptyGAAD(t *testing.T) {
-	t.Parallel()
 	ga := NewGaadAnalyzer()
 	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -60,7 +58,6 @@ func TestAnalyze_EmptyGAAD(t *testing.T) {
 }
 
 func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
-	t.Parallel()
 	// Setup: user "alice" has an inline policy granting iam:PassRole on all roles
 	// plus a role "target-role" that is the target resource.
 	// Expected: the analyzer finds alice -> iam:PassRole -> target-role
@@ -137,7 +134,6 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 }
 
 func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
-	t.Parallel()
 	// Role with an attached managed policy granting iam:PassRole
 
 	passRoleAction := types.DynaString{"iam:PassRole"}
@@ -217,7 +213,6 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 }
 
 func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
-	t.Parallel()
 	// User "bob" is in group "admins" which has a policy granting iam:CreateAccessKey
 
 	createKeyAction := types.DynaString{"iam:CreateAccessKey"}
@@ -293,7 +288,6 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 }
 
 func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
-	t.Parallel()
 	// Role trust policy allows a service principal (lambda.amazonaws.com) to assume it
 
 	trustAction := types.DynaString{"sts:AssumeRole"}
@@ -347,7 +341,6 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 // sufficient alone). A sibling role that trusts only account :root yields NO real-principal
 // edge from that user without a grant (the :root FP-safety boundary).
 func TestAnalyze_AssumeRoleDirectTrustNoIdentityGrant(t *testing.T) {
-	t.Parallel()
 	const acct = "111122223333"
 	const userArn = "arn:aws:iam::" + acct + ":user/no-grant-user"
 	const directRoleArn = "arn:aws:iam::" + acct + ":role/direct-trust-role"
@@ -404,7 +397,6 @@ func TestAnalyze_AssumeRoleDirectTrustNoIdentityGrant(t *testing.T) {
 }
 
 func TestAnalyze_ResourcePolicy(t *testing.T) {
-	t.Parallel()
 	// A resource with a resource policy granting lambda:InvokeFunction to lambda.amazonaws.com
 
 	trustAction := types.DynaString{"sts:AssumeRole"}
@@ -469,7 +461,6 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 }
 
 func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
-	t.Parallel()
 	// User has iam:* but a boundary restricts to only iam:PassRole
 
 	allIAMAction := types.DynaString{"iam:*"}
@@ -545,7 +536,6 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPolicyData(t *testing.T) {
-	t.Parallel()
 	trustAction := types.DynaString{"sts:AssumeRole"}
 	trustResource := types.DynaString{"*"}
 	trustPrincipal := types.DynaString{"arn:aws:iam::111122223333:root"}
@@ -594,7 +584,6 @@ func TestBuildPolicyData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPrincipal_Found(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::111122223333:user/alice", state)
@@ -603,7 +592,6 @@ func TestBuildPrincipal_Found(t *testing.T) {
 }
 
 func TestBuildPrincipal_NotFound(t *testing.T) {
-	t.Parallel()
 	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::999988887777:user/unknown", state)
@@ -617,7 +605,6 @@ func TestBuildPrincipal_NotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
-	t.Parallel()
 	// Build a scenario where a role can create and use CodeBuild projects
 	// The create action is found by the evaluator (matched against codebuild service resource)
 	// But the use action has no matching existing resource - so it must be synthesized
@@ -676,7 +663,6 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 }
 
 func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
-	t.Parallel()
 	// Trust policy with a Deny statement should not produce an AssumeRole edge
 
 	trustAction := types.DynaString{"sts:AssumeRole"}
@@ -721,7 +707,6 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 }
 
 func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
-	t.Parallel()
 	// Trust policy with nil principal should be skipped gracefully
 
 	trustAction := types.DynaString{"sts:AssumeRole"}
@@ -751,7 +736,6 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 }
 
 func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
-	t.Parallel()
 	// Resource policy with a non-priv-esc action should not produce edges
 
 	s3Action := types.DynaString{"s3:GetObject"}
@@ -790,7 +774,6 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 }
 
 func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
-	t.Parallel()
 	// Resource with nil resource policy or nil statements should be handled gracefully
 
 	gaad := types.NewAuthorizationAccountDetails("111122223333", nil, nil, nil, nil)
@@ -822,7 +805,6 @@ func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 }
 
 func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
-	t.Parallel()
 	// Test with multiple users and roles to ensure concurrent processing works
 
 	passRoleAction := types.DynaString{"iam:PassRole"}

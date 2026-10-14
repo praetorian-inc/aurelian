@@ -13,7 +13,6 @@ import (
 )
 
 func TestBuildSFNStateMachineResource(t *testing.T) {
-	t.Parallel()
 	detail := &sfn.DescribeStateMachineOutput{
 		Name:            aws.String("orchestrator"),
 		StateMachineArn: aws.String("arn:aws:states:us-east-2:123456789012:stateMachine:orchestrator"),
@@ -35,7 +34,6 @@ func TestBuildSFNStateMachineResource(t *testing.T) {
 }
 
 func TestBuildSFNStateMachineResourceNilArn(t *testing.T) {
-	t.Parallel()
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
 
 	detail := &sfn.DescribeStateMachineOutput{
@@ -51,7 +49,6 @@ func TestBuildSFNStateMachineResourceNilArn(t *testing.T) {
 }
 
 func TestNewEnumerator_RegistersSFNStateMachine(t *testing.T) {
-	t.Parallel()
 	e := NewEnumerator(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}, Concurrency: 1})
 	defer func() { _ = e.Close() }()
 
@@ -65,27 +62,23 @@ func TestNewEnumerator_RegistersSFNStateMachine(t *testing.T) {
 }
 
 func TestSFNStateMachineEnumerator_EnumerateByARN_Errors(t *testing.T) {
-	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 	enum := NewSFNStateMachineEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 	out := pipeline.New[output.AWSResource]()
 
 	t.Run("bad ARN returns error", func(t *testing.T) {
-		t.Parallel()
 		err := enum.EnumerateByARN("not-an-arn", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse ARN")
 	})
 
 	t.Run("non-stateMachine resource returns error", func(t *testing.T) {
-		t.Parallel()
 		err := enum.EnumerateByARN("arn:aws:states:us-east-1:123456789012:activity:myActivity", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid step functions state machine ARN resource")
 	})
 
 	t.Run("ARN missing region returns error", func(t *testing.T) {
-		t.Parallel()
 		err := enum.EnumerateByARN("arn:aws:states::123456789012:stateMachine:myMachine", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing region")

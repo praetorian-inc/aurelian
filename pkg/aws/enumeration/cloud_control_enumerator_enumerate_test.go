@@ -24,7 +24,6 @@ func (e *ccTestSmithyError) ErrorMessage() string          { return e.msg }
 func (e *ccTestSmithyError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
 func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
-	t.Parallel()
 	// A mock enumerator that returns a skippable error from EnumerateByARN.
 
 	mock := &mockResourceEnumerator{
@@ -74,7 +73,6 @@ func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 // parsed ARN. If someone regresses handleListError to pass the raw identifier,
 // these assertions catch it.
 func TestEnumerateByARN_DispatcherExtractsServiceAndRegion(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		arn             string
 		resourceType    string // what types.ResolveResourceType maps to
@@ -91,7 +89,6 @@ func TestEnumerateByARN_DispatcherExtractsServiceAndRegion(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.expectedService, func(t *testing.T) {
-			t.Parallel()
 			mock := &mockResourceEnumerator{
 				resourceType:      tc.resourceType,
 				enumerateByARNErr: &ccTestSmithyError{code: "AccessDeniedException", msg: "denied"},
@@ -125,7 +122,6 @@ func TestEnumerateByARN_DispatcherExtractsServiceAndRegion(t *testing.T) {
 }
 
 func TestEnumerateByARN_SuccessSendsResource(t *testing.T) {
-	t.Parallel()
 	expected := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-func",

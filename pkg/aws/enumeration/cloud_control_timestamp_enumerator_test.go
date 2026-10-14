@@ -20,7 +20,6 @@ import (
 // CloudControl's by design. See TestSFNStateMachineLastModified_* for their
 // stamping.
 func TestNewEnumerator_StampedTypesMatchCloudControlExceptLastModified(t *testing.T) {
-	t.Parallel()
 	stamp := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -48,7 +47,6 @@ func TestNewEnumerator_StampedTypesMatchCloudControlExceptLastModified(t *testin
 	}
 	for _, tc := range tests {
 		t.Run(tc.resourceType, func(t *testing.T) {
-			t.Parallel()
 			fake := newFakeAWS(t)
 			fake.reply("ListResources", ccListResources(tc.resourceType, tc.description))
 			fake.reply("GetResource", ccGetResource(tc.resourceType, tc.description))

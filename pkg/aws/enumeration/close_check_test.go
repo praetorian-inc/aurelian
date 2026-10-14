@@ -20,7 +20,6 @@ import (
 // This is the test-time enforcement layer — it fails the test suite if a
 // caller of NewEnumerator forgets defer lister.Close().
 func TestNewEnumeratorRequiresClose(t *testing.T) {
-	t.Parallel()
 	repoRoot := findRepoRoot(t)
 	fset := token.NewFileSet()
 	var violations []string
@@ -198,7 +197,6 @@ func nameMatches(expr ast.Expr, name string) bool {
 // must actually be used, not just stored). This prevents the IAM-style bug where
 // a constructor wires the report but the enumerator never records skips.
 func TestSkipReportFieldRequiresUsage(t *testing.T) {
-	t.Parallel()
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
 	var violations []string
@@ -348,7 +346,6 @@ func blockHasStarIdent(body *ast.BlockStmt, name string) bool {
 // the exact bug where inner-loop metadata is wrong and the SkipReport
 // would show degraded entries.
 func TestClassifySkippableServiceNames(t *testing.T) {
-	t.Parallel()
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
 	var violations []string
@@ -414,7 +411,6 @@ func TestClassifySkippableServiceNames(t *testing.T) {
 //     or any other expression. This ensures all enumerators share the same
 //     report instance that the caller supplied.
 func TestNewEnumeratorSharesSkipReport(t *testing.T) {
-	t.Parallel()
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
 	path := filepath.Join(enumDir, "enumerator.go")
@@ -510,7 +506,6 @@ func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 // panic on `*op` when the error is not skippable. This prevents that class
 // of nil-deref bug.
 func TestClassifySkippableAlwaysInIfInit(t *testing.T) {
-	t.Parallel()
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
 	var violations []string
@@ -597,7 +592,6 @@ func TestClassifySkippableAlwaysInIfInit(t *testing.T) {
 //     re-classifies, not at the leaker (the leaker is doing nothing wrong
 //     — it classified and returned, which is legitimate).
 func TestExactlyOneClassifyPerAWSError(t *testing.T) {
-	t.Parallel()
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
 	var violations []string
@@ -779,7 +773,6 @@ func TestExactlyOneClassifyPerAWSError(t *testing.T) {
 // and swallowed (slog.Warn + continue) instead of flowing through the
 // SkipReport, causing silent data loss.
 func TestAWSClientErrorsMustBeClassifiedOrReturned(t *testing.T) {
-	t.Parallel()
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
 	var violations []string

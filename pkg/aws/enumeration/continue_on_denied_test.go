@@ -63,7 +63,6 @@ func runWithSkipHandling(t *testing.T, regions []string, plan regionErrPlan, rep
 // Both region actions must be invoked, and ActInRegions must return nil so the
 // caller (the recon module) keeps processing results from the surviving region.
 func TestContinueOnDenied_AccessDenied_AcrossTwoRegions_LoopCompletes(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1": &fakeAPIError{code: "AccessDeniedException", msg: "denied by SCP"},
@@ -79,7 +78,6 @@ func TestContinueOnDenied_AccessDenied_AcrossTwoRegions_LoopCompletes(t *testing
 // TP2: the denied region records the (region, service, op, code) tuple. This
 // is what surfaces in the operator-facing SkipReport.Summary().
 func TestContinueOnDenied_AccessDenied_RecordsSkipTuple(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1": &fakeAPIError{code: "AccessDeniedException", msg: "denied by SCP"},
@@ -102,7 +100,6 @@ func TestContinueOnDenied_AccessDenied_RecordsSkipTuple(t *testing.T) {
 // TP3: every skippable error code class is exercised together. All regions must
 // complete; the SkipReport must hold all three distinct codes.
 func TestContinueOnDenied_MultipleSkippableCodes_AllRegionsComplete(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1":      &fakeAPIError{code: "AccessDeniedException", msg: "scp deny"},
@@ -131,7 +128,6 @@ func TestContinueOnDenied_MultipleSkippableCodes_AllRegionsComplete(t *testing.T
 // callers actually produce -- must still be classified as skippable and not
 // abort the loop.
 func TestContinueOnDenied_WrappedSmithyError_IsClassifiedSkippable(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	wrapped := fmt.Errorf("list amplify apps in us-east-1: %w", &fakeAPIError{code: "AccessDeniedException", msg: "denied"})
 	plan := regionErrPlan{"us-east-1": wrapped}
@@ -149,7 +145,6 @@ func TestContinueOnDenied_WrappedSmithyError_IsClassifiedSkippable(t *testing.T)
 // operator-facing format. This is the line the recon module prints via the
 // deferred summary in list_all_resources.go.
 func TestContinueOnDenied_Summary_RendersGroupedReport(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1": &fakeAPIError{code: "AccessDeniedException", msg: "denied"},
@@ -170,7 +165,6 @@ func TestContinueOnDenied_Summary_RendersGroupedReport(t *testing.T) {
 // it should propagate up to the recon module so the operator sees a real
 // failure rather than a silent loss of coverage.
 func TestContinueOnDenied_NonSkippableError_PropagatesFatal(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1": errors.New("network connection refused"),
@@ -187,7 +181,6 @@ func TestContinueOnDenied_NonSkippableError_PropagatesFatal(t *testing.T) {
 // FP2: a fatal smithy error (expired credentials) must propagate — it means
 // every subsequent call will also fail, so continuing is pointless.
 func TestContinueOnDenied_FatalSmithyCode_PropagatesFatal(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1": &fakeAPIError{code: "ExpiredToken", msg: "token expired"},
@@ -204,7 +197,6 @@ func TestContinueOnDenied_FatalSmithyCode_PropagatesFatal(t *testing.T) {
 // non-region-unsupported message must propagate. extractAPIErrorCode returns
 // ok=false on empty code so this exact shape doesn't leak past IsSkippableAWSError.
 func TestContinueOnDenied_EmptySmithyCode_PropagatesFatal(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 	plan := regionErrPlan{
 		"us-east-1": &fakeAPIError{code: "", msg: "weird coreless smithy error"},
@@ -220,7 +212,6 @@ func TestContinueOnDenied_EmptySmithyCode_PropagatesFatal(t *testing.T) {
 // successful outcomes, and assert the SkipReport is correctly aggregated under
 // race conditions.
 func TestContinueOnDenied_HighConcurrency_AllRecorded(t *testing.T) {
-	t.Parallel()
 	report := NewSkipReport()
 
 	regions := make([]string, 0, 32)

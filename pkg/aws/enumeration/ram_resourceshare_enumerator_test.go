@@ -13,7 +13,6 @@ import (
 )
 
 func TestBuildResourceShareResource_External(t *testing.T) {
-	t.Parallel()
 	share := ramtypes.ResourceShare{
 		ResourceShareArn:        aws.String("arn:aws:ram:us-east-1:123456789012:resource-share/abc-123"),
 		Name:                    aws.String("shared-tgw"),
@@ -44,7 +43,6 @@ func TestBuildResourceShareResource_External(t *testing.T) {
 }
 
 func TestBuildResourceShareResource_OrgOnlyNilFields(t *testing.T) {
-	t.Parallel()
 	// A share with AllowExternalPrincipals=false and no associations must not panic
 	// and must report AllowExternalPrincipals=false with empty principal/resource lists.
 
@@ -65,7 +63,6 @@ func TestBuildResourceShareResource_OrgOnlyNilFields(t *testing.T) {
 }
 
 func TestBuildResourceShareResource_MissingArnFallsBackToAccountID(t *testing.T) {
-	t.Parallel()
 	// OwningAccountId absent → AccountRef falls back to the caller-supplied accountID.
 
 	share := ramtypes.ResourceShare{
@@ -80,7 +77,6 @@ func TestBuildResourceShareResource_MissingArnFallsBackToAccountID(t *testing.T)
 }
 
 func TestRAMResourceShareEnumerator_EnumerateByARN_Errors(t *testing.T) {
-	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 	enum := NewRAMResourceShareEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 	out := pipeline.New[output.AWSResource]()
@@ -109,7 +105,6 @@ func TestRAMResourceShareEnumerator_EnumerateByARN_Errors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			err := enum.EnumerateByARN(tc.arn, out)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.wantErrText)

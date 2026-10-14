@@ -17,7 +17,6 @@ import (
 )
 
 func TestSSMParameterEnumerator(t *testing.T) {
-	t.Parallel()
 	fixture := testutil.NewAWSFixture(t, "aws/recon/find-secrets")
 	fixture.Setup()
 
@@ -40,19 +39,16 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	secureName := fixture.Output("ssm_securestring_name")
 
 	t.Run("String parameter is enumerated", func(t *testing.T) {
-		t.Parallel()
 		require.True(t, resultsContainResourceID(results, paramName),
 			"expected String parameter %q in results", paramName)
 	})
 
 	t.Run("SecureString parameter is absent", func(t *testing.T) {
-		t.Parallel()
 		assert.False(t, resultsContainResourceID(results, secureName),
 			"SecureString parameter %q must not be enumerated", secureName)
 	})
 
 	t.Run("resource shape is correct", func(t *testing.T) {
-		t.Parallel()
 		var param *output.AWSResource
 		for i := range results {
 			if results[i].ResourceID == paramName {
@@ -71,7 +67,6 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	})
 
 	t.Run("EnumerateByARN round-trips", func(t *testing.T) {
-		t.Parallel()
 		single, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enum.EnumerateByARN(paramARN, out)
 		})
@@ -82,7 +77,6 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	})
 
 	t.Run("EnumerateByARN filters SecureString", func(t *testing.T) {
-		t.Parallel()
 		// Build the SecureString ARN from the String param ARN (same account + region).
 
 		parsed, err := awsarn.Parse(paramARN)
@@ -98,7 +92,6 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	})
 
 	t.Run("all results are correct resource type", func(t *testing.T) {
-		t.Parallel()
 		for _, r := range results {
 			assert.Equal(t, "AWS::SSM::Parameter", r.ResourceType)
 		}

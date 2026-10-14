@@ -58,7 +58,6 @@ func newTestEnumerator(enumerators map[string]ResourceEnumerator) *Enumerator {
 }
 
 func TestEnumerator_enumerateByType_DispatchesToRegisteredLister(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{resourceType: "AWS::S3::Bucket"}
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
 
@@ -76,7 +75,6 @@ func TestEnumerator_enumerateByType_DispatchesToRegisteredLister(t *testing.T) {
 }
 
 func TestEnumerator_enumerateByType_FallsBackForUnregisteredType(t *testing.T) {
-	t.Parallel()
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 
 	_, ok := e.enumerators["AWS::EC2::Instance"]
@@ -84,7 +82,6 @@ func TestEnumerator_enumerateByType_FallsBackForUnregisteredType(t *testing.T) {
 }
 
 func TestEnumerator_List_InvalidIdentifier(t *testing.T) {
-	t.Parallel()
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 
 	out := pipeline.New[output.AWSResource]()
@@ -101,7 +98,6 @@ func TestEnumerator_List_InvalidIdentifier(t *testing.T) {
 }
 
 func TestNewEnumerator_RegistersRAMResourceShare(t *testing.T) {
-	t.Parallel()
 	e := NewEnumerator(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}, Concurrency: 1})
 	defer func() { _ = e.Close() }()
 
@@ -115,7 +111,6 @@ func TestNewEnumerator_RegistersRAMResourceShare(t *testing.T) {
 }
 
 func TestNewEnumerator_RegistersTimestampEnumerators(t *testing.T) {
-	t.Parallel()
 	e := NewEnumerator(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}, Concurrency: 1})
 	defer func() { _ = e.Close() }()
 
@@ -131,7 +126,6 @@ func TestNewEnumerator_RegistersTimestampEnumerators(t *testing.T) {
 }
 
 func TestEnumerator_enumerateByType_DispatchesSSMToRegisteredEnumerator(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{resourceType: "AWS::SSM::Document"}
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::SSM::Document": mock})
 
@@ -149,7 +143,6 @@ func TestEnumerator_enumerateByType_DispatchesSSMToRegisteredEnumerator(t *testi
 }
 
 func TestEnumerator_EnumerateByARN_FallbackOnSentinel(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{
 		resourceType:      "AWS::S3::Bucket",
 		enumerateByARNErr: errFallbackToCloudControl,
@@ -160,7 +153,6 @@ func TestEnumerator_EnumerateByARN_FallbackOnSentinel(t *testing.T) {
 }
 
 func TestEnumerator_List_SkippableError_RecordedNotReturned(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{
 		resourceType:    "AWS::S3::Bucket",
 		enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "denied by SCP"},
@@ -186,7 +178,6 @@ func TestEnumerator_List_SkippableError_RecordedNotReturned(t *testing.T) {
 }
 
 func TestEnumerator_List_NonSkippableError_Propagated(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{
 		resourceType:    "AWS::S3::Bucket",
 		enumerateAllErr: errors.New("network connection refused"),
@@ -209,7 +200,6 @@ func TestEnumerator_List_NonSkippableError_Propagated(t *testing.T) {
 }
 
 func TestEnumerator_List_SuccessNotRecorded(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{
 		resourceType: "AWS::S3::Bucket",
 	}
@@ -230,7 +220,6 @@ func TestEnumerator_List_SuccessNotRecorded(t *testing.T) {
 }
 
 func TestEnumerator_List_MultipleTypes_OneSkippableFailContinues(t *testing.T) {
-	t.Parallel()
 	failing := &mockResourceEnumerator{
 		resourceType:    "AWS::Amplify::App",
 		enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "not authorized"},
@@ -286,7 +275,6 @@ func (m *sendingAllMockEnumerator) EnumerateByARN(_ string, out *pipeline.P[outp
 
 // Happy path: no skips recorded, Close is a no-op (no panic, no log).
 func TestEnumerator_Close_NoSkips(t *testing.T) {
-	t.Parallel()
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 	assert.Equal(t, 0, e.Skipped.Len())
 	require.NoError(t, e.Close()) // must not panic
@@ -295,7 +283,6 @@ func TestEnumerator_Close_NoSkips(t *testing.T) {
 
 // Close surfaces skips that were recorded during enumeration.
 func TestEnumerator_Close_WithSkips(t *testing.T) {
-	t.Parallel()
 	mock := &mockResourceEnumerator{
 		resourceType:    "AWS::S3::Bucket",
 		enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "denied"},
@@ -318,7 +305,6 @@ func TestEnumerator_Close_WithSkips(t *testing.T) {
 
 // Close is safe to call multiple times — summary logs exactly once.
 func TestEnumerator_Close_Idempotent(t *testing.T) {
-	t.Parallel()
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 	e.Skipped.Record(SkippedOp{
 		Region: "us-east-1", Service: "amplify", Operation: "ListApps",
@@ -331,7 +317,6 @@ func TestEnumerator_Close_Idempotent(t *testing.T) {
 
 // Defer pattern: Close fires even when the module returns early with an error.
 func TestEnumerator_Close_OnEarlyReturn(t *testing.T) {
-	t.Parallel()
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 
 	// Simulate a module that records a skip then returns early on a fatal error.
@@ -353,7 +338,6 @@ func TestEnumerator_Close_OnEarlyReturn(t *testing.T) {
 
 // Edge case: Close on a zero-value Enumerator (nil Skipped) must not panic.
 func TestEnumerator_Close_NilSkipped(t *testing.T) {
-	t.Parallel()
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
 		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
@@ -364,7 +348,6 @@ func TestEnumerator_Close_NilSkipped(t *testing.T) {
 
 // Close with outputDir writes detail file; empty outputDir does not.
 func TestEnumerator_Close_WritesDetailFile(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
@@ -384,7 +367,6 @@ func TestEnumerator_Close_WritesDetailFile(t *testing.T) {
 }
 
 func TestEnumerator_Close_EmptyOutputDir_NoFile(t *testing.T) {
-	t.Parallel()
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
 		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
@@ -402,7 +384,6 @@ func TestEnumerator_Close_EmptyOutputDir_NoFile(t *testing.T) {
 // IAM sync.Once denial: if IAM is denied, the cached error should be caught
 // by the dispatcher safety net on every subsequent List call for IAM types.
 func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
-	t.Parallel()
 	// Simulate an IAM sub-enumerator that returns AccessDeniedException.
 
 	denied := &mockResourceEnumerator{
@@ -438,7 +419,6 @@ func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
 
 // Multiple types denied in sequence: each produces its own skip entry.
 func TestEnumerator_List_MultipleDeniedTypes_EachRecorded(t *testing.T) {
-	t.Parallel()
 	e := newTestEnumerator(map[string]ResourceEnumerator{
 		"AWS::Amplify::App": &mockResourceEnumerator{
 			resourceType:    "AWS::Amplify::App",
@@ -481,7 +461,6 @@ func TestEnumerator_List_MultipleDeniedTypes_EachRecorded(t *testing.T) {
 // The first type returns a fatal error, and subsequent types must NOT execute.
 // This tests the actual pipeline behavior, not just the classifier.
 func TestEnumerator_List_FatalError_StopsPipeline(t *testing.T) {
-	t.Parallel()
 	callCount := 0
 	fatal := &mockResourceEnumerator{
 		resourceType:    "AWS::S3::Bucket",

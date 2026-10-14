@@ -9,7 +9,6 @@ import (
 )
 
 func TestEvaluateConditions(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		name       string
 		conditions *types.Condition
@@ -1273,7 +1272,6 @@ func TestEvaluateConditions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			//tc.context.PopulateDefaultRequestConditionKeys("arn:aws:iam::123456789012:role/test-role")
 
 			result := EvaluateConditions(tc.conditions, tc.context)
@@ -1289,7 +1287,6 @@ func TestEvaluateConditions(t *testing.T) {
 // key is absent, but still evaluates precisely when the passed role's trusted
 // services are populated on the RequestContext.
 func TestEvaluateConditions_PassedToService(t *testing.T) {
-	t.Parallel()
 	passedToService := func(op string, svc string) *types.Condition {
 		return &types.Condition{
 			op: types.ConditionStatement{
@@ -1299,7 +1296,6 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	}
 
 	t.Run("missing key is inconclusive and allowed (fallback)", func(t *testing.T) {
-		t.Parallel()
 		// No PassedToServices in context. Must be satisfiable so the
 		// IAM_PASSROLE edge is built, not failed closed.
 
@@ -1316,7 +1312,6 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("associated resource arn missing key is inconclusive", func(t *testing.T) {
-		t.Parallel()
 		result := EvaluateConditions(
 			&types.Condition{
 				"ArnLike": types.ConditionStatement{
@@ -1331,7 +1326,6 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("populated trusted services match is allowed (precise)", func(t *testing.T) {
-		t.Parallel()
 		// Principled path: the role trusts lambda and the policy allows pass-to
 		// lambda, so the condition matches exactly.
 
@@ -1351,7 +1345,6 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("populated trusted services mismatch is failed (FP guard)", func(t *testing.T) {
-		t.Parallel()
 		// Principled path: the policy allows pass-to ec2 but the role trusts only
 		// lambda, so the pass is not usable and the condition must fail.
 
@@ -1371,7 +1364,6 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 	})
 
 	t.Run("unrelated missing non-critical key still fails closed (regression)", func(t *testing.T) {
-		t.Parallel()
 		// The permissive default must be scoped to PassRole keys only; an
 		// unrelated non-critical missing key must keep failing closed.
 
@@ -1393,7 +1385,6 @@ func TestEvaluateConditions_PassedToService(t *testing.T) {
 }
 
 func TestToFloat64(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name      string
 		input     interface{}
@@ -1446,7 +1437,6 @@ func TestToFloat64(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got, ok := toFloat64(tt.input)
 			assert.Equal(t, tt.wantOk, ok, "toFloat64(%v) ok", tt.input)
 			if tt.wantOk {
@@ -1457,7 +1447,6 @@ func TestToFloat64(t *testing.T) {
 }
 
 func TestFindContextKeyValue(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name       string
 		key        string
@@ -1907,7 +1896,6 @@ func TestFindContextKeyValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			exists, value := findContextKeyValue(tt.key, tt.ctx)
 			assert.Equal(t, tt.wantExists, exists, "findContextKeyValue(%q) exists", tt.key)
 			if tt.key == "aws:TagKeys" && tt.wantExists {
@@ -1923,7 +1911,6 @@ func TestFindContextKeyValue(t *testing.T) {
 }
 
 func TestEvaluateSetCondition_MapAndEmptyActual(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name     string
 		operator string
@@ -1991,7 +1978,6 @@ func TestEvaluateSetCondition_MapAndEmptyActual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got := evaluateSetCondition(tt.operator, tt.key, tt.values, tt.ctx)
 			assert.Equal(t, tt.want, got)
 		})
@@ -1999,7 +1985,6 @@ func TestEvaluateSetCondition_MapAndEmptyActual(t *testing.T) {
 }
 
 func TestEvaluateBoolCondition_EdgeCases(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name   string
 		values []string
@@ -2052,7 +2037,6 @@ func TestEvaluateBoolCondition_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			got := evaluateBoolCondition(tt.values, tt.actual)
 			assert.Equal(t, tt.want, got)
 		})

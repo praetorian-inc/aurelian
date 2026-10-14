@@ -10,14 +10,12 @@ import (
 )
 
 func TestAnalyzeResult_ImplementsAurelianModel(t *testing.T) {
-	t.Parallel()
 
 	var _ model.AurelianModel = AnalyzeResult{}
 	var _ model.AurelianModel = &AnalyzeResult{}
 }
 
 func TestAnalyzeResult_JSONFieldNames(t *testing.T) {
-	t.Parallel()
 
 	r := AnalyzeResult{
 		Module:  "ip-lookup",
@@ -44,7 +42,6 @@ func TestAnalyzeResult_JSONFieldNames(t *testing.T) {
 }
 
 func TestAnalyzeResult_NullResults(t *testing.T) {
-	t.Parallel()
 
 	r := AnalyzeResult{
 		Module:  "known-account",

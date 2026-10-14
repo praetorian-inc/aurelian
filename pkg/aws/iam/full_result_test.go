@@ -10,7 +10,6 @@ import (
 )
 
 func TestFullResult_UnmarshalJSON(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name        string
 		jsonInput   string
@@ -80,7 +79,6 @@ func TestFullResult_UnmarshalJSON(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			var fr FullResult
 			err := json.Unmarshal([]byte(tt.jsonInput), &fr)
 			if tt.wantErr {

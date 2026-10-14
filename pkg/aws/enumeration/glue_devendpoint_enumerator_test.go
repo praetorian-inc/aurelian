@@ -9,7 +9,6 @@ import (
 )
 
 func TestBuildGlueDevEndpointResource(t *testing.T) {
-	t.Parallel()
 	endpoint := gluetypes.DevEndpoint{
 		EndpointName: aws.String("dev-ep"),
 		RoleArn:      aws.String("arn:aws:iam::123456789012:role/glue-dev-role"),
@@ -31,7 +30,6 @@ func TestBuildGlueDevEndpointResource(t *testing.T) {
 }
 
 func TestBuildGlueDevEndpointResourceNilRole(t *testing.T) {
-	t.Parallel()
 	// A nil RoleArn must not panic and emits an empty value (fail-closed).
 
 	endpoint := gluetypes.DevEndpoint{

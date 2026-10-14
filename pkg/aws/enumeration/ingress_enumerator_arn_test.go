@@ -14,7 +14,6 @@ import (
 // native enumerators must reject it up front rather than calling the AWS API
 // with an empty identifier and surfacing an opaque service error.
 func TestClassicELBEnumerator_EnumerateByARN_EmptyName(t *testing.T) {
-	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 	enum := NewClassicELBEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 	out := pipeline.New[output.AWSResource]()
@@ -25,7 +24,6 @@ func TestClassicELBEnumerator_EnumerateByARN_EmptyName(t *testing.T) {
 }
 
 func TestOpenSearchDomainEnumerator_EnumerateByARN_EmptyName(t *testing.T) {
-	t.Parallel()
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 	enum := NewOpenSearchDomainEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 	out := pipeline.New[output.AWSResource]()
