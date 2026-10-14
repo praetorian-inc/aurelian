@@ -37,6 +37,11 @@ func (l *EC2InstanceEnumerator) ResourceType() string {
 	return "AWS::EC2::Instance"
 }
 
+// EnumerateByARN falls back to CloudControl for single-ARN lookups.
+func (l *EC2InstanceEnumerator) EnumerateByARN(_ string, _ *pipeline.P[output.AWSResource]) error {
+	return errFallbackToCloudControl
+}
+
 // EnumerateAll enumerates all EC2 instances owned by the account across configured regions.
 func (l *EC2InstanceEnumerator) EnumerateAll(out *pipeline.P[output.AWSResource]) error {
 	if len(l.Regions) == 0 {

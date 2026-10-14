@@ -2,7 +2,6 @@ package iam
 
 import (
 	"fmt"
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"regexp"
 	"strings"
 	"sync"
