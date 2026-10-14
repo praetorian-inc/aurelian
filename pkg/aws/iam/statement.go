@@ -2,12 +2,13 @@ package iam
 
 import (
 	"fmt"
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // evaluateStatement evaluates a policy statement against a request context
@@ -94,9 +95,29 @@ func matchesRegexPattern(pattern *regexp.Regexp, input string) bool {
 	return pattern.MatchString(input)
 }
 
-// MatchesPattern handles basic glob pattern matching (case insensitive)
-func MatchesPattern(pattern, input string) bool {
-	// Escape regex metacharacters, preserving * and ? for glob conversion
+// patternCache memoizes compiled glob patterns. The same IAM patterns (s3:*,
+// iam:PassRole, arn:aws:iam::*:role/*, ...) are matched against millions of
+// inputs during a bulk evaluation; compiling them once instead of once per call
+// removes the dominant allocation/CPU cost. sync.Map is safe for the concurrent
+// who_can_bulk worker pool, and compiled *regexp.Regexp is itself goroutine-safe.
+var patternCache sync.Map // map[string]*regexp.Regexp
+
+// compileGlob converts an IAM glob pattern to an anchored, case-insensitive
+// regexp, caching the result keyed by the original pattern.
+func compileGlob(pattern string) *regexp.Regexp {
+	if v, ok := patternCache.Load(pattern); ok {
+		return v.(*regexp.Regexp)
+	}
+	re := regexp.MustCompile(globToRegex(pattern))
+	// LoadOrStore so concurrent compilers converge on one cached instance.
+	actual, _ := patternCache.LoadOrStore(pattern, re)
+	return actual.(*regexp.Regexp)
+}
+
+// globToRegex applies the exact transformation the previous inline code did:
+// escape regex metacharacters, convert * and ? to glob wildcards, anchor, and
+// make case-insensitive. Kept identical so caching is purely a memoization.
+func globToRegex(pattern string) string {
 	pattern = strings.ReplaceAll(pattern, ".", "\\.")
 	pattern = strings.ReplaceAll(pattern, "+", "\\+")
 	pattern = strings.ReplaceAll(pattern, "(", "\\(")
@@ -108,13 +129,14 @@ func MatchesPattern(pattern, input string) bool {
 	pattern = strings.ReplaceAll(pattern, "^", "\\^")
 	pattern = strings.ReplaceAll(pattern, "$", "\\$")
 	pattern = strings.ReplaceAll(pattern, "|", "\\|")
-	// Convert glob wildcards to regex
 	pattern = strings.ReplaceAll(pattern, "*", ".*")
 	pattern = strings.ReplaceAll(pattern, "?", ".")
-	pattern = "(?i)^" + pattern + "$"
+	return "(?i)^" + pattern + "$"
+}
 
-	p := regexp.MustCompile(pattern)
-	return matchesRegexPattern(p, input)
+// MatchesPattern handles basic glob pattern matching (case insensitive)
+func MatchesPattern(pattern, input string) bool {
+	return matchesRegexPattern(compileGlob(pattern), input)
 }
 
 // matchesActions checks if an action matches any in the DynaString

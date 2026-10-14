@@ -18,3 +18,12 @@ type AurelianModel interface {
 type BaseAurelianModel struct{}
 
 func (BaseAurelianModel) IsAurelianModel() aurelianModelToken { return aurelianModelToken{} }
+
+// SingleObjectOutput is implemented by AurelianModel types that should be
+// serialized as a single top-level JSON object rather than as an element in a
+// JSON array. When the pipeline emits exactly one result that implements this
+// interface, formatters should write it directly instead of wrapping in [].
+type SingleObjectOutput interface {
+	AurelianModel
+	IsSingleObjectOutput()
+}

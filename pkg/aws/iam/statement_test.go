@@ -719,6 +719,53 @@ func TestEvaluateStatement(t *testing.T) {
 	}
 }
 
+// matchesPatternCases are IAM-realistic (pattern, input, want) triples used by
+// both the equivalence test and the benchmark. They cover exact actions,
+// service wildcards, ARN globs, case-insensitivity, and metacharacters that
+// must be regex-escaped — so a caching change can be proven behavior-identical.
+var matchesPatternCases = []struct {
+	pattern string
+	input   string
+	want    bool
+}{
+	{"iam:PassRole", "iam:PassRole", true},
+	{"iam:PassRole", "iam:passrole", true}, // case-insensitive
+	{"iam:PassRole", "iam:CreateRole", false},
+	{"s3:*", "s3:GetObject", true},
+	{"s3:*", "ec2:RunInstances", false},
+	{"s3:Get*", "s3:GetObject", true},
+	{"s3:Get*", "s3:PutObject", false},
+	{"*", "anything:AtAll", true},
+	{"ec2:Describe?", "ec2:DescribeX", true},
+	{"ec2:Describe?", "ec2:Describe", false},
+	{"arn:aws:iam::*:role/*", "arn:aws:iam::123456789012:role/Admin", true},
+	{"arn:aws:iam::*:role/*", "arn:aws:s3:::bucket", false},
+	{"arn:aws:s3:::my-bucket/*", "arn:aws:s3:::my-bucket/key.txt", true},
+	{"arn:aws:s3:::my-bucket/*", "arn:aws:s3:::other-bucket/key.txt", false},
+}
+
+func TestMatchesPattern_IAMCases(t *testing.T) {
+	for _, tc := range matchesPatternCases {
+		t.Run(tc.pattern+"|"+tc.input, func(t *testing.T) {
+			if got := MatchesPattern(tc.pattern, tc.input); got != tc.want {
+				t.Errorf("MatchesPattern(%q, %q) = %v, want %v", tc.pattern, tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// BenchmarkMatchesPattern mirrors the evaluator hot path: the same handful of
+// distinct patterns matched against many inputs, over and over. This is exactly
+// where per-call regexp.MustCompile dominates, so allocs/op is the metric.
+func BenchmarkMatchesPattern(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tc := matchesPatternCases[i%len(matchesPatternCases)]
+		_ = MatchesPattern(tc.pattern, tc.input)
+	}
+}
+
 func TestMatchesPattern(t *testing.T) {
 	testCases := []struct {
 		pattern string
