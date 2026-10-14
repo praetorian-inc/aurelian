@@ -238,11 +238,17 @@ func (s *AnalyzerState) GetGroupByName(name string) *types.GroupDetail {
 }
 
 // ExtractActions expands wildcard actions from policy statements using the ActionExpander.
+// For NotAction statements, it expands to the complement: all known actions except
+// those matching the NotAction patterns.
 func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) []string {
 	actions := []string{}
 	for _, statement := range *psl {
 		if statement.Action != nil {
 			expanded := s.expandActions(*statement.Action)
+			actions = append(actions, expanded...)
+		}
+		if statement.NotAction != nil {
+			expanded := s.expandNotActions(*statement.NotAction)
 			actions = append(actions, expanded...)
 		}
 	}
@@ -264,4 +270,38 @@ func (s *AnalyzerState) expandActions(actions types.DynaString) []string {
 		}
 	}
 	return expandedActions
+}
+
+// expandNotActions returns the complement of the excluded action patterns:
+// all known AWS actions that do NOT match any of the NotAction patterns.
+// This handles policies like PowerUserAccess which use
+// NotAction: ["iam:*", "organizations:*", "account:*"] to grant everything
+// except specific services.
+func (s *AnalyzerState) expandNotActions(excludedPatterns types.DynaString) []string {
+	allActions, err := s.actionExpander.Expand("*")
+	if err != nil {
+		slog.Error("Error expanding all actions for NotAction complement", "error", err)
+		return nil
+	}
+
+	var result []string
+	for _, action := range allActions {
+		excluded := false
+		for _, pattern := range excludedPatterns {
+			if iam.MatchesPattern(pattern, action) {
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			result = append(result, action)
+		}
+	}
+
+	slog.Debug("Expanded NotAction complement",
+		"excludedPatterns", excludedPatterns,
+		"totalActions", len(allActions),
+		"includedActions", len(result),
+	)
+	return result
 }

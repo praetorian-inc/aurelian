@@ -1,6 +1,7 @@
 package gaad
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
@@ -408,17 +409,74 @@ func TestExtractActions_MultipleStatements(t *testing.T) {
 	assert.Contains(t, actions, "s3:PutObject")
 }
 
-func TestExtractActions_NilActionField(t *testing.T) {
-	// Statement with no Action field (e.g., NotAction-only)
+func TestExtractActions_NotAction_ExpandsComplement(t *testing.T) {
+	// A NotAction: ["iam:*", "organizations:*", "account:*"] statement
+	// (like PowerUserAccess) should expand to all actions EXCEPT those services.
 	resource := types.DynaString{"*"}
-	notAction := types.DynaString{"iam:*"}
+	notAction := types.DynaString{"iam:*", "organizations:*", "account:*"}
 	stmts := types.PolicyStatementList{
 		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
 	}
 
 	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 	actions := state.ExtractActions(&stmts)
-	assert.Empty(t, actions)
+
+	// Should return many actions (the complement of iam:*, organizations:*, account:*)
+	assert.Greater(t, len(actions), 100, "NotAction should expand to many allowed actions")
+
+	// Must NOT contain any iam:*, organizations:*, or account:* actions
+	for _, a := range actions {
+		assert.False(t, strings.HasPrefix(strings.ToLower(a), "iam:"),
+			"NotAction should exclude iam: actions, but found %q", a)
+		assert.False(t, strings.HasPrefix(strings.ToLower(a), "organizations:"),
+			"NotAction should exclude organizations: actions, but found %q", a)
+		assert.False(t, strings.HasPrefix(strings.ToLower(a), "account:"),
+			"NotAction should exclude account: actions, but found %q", a)
+	}
+
+	// Should contain priv-esc actions from non-excluded services
+	// e.g. lambda:CreateFunction, ec2:RunInstances, etc.
+	assert.Contains(t, actions, "lambda:CreateFunction",
+		"NotAction should include lambda:CreateFunction since lambda:* is not excluded")
+	assert.Contains(t, actions, "ec2:RunInstances",
+		"NotAction should include ec2:RunInstances since ec2:* is not excluded")
+}
+
+func TestExtractActions_NotAction_SingleService(t *testing.T) {
+	// NotAction: ["s3:GetObject"] should expand to everything except s3:GetObject
+	resource := types.DynaString{"*"}
+	notAction := types.DynaString{"s3:GetObject"}
+	stmts := types.PolicyStatementList{
+		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
+	}
+
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
+	actions := state.ExtractActions(&stmts)
+
+	assert.Greater(t, len(actions), 100, "NotAction with single exclusion should expand to many actions")
+	assert.NotContains(t, actions, "s3:GetObject", "s3:GetObject should be excluded")
+	// Other s3 actions should be present
+	assert.Contains(t, actions, "s3:PutObject", "s3:PutObject should be included")
+}
+
+func TestExtractActions_NotAction_MixedWithAction(t *testing.T) {
+	// A principal with both a regular Action statement and a NotAction statement
+	// should return the union of expanded actions from both.
+	resource := types.DynaString{"*"}
+	regularAction := types.DynaString{"iam:PassRole"}
+	notAction := types.DynaString{"iam:*", "organizations:*", "account:*"}
+	stmts := types.PolicyStatementList{
+		{Effect: "Allow", Action: &regularAction, Resource: &resource},
+		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
+	}
+
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
+	actions := state.ExtractActions(&stmts)
+
+	// Should contain iam:PassRole from the explicit Action statement
+	assert.Contains(t, actions, "iam:PassRole")
+	// Should also contain non-excluded actions from the NotAction statement
+	assert.Contains(t, actions, "lambda:CreateFunction")
 }
 
 func TestExtractActions_WildcardAction(t *testing.T) {
