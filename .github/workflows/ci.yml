@@ -30,4 +30,6 @@ jobs:
       build-binary-name: aurelian
       golangci-lint-timeout: 10m
       test-flags: ${{ github.event_name == 'pull_request' && '-coverprofile=coverage.out' || '-race -coverprofile=coverage.out -covermode=atomic' }}
+      build-matrix-os: ${{ github.event_name == 'pull_request' && '["linux"]' || '["linux","darwin","windows"]' }}
+      build-matrix-arch: ${{ github.event_name == 'pull_request' && '["amd64"]' || '["amd64","arm64"]' }}
     secrets: inherit
