@@ -795,6 +795,98 @@ func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 	_ = results
 }
 
+func TestAnalyze_NotAction_PowerUserAccess(t *testing.T) {
+	// Regression test for 14T-171: PowerUserAccess uses NotAction to grant
+	// everything except IAM, Organizations, and Account actions.
+	// The analyzer must expand NotAction into explicit allowed actions and
+	// detect priv-esc paths through non-excluded services (e.g. lambda, ec2).
+
+	// PowerUserAccess-like policy: Allow NotAction:[iam:*,organizations:*,account:*] on *
+	notAction := types.DynaString{"iam:*", "organizations:*", "account:*"}
+	allResource := types.DynaString{"*"}
+	powerUserStmts := types.PolicyStatementList{
+		{Effect: "Allow", NotAction: &notAction, Resource: &allResource},
+	}
+
+	policyArn := "arn:aws:iam::aws:policy/PowerUserAccess"
+
+	trustAction := types.DynaString{"sts:AssumeRole"}
+	trustPrincipal := types.DynaString{"arn:aws:iam::111122223333:root"}
+	trustStmts := types.PolicyStatementList{
+		{Effect: "Allow", Action: &trustAction, Resource: &allResource, Principal: &types.Principal{AWS: &trustPrincipal}},
+	}
+
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
+			{
+				Arn:      "arn:aws:iam::111122223333:role/PowerUserRole",
+				RoleName: "PowerUserRole",
+				RoleId:   "AROA_PU",
+				Path:     "/",
+				AssumeRolePolicyDocument: types.Policy{
+					Version:   "2012-10-17",
+					Statement: &trustStmts,
+				},
+				AttachedManagedPolicies: []types.ManagedPolicy{
+					{PolicyName: "PowerUserAccess", PolicyArn: policyArn},
+				},
+			},
+			{
+				Arn:      "arn:aws:iam::111122223333:role/target-role",
+				RoleName: "target-role",
+				RoleId:   "AROA_TGT",
+				Path:     "/",
+				AssumeRolePolicyDocument: types.Policy{
+					Version:   "2012-10-17",
+					Statement: &trustStmts,
+				},
+			},
+		},
+		policies: []types.ManagedPolicyDetail{
+			{
+				PolicyName: "PowerUserAccess",
+				Arn:        policyArn,
+				PolicyVersionList: []types.PolicyVersion{
+					{
+						VersionId:        "v1",
+						IsDefaultVersion: true,
+						Document: types.Policy{
+							Version:   "2012-10-17",
+							Statement: &powerUserStmts,
+						},
+					},
+				},
+			},
+		},
+	})
+
+	ga := NewGaadAnalyzer()
+	orgPol := orgpolicies.NewDefaultOrgPolicies()
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
+	require.NoError(t, err)
+
+	// The power user should have priv-esc actions from non-excluded services
+	// e.g. lambda:CreateFunction, ec2:RunInstances, codebuild:CreateProject, etc.
+	foundNonIAMPrivesc := false
+	for _, rel := range collectRelationships(results) {
+		if rel.Principal.ARN != "arn:aws:iam::111122223333:role/PowerUserRole" {
+			continue
+		}
+		// Should NOT have iam:* actions (excluded by NotAction)
+		if len(rel.Action) > 4 && rel.Action[:4] == "iam:" {
+			t.Errorf("PowerUserRole should NOT have iam: action %q (excluded by NotAction)", rel.Action)
+		}
+		// Should have non-iam priv-esc actions
+		if rel.Action == "lambda:CreateFunction" || rel.Action == "ec2:RunInstances" ||
+			rel.Action == "codebuild:CreateProject" || rel.Action == "ssm:SendCommand" {
+			foundNonIAMPrivesc = true
+		}
+	}
+	assert.True(t, foundNonIAMPrivesc,
+		"Expected PowerUserRole to have priv-esc actions from non-excluded services (lambda, ec2, etc.)")
+}
+
 func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 	// Test with multiple users and roles to ensure concurrent processing works
 	passRoleAction := types.DynaString{"iam:PassRole"}
