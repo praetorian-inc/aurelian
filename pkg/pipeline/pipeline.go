@@ -5,6 +5,7 @@
 package pipeline
 
 import (
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -70,11 +71,26 @@ func (e *P[T]) Close() {
 // onto the pipeline it owns. A nil err is equivalent to Close. Like Close it is
 // safe to call multiple times; only the first call takes effect.
 func (e *P[T]) CloseWithError(err error) {
+	_, _ = e.closeWithError(err)
+}
+
+// closeWithError is CloseWithError, reporting whether this call is the one that
+// closed the pipeline (won) and which error the pipeline now carries
+// (recorded). A later call returns won == false and changes nothing, but still
+// reports the error the winning close recorded, so a caller can tell a foreign
+// close that already carries an error from a clean foreign close that does not.
+//
+// Reading e.err after closeOnce.Do returns is memory-safe: sync.Once
+// guarantees that no Do call returns until the winning f has returned, so the
+// winner's write to e.err is ordered before every other caller's read here.
+func (e *P[T]) closeWithError(err error) (won bool, recorded error) {
 	e.closeOnce.Do(func() {
 		e.err = err
 		close(e.ch)
 		close(e.done)
+		won = true
 	})
+	return won, e.err
 }
 
 // Wait blocks until the producer signals completion and returns its error.
@@ -164,10 +180,59 @@ func Pipe[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out], opts 
 	}
 }
 
+// publishStageErr closes out, recording stageErr as out's error.
+//
+// CloseWithError sets out.err inside out.closeOnce.Do, before close(out.done),
+// so a caller blocked in out.Wait() is guaranteed to observe the error. That
+// edge only exists while the Pipe that owns out is the one that closes it.
+//
+// Losing out's closeOnce, however, does NOT mean the error was lost, and that
+// is the common case rather than the exception: a stage function hands the
+// caller-owned out to an inner Pipe, the inner Pipe fails and records error E
+// on out (winning closeOnce), and the stage then returns that same E — which
+// arrives here as stageErr. The caller's out.Wait() already returns E, so
+// there is nothing to warn about. closeWithError therefore reports both
+// whether this call won closeOnce and which error out now carries, and the
+// warning fires only when all three hold: this call lost the race, stageErr is
+// non-nil, and the winning close recorded no error at all (a clean foreign
+// Close). Only in that case is stageErr genuinely unreachable from every
+// reader — the silent-drop shape ENG-9014 is about.
+//
+// Residual gap, accepted deliberately: if the winning close recorded E1 and
+// this stage returns an unrelated E2, E2 is suppressed with no warning. It is
+// unreachable today — no current caller wraps or substitutes the error on this
+// path; every one forwards the error the prior close recorded. Narrowing it
+// with errors.Is(recorded, stageErr) would NOT be a sound fix: measured on go
+// 1.25.8, errors.Is(u, u) returns false when u is an uncomparable error value
+// (a struct with a slice/map/func field and a value receiver), because
+// errors.Is's comparability gate skips == for such dynamic types and the type
+// supplies no Is or Unwrap method. A bare == / != between two error interfaces
+// is worse: it panics at runtime when the dynamic types are identical and
+// uncomparable, self-comparison included. Nothing here compares error values.
+func publishStageErr[T any](out *P[T], stageErr error) {
+	won, recorded := out.closeWithError(stageErr)
+	if won || stageErr == nil || recorded != nil {
+		return
+	}
+	slog.Warn("pipeline: stage error dropped — the output pipeline was already "+
+		"closed cleanly by another owner, which recorded no error, so this "+
+		"error can never reach the caller; the stage must forward through a "+
+		"pipeline it owns instead of handing the caller's pipeline to an "+
+		"inner Pipe",
+		"error", stageErr)
+}
+
 // pipeSequential processes items one at a time, stopping immediately on error.
 func pipeSequential[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out], opts PipeOpts) {
 	go func() {
-		defer out.Close()
+		// stageErr is published via CloseWithError rather than written to
+		// out.err directly: CloseWithError records the error INSIDE
+		// out.closeOnce.Do, before close(out.done), which is the
+		// happens-before edge a caller's Wait() needs. A direct write to
+		// out.err has no such edge and is lost (and racy) whenever something
+		// else has already closed out.
+		var stageErr error
+		defer func() { publishStageErr(out, stageErr) }()
 		var completed, total atomic.Int64
 		var inputDone atomic.Bool
 		stop := startProgressTicker(&completed, &total, &inputDone, opts.Progress)
@@ -182,7 +247,7 @@ func pipeSequential[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[O
 		for item := range in.ch {
 			total.Add(1)
 			if err := fn(item, out); err != nil {
-				out.err = err
+				stageErr = err
 				for range in.ch {
 				}
 				return
@@ -190,8 +255,8 @@ func pipeSequential[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[O
 			completed.Add(1)
 		}
 		inputDone.Store(true)
-		if err := in.Wait(); err != nil && out.err == nil {
-			out.err = err
+		if err := in.Wait(); err != nil && stageErr == nil {
+			stageErr = err
 		}
 	}()
 }
@@ -201,7 +266,12 @@ func pipeSequential[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[O
 // remaining input is drained so upstream doesn't block.
 func pipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out], opts PipeOpts) {
 	go func() {
-		defer out.Close()
+		// See pipeSequential: the stage error is captured in a local and
+		// published via CloseWithError so it carries a happens-before edge to
+		// the caller's Wait(). g.Wait() supplies the edge between the workers'
+		// returns and this goroutine's read of the first error.
+		var stageErr error
+		defer func() { publishStageErr(out, stageErr) }()
 		var completed, total atomic.Int64
 		var inputDone atomic.Bool
 		stop := startProgressTicker(&completed, &total, &inputDone, opts.Progress)
@@ -214,9 +284,8 @@ func pipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out
 		}()
 
 		var (
-			g       errgroup.Group
-			failed  atomic.Bool
-			errOnce sync.Once
+			g      errgroup.Group
+			failed atomic.Bool
 		)
 		g.SetLimit(opts.Concurrency)
 
@@ -229,7 +298,6 @@ func pipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out
 			total.Add(1)
 			g.Go(func() error {
 				if err := fn(item, out); err != nil {
-					errOnce.Do(func() { out.err = err })
 					failed.Store(true)
 					return err
 				}
@@ -239,10 +307,12 @@ func pipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out
 		}
 		inputDone.Store(true)
 
-		_ = g.Wait()
+		// errgroup already holds the first non-nil worker error behind its own
+		// sync.Once; this replaces the previous errOnce/out.err write.
+		stageErr = g.Wait()
 
-		if err := in.Wait(); err != nil && out.err == nil {
-			out.err = err
+		if err := in.Wait(); err != nil && stageErr == nil {
+			stageErr = err
 		}
 	}()
 }
