@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/aws/structuralfacts"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -455,4 +456,16 @@ func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 		out.Send(r)
 		return true
 	})
+
+	// Emit structural facts: resource-to-role bindings extracted from the
+	// collected resources. These feed the escalation solver's chain rules
+	// (e.g. codebuild_start_build fires only when a CodeBuild project with a
+	// privileged service role exists). The facts are extracted from the same
+	// resource set the Neo4j enrichers read, so they carry the same role
+	// references without requiring a graph database.
+	facts := structuralfacts.Collect(m.resourcesWithPolicies)
+	for _, f := range facts {
+		out.Send(f)
+	}
+	m.log.Success("structural facts emitted (%d)", len(facts))
 }
