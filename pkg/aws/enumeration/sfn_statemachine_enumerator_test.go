@@ -35,7 +35,6 @@ func TestBuildSFNStateMachineResource(t *testing.T) {
 
 func TestBuildSFNStateMachineResourceNilArn(t *testing.T) {
 	// A missing ARN must not panic; the ARN falls back to a synthesized form.
-
 	detail := &sfn.DescribeStateMachineOutput{
 		Name:    aws.String("no-arn-sm"),
 		RoleArn: aws.String("arn:aws:iam::123456789012:role/sfn-exec-role"),

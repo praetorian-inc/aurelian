@@ -31,7 +31,6 @@ func TestBuildGlueDevEndpointResource(t *testing.T) {
 
 func TestBuildGlueDevEndpointResourceNilRole(t *testing.T) {
 	// A nil RoleArn must not panic and emits an empty value (fail-closed).
-
 	endpoint := gluetypes.DevEndpoint{
 		EndpointName: aws.String("no-role-ep"),
 	}

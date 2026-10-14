@@ -45,7 +45,6 @@ func TestBuildResourceShareResource_External(t *testing.T) {
 func TestBuildResourceShareResource_OrgOnlyNilFields(t *testing.T) {
 	// A share with AllowExternalPrincipals=false and no associations must not panic
 	// and must report AllowExternalPrincipals=false with empty principal/resource lists.
-
 	share := ramtypes.ResourceShare{
 		ResourceShareArn:        aws.String("arn:aws:ram:us-west-2:123456789012:resource-share/def-456"),
 		Name:                    aws.String("org-subnet-share"),
@@ -64,7 +63,6 @@ func TestBuildResourceShareResource_OrgOnlyNilFields(t *testing.T) {
 
 func TestBuildResourceShareResource_MissingArnFallsBackToAccountID(t *testing.T) {
 	// OwningAccountId absent → AccountRef falls back to the caller-supplied accountID.
-
 	share := ramtypes.ResourceShare{
 		ResourceShareArn:        aws.String("arn:aws:ram:eu-west-1:999999999999:resource-share/ghi-789"),
 		Name:                    aws.String("no-owner-field"),

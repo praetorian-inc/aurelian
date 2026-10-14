@@ -25,7 +25,6 @@ func (e *ccTestSmithyError) ErrorFault() smithy.ErrorFault { return smithy.Fault
 
 func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 	// A mock enumerator that returns a skippable error from EnumerateByARN.
-
 	mock := &mockResourceEnumerator{
 		resourceType:      "AWS::Lambda::Function",
 		enumerateByARNErr: &ccTestSmithyError{code: "AccessDeniedException", msg: "denied by SCP"},

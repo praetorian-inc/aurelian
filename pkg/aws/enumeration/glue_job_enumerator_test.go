@@ -32,7 +32,6 @@ func TestBuildGlueJobResource(t *testing.T) {
 func TestBuildGlueJobResourceRoleName(t *testing.T) {
 	// A role given as a NAME (not an ARN) is captured verbatim but will NOT substring-match
 	// any role ARN — fail-closed, consistent with resource_service_role.yaml.
-
 	job := gluetypes.Job{
 		Name: aws.String("name-role-job"),
 		Role: aws.String("glue-job-role"),
@@ -45,7 +44,6 @@ func TestBuildGlueJobResourceRoleName(t *testing.T) {
 
 func TestBuildGlueJobResourceNilRole(t *testing.T) {
 	// A nil Role must not panic and emits an empty value.
-
 	job := gluetypes.Job{
 		Name: aws.String("no-role-job"),
 	}

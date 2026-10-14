@@ -385,7 +385,6 @@ func TestEnumerator_Close_EmptyOutputDir_NoFile(t *testing.T) {
 // by the dispatcher safety net on every subsequent List call for IAM types.
 func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
 	// Simulate an IAM sub-enumerator that returns AccessDeniedException.
-
 	denied := &mockResourceEnumerator{
 		resourceType:    "AWS::IAM::Role",
 		enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "denied"},

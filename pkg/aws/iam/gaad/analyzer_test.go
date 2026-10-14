@@ -135,7 +135,6 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 
 func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 	// Role with an attached managed policy granting iam:PassRole
-
 	passRoleAction := types.DynaString{"iam:PassRole"}
 	passRoleResource := types.DynaString{"*"}
 	passRoleStmts := types.PolicyStatementList{
@@ -214,7 +213,6 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 
 func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 	// User "bob" is in group "admins" which has a policy granting iam:CreateAccessKey
-
 	createKeyAction := types.DynaString{"iam:CreateAccessKey"}
 	createKeyResource := types.DynaString{"*"}
 	createKeyStmts := types.PolicyStatementList{
@@ -289,7 +287,6 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 
 func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 	// Role trust policy allows a service principal (lambda.amazonaws.com) to assume it
-
 	trustAction := types.DynaString{"sts:AssumeRole"}
 	trustResource := types.DynaString{"*"}
 	trustService := types.DynaString{"lambda.amazonaws.com"}
@@ -398,7 +395,6 @@ func TestAnalyze_AssumeRoleDirectTrustNoIdentityGrant(t *testing.T) {
 
 func TestAnalyze_ResourcePolicy(t *testing.T) {
 	// A resource with a resource policy granting lambda:InvokeFunction to lambda.amazonaws.com
-
 	trustAction := types.DynaString{"sts:AssumeRole"}
 	trustResource := types.DynaString{"*"}
 	trustPrincipal := types.DynaString{"arn:aws:iam::111122223333:root"}
@@ -462,7 +458,6 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 
 func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 	// User has iam:* but a boundary restricts to only iam:PassRole
-
 	allIAMAction := types.DynaString{"iam:*"}
 	allResource := types.DynaString{"*"}
 	identityStmts := types.PolicyStatementList{
@@ -664,7 +659,6 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 
 func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 	// Trust policy with a Deny statement should not produce an AssumeRole edge
-
 	trustAction := types.DynaString{"sts:AssumeRole"}
 	trustResource := types.DynaString{"*"}
 	trustPrincipalAlice := types.DynaString{"arn:aws:iam::111122223333:user/alice"}
@@ -708,7 +702,6 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 
 func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 	// Trust policy with nil principal should be skipped gracefully
-
 	trustAction := types.DynaString{"sts:AssumeRole"}
 	trustResource := types.DynaString{"*"}
 	trustStmts := types.PolicyStatementList{
@@ -737,7 +730,6 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 
 func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 	// Resource policy with a non-priv-esc action should not produce edges
-
 	s3Action := types.DynaString{"s3:GetObject"}
 	s3Resource := types.DynaString{"arn:aws:s3:::my-bucket/*"}
 	s3Service := types.DynaString{"lambda.amazonaws.com"}
@@ -775,7 +767,6 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 
 func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 	// Resource with nil resource policy or nil statements should be handled gracefully
-
 	gaad := types.NewAuthorizationAccountDetails("111122223333", nil, nil, nil, nil)
 
 	resources := []output.AWSResource{
@@ -806,7 +797,6 @@ func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 
 func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 	// Test with multiple users and roles to ensure concurrent processing works
-
 	passRoleAction := types.DynaString{"iam:PassRole"}
 	allResource := types.DynaString{"*"}
 	passRoleStmts := types.PolicyStatementList{

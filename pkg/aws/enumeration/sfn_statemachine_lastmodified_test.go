@@ -248,7 +248,6 @@ func TestSFNStateMachineLastModified_MissingContractedFieldEmitsStateMachineUnst
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-
 			logs := captureLogs(t)
 			fake, _, enum := newSFNFixture(t)
 			fake.reply("ListStateMachines", sfnListStateMachines(sfnOrders))
@@ -273,7 +272,6 @@ func TestSFNStateMachineLastModified_MissingContractedFieldEmitsStateMachineUnst
 // One state machine in the region lacks its contracted CreationDate; only it
 // loses LastModified, its neighbour is stamped, and the listing succeeds.
 func TestSFNStateMachineLastModified_MissingFieldIsIsolatedToThatResource(t *testing.T) {
-
 	logs := captureLogs(t)
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
 
@@ -340,11 +338,9 @@ func TestSFNStateMachineLastModified_ListExecutionsFailureLeavesStateMachineUnst
 }
 
 func TestSFNStateMachineLastModified_EnumerateByARN(t *testing.T) {
-
 	created := time.Date(2025, 4, 2, 3, 4, 5, 0, time.UTC)
 
 	t.Run("no executions uses DescribeStateMachine CreationDate", func(t *testing.T) {
-
 		fake, _, enum := newSFNFixture(t)
 		fake.reply("DescribeStateMachine", sfnDescribe(sfnIdle, epoch(created)))
 		fake.on("ListExecutions", sfnExecutionsByMachine(t, map[string]string{sfnIdle: sfnNoExecutions}))
@@ -361,7 +357,6 @@ func TestSFNStateMachineLastModified_EnumerateByARN(t *testing.T) {
 	})
 
 	t.Run("DescribeStateMachine without CreationDate emits the state machine unstamped", func(t *testing.T) {
-
 		logs := captureLogs(t)
 		fake, _, enum := newSFNFixture(t)
 		fake.reply("DescribeStateMachine", sfnDescribe(sfnIdle, ""))

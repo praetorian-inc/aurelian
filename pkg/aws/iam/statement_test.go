@@ -1111,7 +1111,6 @@ func TestMatchesPrincipal(t *testing.T) {
 func TestPopulateDefaultRequestConditionKeys_ServicePrincipal(t *testing.T) {
 	// Service principal should set ViaAWSService and CalledVia
 	// Use an ARN with the service name in the service field so getServiceNameFromArn finds it
-
 	ctx := &RequestContext{
 		PrincipalArn: "arn:aws:lambda.amazonaws.com:us-east-1:lambda.amazonaws.com:function/my-func",
 	}

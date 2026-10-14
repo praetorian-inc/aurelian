@@ -410,7 +410,6 @@ func TestExtractActions_MultipleStatements(t *testing.T) {
 
 func TestExtractActions_NilActionField(t *testing.T) {
 	// Statement with no Action field (e.g., NotAction-only)
-
 	resource := types.DynaString{"*"}
 	notAction := types.DynaString{"iam:*"}
 	stmts := types.PolicyStatementList{
@@ -426,7 +425,6 @@ func TestExtractActions_WildcardAction(t *testing.T) {
 	// Wildcard actions like "iam:*" are expanded by the ActionExpander
 	// which fetches from the embedded action list. We test that it returns
 	// expanded actions.
-
 	action := types.DynaString{"iam:*"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{

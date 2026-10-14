@@ -599,7 +599,6 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 
 func TestGetDirectScpStatementsForTarget_NoDirectPolicies(t *testing.T) {
 	// OU target (r-root) has FullAWSAccess direct SCP
-
 	op := buildTestOrgPolicies()
 	stmts := op.GetDirectScpStatementsForTarget("r-root")
 	// r-root has no Account field, so GetPolicyForTarget won't find it (requires Account != nil)

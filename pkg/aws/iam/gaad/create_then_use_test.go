@@ -257,7 +257,6 @@ func TestArnPatternsCompatible_WildcardRegion(t *testing.T) {
 
 func TestArnPatternsCompatible_TooFewParts(t *testing.T) {
 	// If either ARN has fewer than 5 colon-separated parts, return true (permissive)
-
 	assert.True(t, arnPatternsCompatible("short", "arn:aws:s3:::bucket"))
 	assert.True(t, arnPatternsCompatible("arn:aws:s3:::bucket", "short"))
 }
@@ -268,7 +267,6 @@ func TestArnPatternsCompatible_TooFewParts(t *testing.T) {
 
 func TestSynthesizeCreateThenUsePermissions_NoPrincipalWithCreate(t *testing.T) {
 	// No one has codebuild:CreateProject, so no synthetic edges
-
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice"}},
@@ -284,7 +282,6 @@ func TestSynthesizeCreateThenUsePermissions_NoPrincipalWithCreate(t *testing.T) 
 
 func TestSynthesizeCreateThenUsePermissions_HasCreateButAlreadyHasUse(t *testing.T) {
 	// User has codebuild:CreateProject and already has codebuild:StartBuild, so no synthetic edge
-
 	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:role/build-role"}},
@@ -308,7 +305,6 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 	// - codebuild:StartBuild on * (identity policy)
 	// And results show codebuild:CreateProject allowed on codebuild.amazonaws.com
 	// but NOT codebuild:StartBuild (no matching resource exists yet)
-
 	createAction := types.DynaString{"codebuild:CreateProject", "codebuild:StartBuild", "codebuild:StartBuildBatch"}
 	createResource := types.DynaString{"*"}
 	createStmts := types.PolicyStatementList{
@@ -375,7 +371,6 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 
 func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
 	// Role has codebuild:CreateProject but NOT codebuild:StartBuild in identity policies
-
 	createAction := types.DynaString{"codebuild:CreateProject"}
 	createResource := types.DynaString{"*"}
 	createStmts := types.PolicyStatementList{
@@ -431,7 +426,6 @@ func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) 
 	// - codebuild:CreateProject on arn:aws:codebuild:us-east-1:111122223333:project/*
 	// - codebuild:StartBuild on arn:aws:codebuild:eu-west-1:111122223333:project/*
 	// The resource patterns don't overlap (different regions), so no synthetic edge.
-
 	createAction := types.DynaString{"codebuild:CreateProject"}
 	createResource := types.DynaString{"arn:aws:codebuild:us-east-1:111122223333:project/*"}
 	createStmts := types.PolicyStatementList{
@@ -639,7 +633,6 @@ func TestGetStmtResources_UserGroupPolicy(t *testing.T) {
 
 func TestGetStmtResources_NilResource(t *testing.T) {
 	// If a statement has Action but no Resource field, it implies "*"
-
 	action := types.DynaString{"codebuild:CreateProject"}
 	stmts := types.PolicyStatementList{
 		{Effect: "Allow", Action: &action},
