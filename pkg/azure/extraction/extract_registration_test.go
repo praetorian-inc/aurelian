@@ -49,8 +49,3 @@ func TestAllExtractorsRegistered(t *testing.T) {
 		})
 	}
 }
-
-func TestExtractDiagnostics_NotRegistered(t *testing.T) {
-	var fn extractorFunc = extractDiagnosticSettings
-	assert.NotNil(t, fn, "extractDiagnosticSettings should be a valid extractorFunc")
-}
