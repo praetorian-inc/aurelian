@@ -29,8 +29,7 @@ func TestEmitter_ErrorPropagation(t *testing.T) {
 	e := New[int]()
 	go func() {
 		e.Send(1)
-		e.err = fmt.Errorf("producer failed")
-		e.Close()
+		e.CloseWithError(fmt.Errorf("producer failed"))
 	}()
 
 	for range e.Range() {
@@ -101,8 +100,7 @@ func TestPipe_UpstreamErrorPropagates(t *testing.T) {
 
 	go func() {
 		in.Send(1)
-		in.err = fmt.Errorf("upstream failed")
-		in.Close()
+		in.CloseWithError(fmt.Errorf("upstream failed"))
 	}()
 
 	Pipe(in, func(v int, o *P[int]) error {
