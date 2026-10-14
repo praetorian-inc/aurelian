@@ -198,6 +198,7 @@ func TestGetAccount_Found(t *testing.T) {
 	acct := op.GetAccount("111111111111")
 	if acct == nil {
 		t.Fatal("expected account to be found")
+		return
 	}
 	if acct.ID != "111111111111" {
 		t.Errorf("expected account ID 111111111111, got %s", acct.ID)
@@ -232,12 +233,14 @@ func TestGetPolicyForTarget_Found(t *testing.T) {
 	target := op.GetPolicyForTarget("111111111111")
 	if target == nil {
 		t.Fatal("expected policy target to be found")
+		return
 	}
 	if target.ID != "111111111111" {
 		t.Errorf("expected target ID 111111111111, got %s", target.ID)
 	}
 	if target.Account == nil {
 		t.Fatal("expected target to have an account")
+		return
 	}
 }
 
@@ -255,12 +258,14 @@ func TestGetPolicyContent_SCP(t *testing.T) {
 	content := op.GetPolicyContent(arn, "scps")
 	if content == nil {
 		t.Fatal("expected SCP policy content")
+		return
 	}
 	if content.Version != "2012-10-17" {
 		t.Errorf("expected version 2012-10-17, got %s", content.Version)
 	}
 	if content.Statement == nil || len(*content.Statement) != 1 {
 		t.Fatal("expected 1 statement in FullAWSAccess SCP")
+		return
 	}
 	if (*content.Statement)[0].Effect != "Allow" {
 		t.Errorf("expected Allow effect, got %s", (*content.Statement)[0].Effect)
@@ -273,9 +278,11 @@ func TestGetPolicyContent_RCP(t *testing.T) {
 	content := op.GetPolicyContent(arn, "rcps")
 	if content == nil {
 		t.Fatal("expected RCP policy content")
+		return
 	}
 	if content.Statement == nil || len(*content.Statement) != 1 {
 		t.Fatal("expected 1 statement in RestrictRCP")
+		return
 	}
 	if (*content.Statement)[0].Sid != "DenyS3Public" {
 		t.Errorf("expected Sid DenyS3Public, got %s", (*content.Statement)[0].Sid)
@@ -303,9 +310,11 @@ func TestGetDirectScpStatementsForTarget(t *testing.T) {
 	stmts := op.GetDirectScpStatementsForTarget("111111111111")
 	if stmts == nil {
 		t.Fatal("expected direct SCP statements")
+		return
 	}
 	if len(*stmts) != 1 {
 		t.Fatalf("expected 1 direct SCP statement, got %d", len(*stmts))
+		return
 	}
 	if (*stmts)[0].Sid != "DenyIAMDelete" {
 		t.Errorf("expected Sid DenyIAMDelete, got %s", (*stmts)[0].Sid)
@@ -330,10 +339,12 @@ func TestGetParentScpStatementsForTarget(t *testing.T) {
 	stmts := op.GetParentScpStatementsForTarget("111111111111")
 	if stmts == nil {
 		t.Fatal("expected parent SCP statements")
+		return
 	}
 	// Account has 2 parent policies: Root (FullAWSAccess) and ChildOU (DenyS3Delete)
 	if len(*stmts) != 2 {
 		t.Fatalf("expected 2 parent SCP statements, got %d", len(*stmts))
+		return
 	}
 
 	sids := make(map[string]bool)
@@ -361,14 +372,17 @@ func TestGetMergedParentScpsForTarget(t *testing.T) {
 	merged := op.GetMergedParentScpsForTarget("111111111111")
 	if merged == nil {
 		t.Fatal("expected merged parent SCPs")
+		return
 	}
 	// Should have entries for r-root and ou-child-1
 	if len(merged) != 2 {
 		t.Fatalf("expected 2 parent groups, got %d", len(merged))
+		return
 	}
 	rootStmts, ok := merged["r-root"]
 	if !ok {
 		t.Fatal("expected entry for r-root")
+		return
 	}
 	if len(*rootStmts) != 1 || (*rootStmts)[0].Sid != "FullAccess" {
 		t.Error("unexpected root SCP statements")
@@ -376,6 +390,7 @@ func TestGetMergedParentScpsForTarget(t *testing.T) {
 	childStmts, ok := merged["ou-child-1"]
 	if !ok {
 		t.Fatal("expected entry for ou-child-1")
+		return
 	}
 	if len(*childStmts) != 1 || (*childStmts)[0].Sid != "DenyS3Delete" {
 		t.Error("unexpected child OU SCP statements")
@@ -395,15 +410,18 @@ func TestGetMergedParentRcpsForTarget(t *testing.T) {
 	merged := op.GetMergedParentRcpsForTarget("111111111111")
 	if merged == nil {
 		t.Fatal("expected merged parent RCPs")
+		return
 	}
 	// Root has no RCPs (empty policies list), ChildOU has childRcpArn
 	// Only ou-child-1 should be in the map since r-root has empty policies
 	if len(merged) != 1 {
 		t.Fatalf("expected 1 parent group with RCPs, got %d", len(merged))
+		return
 	}
 	childStmts, ok := merged["ou-child-1"]
 	if !ok {
 		t.Fatal("expected entry for ou-child-1")
+		return
 	}
 	if len(*childStmts) != 1 || (*childStmts)[0].Sid != "DenyS3Public" {
 		t.Error("unexpected child OU RCP statements")
@@ -423,10 +441,12 @@ func TestGetAllScpPoliciesForTarget(t *testing.T) {
 	all := op.GetAllScpPoliciesForTarget("111111111111")
 	if all == nil {
 		t.Fatal("expected all SCP statements")
+		return
 	}
 	// 1 direct (DenyIAMDelete) + 2 parent (FullAccess, DenyS3Delete) = 3
 	if len(*all) != 3 {
 		t.Fatalf("expected 3 total SCP statements, got %d", len(*all))
+		return
 	}
 	sids := make(map[string]bool)
 	for _, stmt := range *all {
@@ -456,9 +476,11 @@ func TestGetDirectRcpStatementsForTarget(t *testing.T) {
 	stmts := op.GetDirectRcpStatementsForTarget("111111111111")
 	if stmts == nil {
 		t.Fatal("expected direct RCP statements")
+		return
 	}
 	if len(*stmts) != 1 {
 		t.Fatalf("expected 1 direct RCP statement, got %d", len(*stmts))
+		return
 	}
 	if (*stmts)[0].Sid != "DenyLambdaPublic" {
 		t.Errorf("expected Sid DenyLambdaPublic, got %s", (*stmts)[0].Sid)
@@ -482,10 +504,12 @@ func TestGetParentRcpStatementsForTarget(t *testing.T) {
 	stmts := op.GetParentRcpStatementsForTarget("111111111111")
 	if stmts == nil {
 		t.Fatal("expected parent RCP statements")
+		return
 	}
 	// Root has no RCPs, ChildOU has 1 (DenyS3Public)
 	if len(*stmts) != 1 {
 		t.Fatalf("expected 1 parent RCP statement, got %d", len(*stmts))
+		return
 	}
 	if (*stmts)[0].Sid != "DenyS3Public" {
 		t.Errorf("expected Sid DenyS3Public, got %s", (*stmts)[0].Sid)
@@ -505,10 +529,12 @@ func TestGetAllRcpPoliciesForTarget(t *testing.T) {
 	all := op.GetAllRcpPoliciesForTarget("111111111111")
 	if all == nil {
 		t.Fatal("expected all RCP statements")
+		return
 	}
 	// 1 direct (DenyLambdaPublic) + 1 parent (DenyS3Public) = 2
 	if len(*all) != 2 {
 		t.Fatalf("expected 2 total RCP statements, got %d", len(*all))
+		return
 	}
 	sids := make(map[string]bool)
 	for _, stmt := range *all {
@@ -551,11 +577,13 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 	op := NewDefaultOrgPolicies()
 	if op == nil {
 		t.Fatal("expected non-nil default OrgPolicies")
+		return
 	}
 
 	// Check SCPs
 	if len(op.SCPs) != 1 {
 		t.Fatalf("expected 1 SCP, got %d", len(op.SCPs))
+		return
 	}
 	if *op.SCPs[0].PolicySummary.Name != "FullAWSAccess" {
 		t.Errorf("expected FullAWSAccess, got %s", *op.SCPs[0].PolicySummary.Name)
@@ -569,6 +597,7 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 	stmts := op.SCPs[0].PolicyContent.Statement
 	if stmts == nil || len(*stmts) != 1 {
 		t.Fatal("expected 1 statement in default SCP")
+		return
 	}
 	if (*stmts)[0].Effect != "Allow" {
 		t.Errorf("expected Allow effect, got %s", (*stmts)[0].Effect)
@@ -582,6 +611,7 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 	// Check targets
 	if len(op.Targets) != 1 {
 		t.Fatalf("expected 1 target, got %d", len(op.Targets))
+		return
 	}
 	if op.Targets[0].Name != "Root" {
 		t.Errorf("expected target name Root, got %s", op.Targets[0].Name)
@@ -591,6 +621,7 @@ func TestNewDefaultOrgPolicies(t *testing.T) {
 	}
 	if len(op.Targets[0].SCPs.DirectPolicies) != 1 {
 		t.Fatalf("expected 1 direct SCP in root target, got %d", len(op.Targets[0].SCPs.DirectPolicies))
+		return
 	}
 	if op.Targets[0].SCPs.DirectPolicies[0] != expectedArn {
 		t.Errorf("expected direct policy ARN %s, got %s", expectedArn, op.Targets[0].SCPs.DirectPolicies[0])
@@ -667,6 +698,7 @@ func TestStrPtr(t *testing.T) {
 	ptr := strPtr(s)
 	if ptr == nil {
 		t.Fatal("expected non-nil pointer")
+		return
 	}
 	if *ptr != "hello" {
 		t.Errorf("expected hello, got %s", *ptr)
