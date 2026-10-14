@@ -31,6 +31,16 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Resolve GOCACHE
+        id: gocache
+        run: echo "dir=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache gendoc build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ${{ steps.gocache.outputs.dir }}
+          key: gendoc-go-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}
+
       - name: Configure Git for private modules
         run: git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
