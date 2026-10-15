@@ -78,9 +78,9 @@ Covert techniques that avoid CloudTrail logging. The `whoami` module identifies 
 
 | Platform | Alias | Modules | Capabilities |
 |----------|-------|---------|--------------|
-| **Amazon Web Services (AWS)** | `aws`, `amazon` | 16 | Secrets, public resources, IAM graph, subdomain takeover, OPSEC whoami, cost analysis, CDK/CloudFront takeover, enabled-region discovery |
-| **Microsoft Azure** | `azure`, `az` | 6 | Secrets, public resources, configuration scan, subdomain takeover, conditional access policies |
-| **Google Cloud Platform (GCP)** | `gcp`, `google` | 4 | Secrets, public resources, subdomain takeover, resource enumeration |
+| **Amazon Web Services (AWS)** | `aws`, `amazon` | <!-- autogen:count:aws -->22<!-- /autogen:count:aws --> | Secrets, public resources, IAM graph, subdomain takeover, OPSEC whoami, cost analysis, CDK/CloudFront takeover, enabled-region discovery |
+| **Microsoft Azure** | `azure`, `az` | <!-- autogen:count:azure -->8<!-- /autogen:count:azure --> | Secrets, public resources, configuration scan, subdomain takeover, conditional access policies, APIM audit |
+| **Google Cloud Platform (GCP)** | `gcp`, `google` | <!-- autogen:count:gcp -->4<!-- /autogen:count:gcp --> | Secrets, public resources, subdomain takeover, resource enumeration |
 
 ---
 
@@ -94,7 +94,7 @@ cd aurelian
 go build -o aurelian main.go
 ```
 
-Requires **Go 1.24+**.
+Requires **Go <!-- autogen:go-version -->1.27<!-- /autogen:go-version -->+**.
 
 ### Docker
 
@@ -133,7 +133,7 @@ aurelian aws recon whoami
 aurelian aws recon find-secrets
 
 # Scan Azure subscriptions
-aurelian azure recon find-secrets --subscription-id <id>
+aurelian azure recon find-secrets --subscription-ids <id>
 
 # Scan GCP projects
 aurelian gcp recon find-secrets --project-id <id>
@@ -146,7 +146,7 @@ aurelian gcp recon find-secrets --project-id <id>
 aurelian aws recon public-resources
 
 # Azure public resources
-aurelian azure recon public-resources --subscription-id <id>
+aurelian azure recon public-resources --subscription-ids <id>
 
 # GCP public resources
 aurelian gcp recon public-resources --project-id <id>
@@ -166,7 +166,7 @@ aurelian aws analyze analyze-iam-permissions --gaad-file gaad.json
 
 ```sh
 aurelian aws   recon subdomain-takeover
-aurelian azure recon subdomain-takeover --subscription-id <id>
+aurelian azure recon subdomain-takeover --subscription-ids <id>
 aurelian gcp   recon subdomain-takeover --project-id <id>
 ```
 
@@ -180,6 +180,7 @@ aurelian list-modules
 
 ## Modules
 
+<!-- autogen:modules -->
 ### AWS Reconnaissance
 
 | Module | Description |
@@ -210,6 +211,7 @@ aurelian list-modules
 | `access-key-to-account-id` | Resolves AWS access key to account ID |
 | `ip-lookup` | Identifies AWS IP ranges for a given IP address |
 | `known-account` | Checks if an account ID belongs to known AWS service accounts |
+| `graph` | Surfaces privilege-escalation paths from a Neo4j graph populated by `aws recon graph` |
 
 ### Azure Reconnaissance
 
@@ -221,6 +223,8 @@ aurelian list-modules
 | `subdomain-takeover` | Checks Azure DNS zones for dangling CNAMEs |
 | `conditional-access-policies` | Enumerates Conditional Access policies for weaknesses |
 | `list-all` | Enumerates all resources across subscriptions |
+| `apim-audit` | Audits APIM for unauthenticated APIs and backends reachable without the gateway |
+| `apim-cross-tenant` | Enumerates APIM developer portals unauthenticated and tests cross-tenant signup |
 
 ### GCP Reconnaissance
 
@@ -230,6 +234,7 @@ aurelian list-modules
 | `public-resources` | Identifies publicly accessible GCP resources |
 | `subdomain-takeover` | Checks Cloud DNS for dangling CNAME records |
 | `list-all` | Enumerates all resources across projects |
+<!-- /autogen:modules -->
 
 ---
 
