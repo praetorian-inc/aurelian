@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -53,7 +54,15 @@ func updateREADME(path string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := applyReadme(string(raw), collectReadmeModules())
+	modRaw, err := os.ReadFile("./go.mod")
+	if err != nil {
+		return err
+	}
+	goVersion, err := goVersionFromMod(string(modRaw))
+	if err != nil {
+		return err
+	}
+	updated, err := applyReadme(string(raw), collectReadmeModules(), goVersion)
 	if err != nil {
 		return err
 	}
@@ -67,7 +76,7 @@ func updateREADME(path string) error {
 	return nil
 }
 
-func applyReadme(content string, live []readmeGroup) (string, error) {
+func applyReadme(content string, live []readmeGroup, goVersion string) (string, error) {
 	existing, err := extractReadmeModules(content)
 	if err != nil {
 		return "", err
@@ -84,7 +93,26 @@ func applyReadme(content string, live []readmeGroup) (string, error) {
 			return "", err
 		}
 	}
+	content, err = replaceReadmeMarkedInline(content, "go-version", goVersion)
+	if err != nil {
+		return "", err
+	}
 	return content, nil
+}
+
+func goVersionFromMod(content string) (string, error) {
+	for _, line := range strings.Split(content, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "go" {
+			continue
+		}
+		parts := strings.Split(fields[1], ".")
+		if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+			return "", fmt.Errorf("invalid go directive in go.mod")
+		}
+		return parts[0] + "." + parts[1], nil
+	}
+	return "", fmt.Errorf("missing go directive in go.mod")
 }
 
 func collectReadmeModules() []readmeGroup {
@@ -211,10 +239,10 @@ func renderReadmeModuleTables(groups []readmeGroup) string {
 func shortReadmeDescription(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	s = strings.ReplaceAll(s, "|", "\\|")
-	if len(s) <= 120 {
+	if utf8.RuneCountInString(s) <= 120 {
 		return s
 	}
-	truncated := s[:120]
+	truncated := string([]rune(s)[:120])
 	if i := strings.LastIndex(truncated, " "); i > 0 {
 		truncated = strings.TrimRightFunc(truncated[:i], unicode.IsSpace)
 	}

@@ -94,7 +94,7 @@ cd aurelian
 go build -o aurelian main.go
 ```
 
-Requires **Go 1.24+**.
+Requires **Go <!-- autogen:go-version -->1.27<!-- /autogen:go-version -->+**.
 
 ### Docker
 
@@ -133,7 +133,7 @@ aurelian aws recon whoami
 aurelian aws recon find-secrets
 
 # Scan Azure subscriptions
-aurelian azure recon find-secrets --subscription-id <id>
+aurelian azure recon find-secrets --subscription-ids <id>
 
 # Scan GCP projects
 aurelian gcp recon find-secrets --project-id <id>
@@ -146,7 +146,7 @@ aurelian gcp recon find-secrets --project-id <id>
 aurelian aws recon public-resources
 
 # Azure public resources
-aurelian azure recon public-resources --subscription-id <id>
+aurelian azure recon public-resources --subscription-ids <id>
 
 # GCP public resources
 aurelian gcp recon public-resources --project-id <id>
@@ -166,7 +166,7 @@ aurelian aws analyze analyze-iam-permissions --gaad-file gaad.json
 
 ```sh
 aurelian aws   recon subdomain-takeover
-aurelian azure recon subdomain-takeover --subscription-id <id>
+aurelian azure recon subdomain-takeover --subscription-ids <id>
 aurelian gcp   recon subdomain-takeover --project-id <id>
 ```
 
