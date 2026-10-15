@@ -79,22 +79,44 @@ func TestExtract_FailOnErrorRejectsPartialExtraction(t *testing.T) {
 	assert.Empty(t, items)
 }
 
-func TestExtract_UnchangedResourceIsSkipped(t *testing.T) {
-	modified := time.Date(2026, time.August, 24, 11, 0, 0, 0, time.UTC)
-	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{
-		ModifiedSince: modified.Add(time.Hour),
+// LastModified is never a reason to skip a resource: Guard's Match() gate
+// decides what to scan, so the extractor extracts even a resource last
+// modified decades ago (ENG-8770).
+func TestExtract_OldLastModifiedResourceIsStillExtracted(t *testing.T) {
+	mustRegister("AWS::UnitTest::OldResource", "emits", func(_ extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
+		out.Send(output.ScanInput{ResourceID: r.ResourceID, Label: "old", Content: []byte("content")})
+		return nil
 	})
-	out := pipeline.New[output.ScanInput]()
-	resource := output.AWSResource{
-		ResourceType: "AWS::UnitTest::MissingExtractor",
-		ResourceID:   "resource-1",
-		LastModified: &modified,
+
+	modified := time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{name: "default config", cfg: Config{}},
+		{name: "logs-since after last modified", cfg: Config{LogsSince: time.Date(2026, time.August, 24, 11, 0, 0, 0, time.UTC)}},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, tt.cfg)
+			out := pipeline.New[output.ScanInput]()
+			resource := output.AWSResource{
+				ResourceType: "AWS::UnitTest::OldResource",
+				ResourceID:   "resource-1",
+				Region:       "us-east-1",
+				LastModified: &modified,
+			}
+			go func() {
+				out.CloseWithError(ex.Extract(resource, out))
+			}()
 
-	err := ex.Extract(resource, out)
-
-	require.NoError(t, err)
-	assert.Zero(t, out.Sent())
+			items, err := out.Collect()
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			assert.Equal(t, "resource-1", items[0].ResourceID)
+			assert.Equal(t, "old", items[0].Label)
+		})
+	}
 }
 
 func TestExtract_ECSPropertiesExtractor(t *testing.T) {

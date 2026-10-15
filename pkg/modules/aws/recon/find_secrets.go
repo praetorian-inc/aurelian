@@ -21,9 +21,9 @@ func init() {
 type FindSecretsConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
-	MaxEvents     int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
-	MaxStreams    int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
-	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; unchanged resources with reliable AWS modification metadata are skipped"`
+	MaxEvents  int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
+	MaxStreams int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
+	LogsSince  string `param:"logs-since" desc:"RFC3339 timestamp of the last successful scan; log events older than this time minus six hours are not read"`
 }
 
 // AWSFindSecretsModule scans AWS resources for hardcoded secrets using Titus.
@@ -74,13 +74,12 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
 
-	var modifiedSince time.Time
-	incremental := c.ModifiedSince != ""
-	if incremental {
+	var logsSince time.Time
+	if c.LogsSince != "" {
 		var err error
-		modifiedSince, err = time.Parse(time.RFC3339Nano, c.ModifiedSince)
+		logsSince, err = time.Parse(time.RFC3339Nano, c.LogsSince)
 		if err != nil {
-			return fmt.Errorf("invalid modified-since timestamp %q: %w", c.ModifiedSince, err)
+			return fmt.Errorf("invalid logs-since timestamp %q: %w", c.LogsSince, err)
 		}
 	}
 
@@ -95,7 +94,6 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	if err := s.Start(c.ScannerConfig); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
-	s.SetFailOnError(incremental)
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	defer func() { _ = lister.Close() }()
@@ -106,10 +104,9 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
-		MaxEvents:     c.MaxEvents,
-		MaxStreams:    c.MaxStreams,
-		ModifiedSince: modifiedSince,
-		FailOnError:   incremental,
+		MaxEvents:  c.MaxEvents,
+		MaxStreams: c.MaxStreams,
+		LogsSince:  logsSince,
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
@@ -122,13 +119,18 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	s.ScanFlushAndClose(extracted, scanned, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("scanning for secrets"),
 	})
-	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
-
-	if err := out.Wait(); err != nil {
-		return err
+	// Forward through a pipeline this module owns and Send into `out`
+	// ourselves. Handing the caller-owned `out` to an inner Pipe would let that
+	// Pipe's deferred close consume out's closeOnce, which destroys the
+	// happens-before edge the outer Pipe needs to publish any error Run returns
+	// — the error would be silently dropped (ENG-8768).
+	risks := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, risks)
+	for r := range risks.Range() {
+		out.Send(r)
 	}
-	if incremental && lister.Skipped.Len() > 0 {
-		return fmt.Errorf("resource enumeration was incomplete: %s", lister.Skipped.Summary())
+	if err := risks.Wait(); err != nil {
+		return err
 	}
 
 	cfg.Success("secret scanning complete")

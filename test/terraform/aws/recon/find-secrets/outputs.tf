@@ -53,3 +53,11 @@ output "ssm_parameter_arn" {
 output "ssm_securestring_name" {
   value = aws_ssm_parameter.securestring_no_scan.name
 }
+
+output "ssm_versioned_document_name" {
+  value = aws_ssm_document.versioned.name
+}
+
+output "ssm_versioned_document_arn" {
+  value = aws_ssm_document.versioned.arn
+}

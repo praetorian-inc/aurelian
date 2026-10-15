@@ -20,7 +20,7 @@ func init() {
 
 func extractSFN(ctx extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
 	client := sfn.NewFromConfig(ctx.AWSConfig)
-	stateMachineARN := r.ResourceID
+	stateMachineARN := r.ARN
 	listResp, err := client.ListExecutions(ctx.Context, &sfn.ListExecutionsInput{StateMachineArn: &stateMachineARN, MaxResults: int32(maxExecutions)})
 	if err != nil {
 		return fmt.Errorf("ListExecutions failed for %s: %w", stateMachineARN, err)
