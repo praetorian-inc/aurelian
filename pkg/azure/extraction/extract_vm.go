@@ -7,6 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -26,7 +28,7 @@ func extractVMUserData(ctx extractContext, r output.AzureResource, out *pipeline
 		return fmt.Errorf("no virtualMachines segment in resource ID %s", r.ResourceID)
 	}
 
-	vmClient, err := armcompute.NewVirtualMachinesClient(r.SubscriptionID, ctx.Cred, nil)
+	vmClient, err := armcompute.NewVirtualMachinesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create VM client: %w", err)
 	}
@@ -36,7 +38,7 @@ func extractVMUserData(ctx extractContext, r output.AzureResource, out *pipeline
 		Expand: &userDataExpand,
 	})
 	if err != nil {
-		return handleExtractError(err, "vm-userdata", r.ResourceID)
+		return handleExtractError(err, "vm-userdata", r.ResourceID, ctx.Cred)
 	}
 
 	if vmDetails.Properties == nil {
@@ -88,14 +90,14 @@ func extractVMExtensions(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no virtualMachines segment in resource ID %s", r.ResourceID)
 	}
 
-	extClient, err := armcompute.NewVirtualMachineExtensionsClient(r.SubscriptionID, ctx.Cred, nil)
+	extClient, err := armcompute.NewVirtualMachineExtensionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create VM extensions client: %w", err)
 	}
 
 	extResult, err := extClient.List(ctx.Context, resourceGroup, vmName, nil)
 	if err != nil {
-		return handleExtractError(err, "vm-extensions", r.ResourceID)
+		return handleExtractError(err, "vm-extensions", r.ResourceID, ctx.Cred)
 	}
 
 	if extResult.Value == nil {

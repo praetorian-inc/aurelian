@@ -6,6 +6,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -69,7 +71,7 @@ func (r *SubscriptionResolver) ListAllSubscriptions() ([]azuretypes.Subscription
 }
 
 func (r *SubscriptionResolver) newClient() (*armsubscriptions.Client, error) {
-	client, err := armsubscriptions.NewClient(r.cred, nil)
+	client, err := armsubscriptions.NewClient(r.cred, azurecloud.ARMClientOptions(r.cred))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create subscriptions client: %w", err)
 	}

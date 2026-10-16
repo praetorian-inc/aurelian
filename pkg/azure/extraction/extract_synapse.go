@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	armsynapse "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/synapse/armsynapse"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -30,14 +32,14 @@ func extractSynapseProperties(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("no workspaces segment in resource ID %s", r.ResourceID)
 	}
 
-	wsClient, err := armsynapse.NewWorkspacesClient(r.SubscriptionID, ctx.Cred, nil)
+	wsClient, err := armsynapse.NewWorkspacesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create Synapse workspaces client: %w", err)
 	}
 
 	result, err := wsClient.Get(ctx.Context, resourceGroup, workspaceName, nil)
 	if err != nil {
-		return handleExtractError(err, "synapse-properties", r.ResourceID)
+		return handleExtractError(err, "synapse-properties", r.ResourceID, ctx.Cred)
 	}
 
 	if result.Properties == nil {

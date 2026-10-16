@@ -2,15 +2,26 @@ package auth
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 )
 
 func NewAzureCredential() (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	return NewAzureCredentialForCloud("")
+}
+
+func NewAzureCredentialForCloud(cloudType string) (azcore.TokenCredential, error) {
+	environment, err := azurecloud.Resolve(cloudType)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{ClientOptions: azcore.ClientOptions{Cloud: environment.Cloud, Transport: azurecloud.HTTPClient(30 * time.Second)}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
 	}
-	return cred, nil
+	return azurecloud.WithCloud(cred, cloudType)
 }

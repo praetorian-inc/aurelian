@@ -9,6 +9,7 @@ aurelian azure recon configuration-scan [flags]
 ### Options
 
 ```
+      --cloud-type string          Azure deployment: public (Commercial/GCC) or usgovernment (GCC High); empty defaults to public (default "public")
       --concurrency int            Maximum concurrent API requests (default 5)
       --enricher-timeout int       Per-resource enricher timeout in seconds (default 120)
   -h, --help                       help for configuration-scan

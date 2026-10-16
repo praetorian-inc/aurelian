@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -16,15 +18,14 @@ func init() {
 	mustRegister("CNAME", "storage-takeover", checkBlobStorage)
 }
 
-const blobStorageSuffix = ".blob.core.windows.net"
-
 func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	suffix := "." + azurecloud.ForCredential(ctx.Credential).BlobSuffix
 	for _, val := range rec.Values {
-		if !strings.HasSuffix(strings.ToLower(val), blobStorageSuffix) {
+		if !strings.HasSuffix(strings.ToLower(val), suffix) {
 			continue
 		}
 
-		accountName, _ := strings.CutSuffix(strings.ToLower(val), blobStorageSuffix)
+		accountName, _ := strings.CutSuffix(strings.ToLower(val), suffix)
 		if accountName == "" {
 			continue
 		}
@@ -33,6 +34,9 @@ func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[mode
 		if err != nil {
 			slog.Warn("storage account name check failed",
 				"record", rec.RecordName, "account", accountName, "error", err)
+			if azurecloud.ForCredential(ctx.Credential).Name == azurecloud.Government {
+				return fmt.Errorf("Azure Government storage account availability check incomplete: %w", err)
+			}
 			continue
 		}
 
@@ -64,7 +68,7 @@ func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[mode
 }
 
 func checkStorageAccountAvailability(ctx CheckContext, accountName string) (bool, error) {
-	client, err := armstorage.NewAccountsClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armstorage.NewAccountsClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
 	if err != nil {
 		return false, fmt.Errorf("create storage client: %w", err)
 	}

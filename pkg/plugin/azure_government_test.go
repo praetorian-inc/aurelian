@@ -1,0 +1,59 @@
+package plugin
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
+)
+
+type azureModuleID struct {
+	Module
+	id string
+}
+
+func (m azureModuleID) ID() string { return m.id }
+
+func TestAzureCloudBindingDefaultsAndSequentialReuse(t *testing.T) {
+	var params AzureCommonRecon
+	for _, args := range []map[string]any{
+		{"cloud-type": "usgovernment"}, {}, {"cloud-type": "usgovernment"}, {"cloud-type": ""}, {"cloud-type": "public"}, {"cloud-type": "usgovernment"},
+	} {
+		previous := params.AzureCredential
+		cfg := Config{Args: args}
+		require.NoError(t, Bind(cfg, &params))
+		require.NoError(t, params.PostBind(cfg, azureModuleID{id: "list-all"}))
+		expected := "public"
+		if args["cloud-type"] == "usgovernment" {
+			expected = "usgovernment"
+		}
+		assert.Equal(t, expected, azurecloud.ForCredential(params.AzureCredential).Name)
+		if previous != nil {
+			assert.NotSame(t, previous, params.AzureCredential, "new job must get a fresh token chain/cache")
+		}
+	}
+}
+
+func TestAzureGovernmentOnlyEnablesFiveVerifiedModulePaths(t *testing.T) {
+	for _, id := range []string{"list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover", "apim-audit", "conditional-access-policies", "unknown"} {
+		params := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: "usgovernment"}}
+		err := params.PostBind(Config{}, azureModuleID{id: id})
+		switch id {
+		case "list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover":
+			require.NoError(t, err)
+		default:
+			require.ErrorContains(t, err, "not supported")
+		}
+	}
+	params := AzureEntraRecon{AzureReconBase: AzureReconBase{CloudType: "usgovernment"}}
+	require.ErrorContains(t, params.PostBind(Config{}, nil), "not supported")
+	for _, value := range []string{"", "public"} {
+		params.CloudType = value
+		require.NoError(t, params.PostBind(Config{}, nil))
+	}
+	unknown := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: "unexpected"}}
+	require.ErrorContains(t, unknown.PostBind(Config{}, nil), "unsupported Azure cloud type")
+	assert.Nil(t, unknown.AzureCredential)
+}

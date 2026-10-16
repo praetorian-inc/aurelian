@@ -7,6 +7,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	armcosmos "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v3"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -34,7 +36,7 @@ func init() {
 // newCosmosSQLClient creates a Cosmos ARM SQLResourcesClient for enumerating databases, containers,
 // stored procs, triggers, and UDFs via the management plane.
 func newCosmosSQLClient(ctx extractContext, subscriptionID string) (*armcosmos.SQLResourcesClient, error) {
-	return armcosmos.NewSQLResourcesClient(subscriptionID, ctx.Cred, nil)
+	return armcosmos.NewSQLResourcesClient(subscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 }
 
 // cosmosDBContainers enumerates all SQL databases and containers for a Cosmos DB account
@@ -95,7 +97,7 @@ func extractCosmosServerSideCode(ctx extractContext, r output.AzureResource, out
 
 	containers, err := cosmosDBContainers(ctx, sqlClient, resourceGroup, accountName)
 	if err != nil {
-		return handleExtractError(err, "cosmos-server-side-code", r.ResourceID)
+		return handleExtractError(err, "cosmos-server-side-code", r.ResourceID, ctx.Cred)
 	}
 
 	for _, dc := range containers {
@@ -199,7 +201,7 @@ func emitUDFs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resou
 }
 
 func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}
@@ -209,8 +211,15 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("no databaseAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.documents.azure.com:443/", accountName)
-	client, err := azcosmos.NewClient(endpoint, ctx.Cred, nil)
+	endpoint, err := resourceEndpoint(r, accountName, azurecloud.ForCredential(ctx.Cred).CosmosSuffix, "documentEndpoint")
+	if err != nil {
+		return err
+	}
+	regionalEndpoints, err := cosmosRegionalEndpoints(ctx, r.SubscriptionID, resourceGroup, accountName)
+	if err != nil {
+		return err
+	}
+	client, err := azcosmos.NewClient(endpoint, ctx.Cred, &azcosmos.ClientOptions{ClientOptions: azurecloud.ClientOptions(endpoint, regionalEndpoints...)})
 	if err != nil {
 		return fmt.Errorf("failed to create Cosmos data-plane client: %w", err)
 	}
@@ -220,7 +229,7 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 	for dbPager.More() {
 		dbPage, err := dbPager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "cosmos-config-docs", r.ResourceID)
+			return handleExtractError(err, "cosmos-config-docs", r.ResourceID, ctx.Cred)
 		}
 
 		for _, db := range dbPage.Databases {
@@ -237,6 +246,9 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 				containerPage, err := containerPager.NextPage(ctx.Context)
 				if err != nil {
 					slog.Warn("failed to list Cosmos containers", "db", dbName, "error", err)
+					if azurecloud.ForCredential(ctx.Cred).Name == azurecloud.Government {
+						return fmt.Errorf("Azure Government Cosmos container enumeration incomplete: %w", err)
+					}
 					break
 				}
 
@@ -252,7 +264,9 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 						continue
 					}
 
-					queryConfigDocs(ctx, r, containerClient, dbName, containerName, out)
+					if err := queryConfigDocs(ctx, r, containerClient, dbName, containerName, out); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -261,7 +275,7 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 	return nil
 }
 
-func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient *azcosmos.ContainerClient, dbName, containerName string, out *pipeline.P[output.ScanInput]) {
+func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient *azcosmos.ContainerClient, dbName, containerName string, out *pipeline.P[output.ScanInput]) error {
 	// Use SELECT * without TOP — the gateway rejects TOP N cross-partition queries
 	// because it cannot merge ranked results across partitions without client-side execution.
 	// EnableCrossPartitionQuery defaults to true in the SDK.
@@ -280,13 +294,16 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 	for queryPager.More() {
 		if scanned >= maxDocScan {
 			slog.Info("cosmos doc scan limit reached", "db", dbName, "container", containerName, "scanned", scanned, "limit", maxDocScan)
-			return
+			return nil
 		}
 
 		page, err := queryPager.NextPage(ctx.Context)
 		if err != nil {
 			slog.Warn("failed to query config docs", "db", dbName, "container", containerName, "error", err)
-			return
+			if azurecloud.ForCredential(ctx.Cred).Name == azurecloud.Government {
+				return fmt.Errorf("Azure Government Cosmos document query incomplete: %w", err)
+			}
+			return nil
 		}
 
 		slog.Info("scanning cosmos config docs", "db", dbName, "container", containerName, "scanned", scanned, "pageItems", len(page.Items))
@@ -318,4 +335,5 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 			out.Send(output.ScanInputFromAzureResource(r, label, content))
 		}
 	}
+	return nil
 }

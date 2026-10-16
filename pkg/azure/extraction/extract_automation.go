@@ -6,9 +6,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -29,7 +33,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create automation variable client: %w", err)
 	}
@@ -58,7 +62,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "automation-variables", r.ResourceID)
+	return handleExtractError(err, "automation-variables", r.ResourceID, ctx.Cred)
 }
 
 func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -71,7 +75,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create automation runbook client: %w", err)
 	}
@@ -100,32 +104,33 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "automation-runbooks", r.ResourceID)
+	return handleExtractError(err, "automation-runbooks", r.ResourceID, ctx.Cred)
 }
 
 // fetchRunbookContent retrieves the actual content of a runbook via the REST API.
 // The SDK's RunbookClient doesn't expose content directly — we use the
 // GET .../runbooks/{name}/content endpoint.
 func fetchRunbookContent(ctx extractContext, subscriptionID, resourceGroup, accountName, runbookName string) ([]byte, error) {
-	url := fmt.Sprintf(
-		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Automation/automationAccounts/%s/runbooks/%s/content?api-version=2023-11-01",
-		subscriptionID, resourceGroup, accountName, runbookName,
+	environment := azurecloud.ForCredential(ctx.Cred)
+	endpoint := fmt.Sprintf(
+		"%s/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Automation/automationAccounts/%s/runbooks/%s/content?api-version=2023-11-01",
+		environment.ARM, url.PathEscape(subscriptionID), url.PathEscape(resourceGroup), url.PathEscape(accountName), url.PathEscape(runbookName),
 	)
 
 	token, err := ctx.Cred.GetToken(ctx.Context, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
+		Scopes: []string{environment.ARMScope},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx.Context, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx.Context, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := azurecloud.HTTPClient(30 * time.Second).Do(req)
 	if err != nil {
 		return nil, err
 	}

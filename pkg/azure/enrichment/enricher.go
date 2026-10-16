@@ -2,12 +2,15 @@ package enrichment
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -46,15 +49,19 @@ func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[
 		Context:    enrichCtx,
 		Credential: e.cred,
 	}
+	var failures error
 	for _, enrich := range enrichers {
 		if err := enrich(cfg, &result); err != nil {
 			slog.Warn("azure enricher failed",
 				"type", result.ResourceType,
 				"resource", result.ResourceID,
 				"error", err)
+			if azurecloud.ForCredential(e.cred).Name == azurecloud.Government {
+				failures = errors.Join(failures, fmt.Errorf("Azure Government configuration enrichment incomplete: %w", err))
+			}
 		}
 	}
 
 	out.Send(result)
-	return nil
+	return failures
 }

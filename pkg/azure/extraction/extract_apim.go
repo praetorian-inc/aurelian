@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	armapimanagement "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -23,14 +25,14 @@ func extractAPIMPolicies(ctx extractContext, r output.AzureResource, out *pipeli
 		return err
 	}
 
-	client, err := armapimanagement.NewPolicyClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armapimanagement.NewPolicyClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create APIM policy client: %w", err)
 	}
 
 	resp, err := client.ListByService(ctx.Context, rg, serviceName, nil)
 	if err != nil {
-		return handleExtractError(err, "apim-policies", r.ResourceID)
+		return handleExtractError(err, "apim-policies", r.ResourceID, ctx.Cred)
 	}
 
 	if resp.Value != nil {
@@ -47,7 +49,7 @@ func extractAPIMBackends(ctx extractContext, r output.AzureResource, out *pipeli
 		return err
 	}
 
-	client, err := armapimanagement.NewBackendClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armapimanagement.NewBackendClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create APIM backend client: %w", err)
 	}
@@ -74,7 +76,7 @@ func extractAPIMBackends(ctx extractContext, r output.AzureResource, out *pipeli
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "apim-backends", r.ResourceID)
+	return handleExtractError(err, "apim-backends", r.ResourceID, ctx.Cred)
 }
 
 func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -83,7 +85,7 @@ func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pip
 		return err
 	}
 
-	namedValueClient, err := armapimanagement.NewNamedValueClient(r.SubscriptionID, ctx.Cred, nil)
+	namedValueClient, err := armapimanagement.NewNamedValueClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create APIM named value client: %w", err)
 	}
@@ -108,7 +110,7 @@ func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pip
 			if valueName != "" {
 				secretResp, secretErr := namedValueClient.ListValue(ctx.Context, rg, serviceName, valueName, nil)
 				if secretErr != nil {
-					if herr := handleExtractError(secretErr, "apim-namedvalues", r.ResourceID); herr != nil {
+					if herr := handleExtractError(secretErr, "apim-namedvalues", r.ResourceID, ctx.Cred); herr != nil {
 						slog.Warn("failed to list named value secret", "namedValue", valueName, "error", herr)
 					}
 				} else if secretResp.Value != nil {
@@ -130,7 +132,7 @@ func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pip
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "apim-namedvalues", r.ResourceID)
+	return handleExtractError(err, "apim-namedvalues", r.ResourceID, ctx.Cred)
 }
 
 func parseAPIMID(resourceID string) (resourceGroup, serviceName string, err error) {

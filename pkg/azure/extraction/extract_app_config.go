@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	azappconfig "github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -25,8 +27,13 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no configurationStores segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.azconfig.io", storeName)
-	client, err := azappconfig.NewClient(endpoint, ctx.Cred, nil)
+	endpoint, err := resourceEndpoint(r, storeName, azurecloud.ForCredential(ctx.Cred).AppConfigSuffix, "endpoint")
+	if err != nil {
+		return err
+	}
+	options := azurecloud.ClientOptions(endpoint)
+	options.PerCallPolicies = append(options.PerCallPolicies, appConfigPaginationPolicy{endpoint: endpoint})
+	client, err := azappconfig.NewClient(endpoint, ctx.Cred, &azappconfig.ClientOptions{ClientOptions: options})
 	if err != nil {
 		return fmt.Errorf("failed to create App Configuration client: %w", err)
 	}
@@ -38,7 +45,7 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		pageNum++
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "app-config-keyvalues", r.ResourceID)
+			return handleExtractError(err, "app-config-keyvalues", r.ResourceID, ctx.Cred)
 		}
 
 		type kvPair struct {

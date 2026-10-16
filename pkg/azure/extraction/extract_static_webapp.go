@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -19,14 +21,14 @@ func extractStaticWebAppSettings(ctx extractContext, r output.AzureResource, out
 		return err
 	}
 
-	client, err := armappservice.NewStaticSitesClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewStaticSitesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create static sites client: %w", err)
 	}
 
 	settings, err := client.ListStaticSiteAppSettings(ctx.Context, rg, siteName, nil)
 	if err != nil {
-		return handleExtractError(err, "static-webapp-settings", r.ResourceID)
+		return handleExtractError(err, "static-webapp-settings", r.ResourceID, ctx.Cred)
 	}
 
 	if len(settings.Properties) > 0 {

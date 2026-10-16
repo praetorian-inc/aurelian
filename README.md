@@ -213,6 +213,8 @@ aurelian list-modules
 
 ### Azure Reconnaissance
 
+For Azure Government/GCC High, use `--cloud-type usgovernment` on the five supported Azure capability modules. Omitted/empty defaults to public (including ordinary GCC). Live Government validation is outstanding.
+
 | Module | Description |
 |--------|-------------|
 | `find-secrets` | Discovers secrets across Azure services — Key Vaults, App Settings, Cosmos DB, and more |

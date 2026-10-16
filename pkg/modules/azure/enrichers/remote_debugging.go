@@ -5,6 +5,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v4"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -20,7 +21,7 @@ func enrichRemoteDebugging(cfg plugin.AzureEnricherConfig, result *templates.ARG
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, nil)
+	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
 	if err != nil {
 		return err
 	}
@@ -29,6 +30,9 @@ func enrichRemoteDebugging(cfg plugin.AzureEnricherConfig, result *templates.ARG
 	if err != nil {
 		slog.Warn("could not get site config, skipping",
 			"resource", result.ResourceID, "error", err)
+		if azurecloud.ForCredential(cfg.Credential).Name == azurecloud.Government {
+			return err
+		}
 		return nil
 	}
 

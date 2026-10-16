@@ -8,6 +8,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armtemplatespecs"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -29,7 +31,7 @@ func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out
 		return fmt.Errorf("no templateSpecs segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armtemplatespecs.NewTemplateSpecVersionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armtemplatespecs.NewTemplateSpecVersionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create template spec versions client: %w", err)
 	}
@@ -38,7 +40,7 @@ func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "template-spec-versions", r.ResourceID)
+			return handleExtractError(err, "template-spec-versions", r.ResourceID, ctx.Cred)
 		}
 		for _, version := range page.Value {
 			if version.Properties == nil {
@@ -72,7 +74,7 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no blueprints segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armblueprint.NewArtifactsClient(ctx.Cred, nil)
+	client, err := armblueprint.NewArtifactsClient(ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create blueprint artifacts client: %w", err)
 	}
@@ -84,7 +86,7 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "blueprint-artifacts", r.ResourceID)
+			return handleExtractError(err, "blueprint-artifacts", r.ResourceID, ctx.Cred)
 		}
 		for _, artifact := range page.Value {
 			if artifact == nil {
@@ -113,14 +115,14 @@ func extractPolicyDefinitions(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("could not extract policy name from resource ID %s", r.ResourceID)
 	}
 
-	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create policy definitions client: %w", err)
 	}
 
 	result, err := client.Get(ctx.Context, policyName, nil)
 	if err != nil {
-		return handleExtractError(err, "policy-definitions", r.ResourceID)
+		return handleExtractError(err, "policy-definitions", r.ResourceID, ctx.Cred)
 	}
 
 	if result.Properties == nil {

@@ -9,6 +9,7 @@ aurelian azure recon list-all [flags]
 ### Options
 
 ```
+      --cloud-type string          Azure deployment: public (Commercial/GCC) or usgovernment (GCC High); empty defaults to public (default "public")
       --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for list-all
       --output-dir string          Base output directory (default "aurelian-output")

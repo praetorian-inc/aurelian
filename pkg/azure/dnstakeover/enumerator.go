@@ -8,6 +8,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
@@ -24,12 +26,12 @@ func NewDNSEnumerator(credential azcore.TokenCredential) *DNSEnumerator {
 // EnumerateSubscription lists all records from all DNS zones in the given subscription.
 // Pipeline signature: string (subscriptionID) -> AzureDNSRecord.
 func (e *DNSEnumerator) EnumerateSubscription(subscriptionID string, out *pipeline.P[AzureDNSRecord]) error {
-	client, err := armdns.NewZonesClient(subscriptionID, e.credential, nil)
+	client, err := armdns.NewZonesClient(subscriptionID, e.credential, azurecloud.ARMClientOptions(e.credential))
 	if err != nil {
 		return fmt.Errorf("creating dns zones client: %w", err)
 	}
 
-	recordClient, err := armdns.NewRecordSetsClient(subscriptionID, e.credential, nil)
+	recordClient, err := armdns.NewRecordSetsClient(subscriptionID, e.credential, azurecloud.ARMClientOptions(e.credential))
 	if err != nil {
 		return fmt.Errorf("creating dns record sets client: %w", err)
 	}
@@ -39,6 +41,9 @@ func (e *DNSEnumerator) EnumerateSubscription(subscriptionID string, out *pipeli
 		page, err := pager.NextPage(context.Background())
 		if err != nil {
 			slog.Warn("failed to list dns zones", "subscription", subscriptionID, "error", err)
+			if azurecloud.ForCredential(e.credential).Name == azurecloud.Government {
+				return fmt.Errorf("Azure Government DNS enumeration incomplete: %w", err)
+			}
 			return nil
 		}
 
@@ -50,6 +55,9 @@ func (e *DNSEnumerator) EnumerateSubscription(subscriptionID string, out *pipeli
 			if err := e.enumerateZoneRecords(recordClient, subscriptionID, rg, *zone.Name, out); err != nil {
 				slog.Warn("failed to enumerate zone records",
 					"subscription", subscriptionID, "zone", *zone.Name, "error", err)
+				if azurecloud.ForCredential(e.credential).Name == azurecloud.Government {
+					return err
+				}
 			}
 		}
 	}

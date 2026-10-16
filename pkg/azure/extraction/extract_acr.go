@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -23,7 +25,7 @@ func extractACRTasks(ctx extractContext, r output.AzureResource, out *pipeline.P
 		return fmt.Errorf("no registries segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcontainerregistry.NewTasksClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcontainerregistry.NewTasksClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create ACR tasks client: %w", err)
 	}
@@ -32,7 +34,7 @@ func extractACRTasks(ctx extractContext, r output.AzureResource, out *pipeline.P
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "acr-tasks", r.ResourceID)
+			return handleExtractError(err, "acr-tasks", r.ResourceID, ctx.Cred)
 		}
 		for _, task := range page.Value {
 			if task.Properties == nil {

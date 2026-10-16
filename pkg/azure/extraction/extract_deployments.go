@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -23,14 +25,14 @@ func extractDeploymentParams(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("no deployments segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armresources.NewDeploymentsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armresources.NewDeploymentsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create deployments client: %w", err)
 	}
 
 	result, err := client.Get(ctx.Context, resourceGroup, deploymentName, nil)
 	if err != nil {
-		return handleExtractError(err, "deployment-params", r.ResourceID)
+		return handleExtractError(err, "deployment-params", r.ResourceID, ctx.Cred)
 	}
 
 	if result.Properties == nil {

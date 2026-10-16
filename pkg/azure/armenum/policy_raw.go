@@ -6,15 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-)
 
-// azureManagementHost is the required prefix for all raw HTTP requests and nextLink URLs.
-const azureManagementHost = "https://management.azure.com/"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
+)
 
 // rawPolicyPager pages through Azure policy definitions using raw HTTP + JSON
 // to avoid SDK unmarshalling crashes caused by metadata type mismatches
@@ -48,8 +46,8 @@ func newRawPolicyPager(subscriptionID string, cred azcore.TokenCredential) (*raw
 	}
 	return &rawPolicyPager{
 		cred:    cred,
-		client:  &http.Client{Timeout: 30 * time.Second},
-		nextURL: fmt.Sprintf("https://management.azure.com/subscriptions/%s/providers/Microsoft.Authorization/policyDefinitions?api-version=2023-04-01", subscriptionID),
+		client:  azurecloud.HTTPClient(30 * time.Second),
+		nextURL: fmt.Sprintf("%s/subscriptions/%s/providers/Microsoft.Authorization/policyDefinitions?api-version=2023-04-01", azurecloud.ForCredential(cred).ARM, subscriptionID),
 	}, nil
 }
 
@@ -58,8 +56,12 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 		return nil, "", nil
 	}
 
+	environment := azurecloud.ForCredential(p.cred)
+	if err := azurecloud.ValidateURL(p.nextURL, environment.ARM); err != nil {
+		return nil, "", err
+	}
 	token, err := p.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
+		Scopes: []string{environment.ARMScope},
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("acquiring token: %w", err)
@@ -104,8 +106,10 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 	}
 
 	// Validate nextLink stays within Azure management plane to prevent SSRF.
-	if page.NextLink != "" && !strings.HasPrefix(page.NextLink, azureManagementHost) {
-		return nil, "", fmt.Errorf("unexpected nextLink host: %s", page.NextLink)
+	if page.NextLink != "" {
+		if err := azurecloud.ValidateURL(page.NextLink, environment.ARM); err != nil {
+			return nil, "", err
+		}
 	}
 	p.nextURL = page.NextLink
 	return defs, page.NextLink, nil

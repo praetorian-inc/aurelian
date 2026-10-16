@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -26,14 +28,14 @@ func extractWebAppSettings(ctx extractContext, r output.AzureResource, out *pipe
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
 
 	settings, err := client.ListApplicationSettings(ctx.Context, resourceGroup, appName, nil)
 	if err != nil {
-		return handleExtractError(err, "webapp-settings", r.ResourceID)
+		return handleExtractError(err, "webapp-settings", r.ResourceID, ctx.Cred)
 	}
 
 	if len(settings.Properties) > 0 {
@@ -50,14 +52,14 @@ func extractWebAppConnections(ctx extractContext, r output.AzureResource, out *p
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
 
 	connStrings, err := client.ListConnectionStrings(ctx.Context, resourceGroup, appName, nil)
 	if err != nil {
-		return handleExtractError(err, "webapp-connections", r.ResourceID)
+		return handleExtractError(err, "webapp-connections", r.ResourceID, ctx.Cred)
 	}
 
 	if connStrings.Properties != nil {
@@ -81,14 +83,14 @@ func extractWebAppHostKeys(ctx extractContext, r output.AzureResource, out *pipe
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
 
 	hostKeys, err := client.ListHostKeys(ctx.Context, resourceGroup, appName, nil)
 	if err != nil {
-		return handleExtractError(err, "webapp-hostkeys", r.ResourceID)
+		return handleExtractError(err, "webapp-hostkeys", r.ResourceID, ctx.Cred)
 	}
 
 	if data, err := json.Marshal(hostKeys); err == nil && len(data) > 2 {
@@ -115,7 +117,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -140,7 +142,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 			// Extract slot app settings
 			settings, settingsErr := client.ListApplicationSettingsSlot(ctx.Context, rg, appName, slotName, nil)
 			if settingsErr != nil {
-				if herr := handleExtractError(settingsErr, "webapp-slots", r.ResourceID); herr != nil {
+				if herr := handleExtractError(settingsErr, "webapp-slots", r.ResourceID, ctx.Cred); herr != nil {
 					slog.Warn("failed to list slot app settings", "slot", slotName, "error", herr)
 				}
 			} else if len(settings.Properties) > 0 {
@@ -153,7 +155,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 			// Extract slot connection strings
 			connStrings, connErr := client.ListConnectionStringsSlot(ctx.Context, rg, appName, slotName, nil)
 			if connErr != nil {
-				if herr := handleExtractError(connErr, "webapp-slots", r.ResourceID); herr != nil {
+				if herr := handleExtractError(connErr, "webapp-slots", r.ResourceID, ctx.Cred); herr != nil {
 					slog.Warn("failed to list slot connection strings", "slot", slotName, "error", herr)
 				}
 			} else if connStrings.Properties != nil {
@@ -165,7 +167,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "webapp-slots", r.ResourceID)
+	return handleExtractError(err, "webapp-slots", r.ResourceID, ctx.Cred)
 }
 
 func extractWebAppSiteConfig(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -174,14 +176,14 @@ func extractWebAppSiteConfig(ctx extractContext, r output.AzureResource, out *pi
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
 
 	config, err := client.GetConfiguration(ctx.Context, rg, appName, nil)
 	if err != nil {
-		return handleExtractError(err, "webapp-siteconfig", r.ResourceID)
+		return handleExtractError(err, "webapp-siteconfig", r.ResourceID, ctx.Cred)
 	}
 
 	if config.Properties != nil {

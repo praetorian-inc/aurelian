@@ -111,6 +111,17 @@ type ModuleWrapper struct {
 }
 
 func (m *ModuleWrapper) Run(cfg Config, out *pipeline.P[model.AurelianModel]) error {
+	// The registry returns a shared module prototype. Azure parameters include
+	// cloud selection and a credential/token cache: bind a per-run copy so jobs
+	// cannot overwrite one another's cloud, even inside the same process.
+	if m.Platform() == PlatformAzure {
+		prototype := reflect.ValueOf(m.Module)
+		if prototype.Kind() == reflect.Pointer && prototype.Elem().Kind() == reflect.Struct {
+			instance := reflect.New(prototype.Elem().Type())
+			instance.Elem().Set(prototype.Elem())
+			m = &ModuleWrapper{Module: instance.Interface().(Module)}
+		}
+	}
 	if cfg.Log == nil {
 		cfg.Log = DiscardLogger()
 	}
