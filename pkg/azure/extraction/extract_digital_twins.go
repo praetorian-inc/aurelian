@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	armdigitaltwins "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwins"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -29,7 +31,7 @@ func extractDigitalTwinsProperties(ctx extractContext, r output.AzureResource, o
 		return fmt.Errorf("no digitalTwinsInstances segment in resource ID %s", r.ResourceID)
 	}
 
-	armClient, err := armdigitaltwins.NewClient(r.SubscriptionID, ctx.Cred, nil)
+	armClient, err := armdigitaltwins.NewClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create Digital Twins ARM client: %w", err)
 	}

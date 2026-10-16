@@ -15,6 +15,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -62,7 +64,7 @@ func (e *ARMEnumerator) List(sub azuretypes.SubscriptionInfo, out *pipeline.P[ou
 }
 
 func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-	client, err := armresources.NewDeploymentsClient(sub.ID, e.cred, nil)
+	client, err := armresources.NewDeploymentsClient(sub.ID, e.cred, azurecloud.ARMClientOptions(e.cred))
 	if err != nil {
 		return fmt.Errorf("create deployments client: %w", err)
 	}
@@ -84,7 +86,7 @@ func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pi
 	}
 
 	// Resource-group-scope deployments: iterate all resource groups.
-	rgClient, err := armresources.NewResourceGroupsClient(sub.ID, e.cred, nil)
+	rgClient, err := armresources.NewResourceGroupsClient(sub.ID, e.cred, azurecloud.ARMClientOptions(e.cred))
 	if err != nil {
 		return fmt.Errorf("create resource groups client: %w", err)
 	}
@@ -177,7 +179,11 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 }
 
 func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-	client, err := armblueprint.NewBlueprintsClient(e.cred, nil)
+	if azurecloud.ForCredential(e.cred).Name == azurecloud.Government {
+		slog.Warn("Azure Government Blueprint enumeration is unsupported (availability unverified); secret scan coverage is partial", "subscription", sub.ID)
+		return nil
+	}
+	client, err := armblueprint.NewBlueprintsClient(e.cred, azurecloud.ARMClientOptions(e.cred))
 	if err != nil {
 		return fmt.Errorf("create blueprints client: %w", err)
 	}

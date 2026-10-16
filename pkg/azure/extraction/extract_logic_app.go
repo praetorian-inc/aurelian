@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	armlogic "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/logic/armlogic"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -19,7 +21,7 @@ func extractLogicAppDefinition(ctx extractContext, r output.AzureResource, out *
 		return err
 	}
 
-	client, err := armlogic.NewWorkflowsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armlogic.NewWorkflowsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create logic workflows client: %w", err)
 	}

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -26,7 +28,7 @@ func extractWebAppSettings(ctx extractContext, r output.AzureResource, out *pipe
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -50,7 +52,7 @@ func extractWebAppConnections(ctx extractContext, r output.AzureResource, out *p
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -81,7 +83,7 @@ func extractWebAppHostKeys(ctx extractContext, r output.AzureResource, out *pipe
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -115,7 +117,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -174,7 +176,7 @@ func extractWebAppSiteConfig(ctx extractContext, r output.AzureResource, out *pi
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}

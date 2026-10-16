@@ -10,6 +10,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -61,7 +63,7 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 		bySub[r.SubscriptionID] = append(bySub[r.SubscriptionID], i)
 	}
 
-	client, err := armresourcegraph.NewClient(cred, nil)
+	client, err := armresourcegraph.NewClient(cred, azurecloud.ARMClientOptions(cred))
 	if err != nil {
 		slog.Warn("could not create ARG client for resource hydration", "error", err)
 		return

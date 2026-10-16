@@ -10,6 +10,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -108,7 +110,7 @@ func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo,
 }
 
 func (l *ResourceGraphLister) queryResources(request armresourcegraph.QueryRequest) (armresourcegraph.ClientResourcesResponse, error) {
-	client, err := armresourcegraph.NewClient(l.cred, nil)
+	client, err := armresourcegraph.NewClient(l.cred, azurecloud.ARMClientOptions(l.cred))
 	if err != nil {
 		return armresourcegraph.ClientResourcesResponse{}, fmt.Errorf("failed to create resource graph client: %w", err)
 	}

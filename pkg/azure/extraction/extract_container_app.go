@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	armappcontainers "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -24,7 +26,7 @@ func extractContainerAppEnvVars(ctx extractContext, r output.AzureResource, out 
 		return fmt.Errorf("no containerApps segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armappcontainers.NewContainerAppsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armappcontainers.NewContainerAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create container apps client: %w", err)
 	}

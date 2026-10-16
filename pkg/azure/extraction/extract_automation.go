@@ -9,6 +9,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -29,7 +31,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create automation variable client: %w", err)
 	}
@@ -71,7 +73,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create automation runbook client: %w", err)
 	}
@@ -107,19 +109,20 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 // The SDK's RunbookClient doesn't expose content directly — we use the
 // GET .../runbooks/{name}/content endpoint.
 func fetchRunbookContent(ctx extractContext, subscriptionID, resourceGroup, accountName, runbookName string) ([]byte, error) {
-	url := fmt.Sprintf(
-		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Automation/automationAccounts/%s/runbooks/%s/content?api-version=2023-11-01",
-		subscriptionID, resourceGroup, accountName, runbookName,
+	environment := azurecloud.ForCredential(ctx.Cred)
+	endpoint := fmt.Sprintf(
+		"%s/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Automation/automationAccounts/%s/runbooks/%s/content?api-version=2023-11-01",
+		environment.ARM, subscriptionID, resourceGroup, accountName, runbookName,
 	)
 
 	token, err := ctx.Cred.GetToken(ctx.Context, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
+		Scopes: []string{environment.ARMScope},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx.Context, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx.Context, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}

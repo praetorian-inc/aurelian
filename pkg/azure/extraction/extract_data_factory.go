@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	armdatafactory "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/datafactory/armdatafactory/v8"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -26,7 +28,7 @@ func extractADFPipelines(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no factories segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armdatafactory.NewPipelinesClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armdatafactory.NewPipelinesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create ADF pipelines client: %w", err)
 	}
@@ -72,7 +74,7 @@ func extractADFLinkedServices(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("no factories segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armdatafactory.NewLinkedServicesClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armdatafactory.NewLinkedServicesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return fmt.Errorf("failed to create ADF linked services client: %w", err)
 	}

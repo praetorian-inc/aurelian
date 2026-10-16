@@ -7,6 +7,8 @@ import (
 	"net"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -69,7 +71,7 @@ func fetchAllocatedPublicIPs(ctx CheckContext) (map[string]bool, error) {
 	allocated := make(map[string]bool)
 
 	for _, subID := range ctx.SubscriptionIDs {
-		client, err := armnetwork.NewPublicIPAddressesClient(subID, ctx.Credential, nil)
+		client, err := armnetwork.NewPublicIPAddressesClient(subID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
 		if err != nil {
 			slog.Warn("failed to create public ip client", "subscription", subID, "error", err)
 			continue

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -41,7 +43,13 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 		MaxCosmosDocScan: e.MaxCosmosDocScan,
 	}
 
+	isGovernment := azurecloud.ForCredential(e.cred).Name == azurecloud.Government
 	for _, ext := range extractors {
+		if isGovernment && (normalizedType == "microsoft.digitaltwins/digitaltwinsinstances" || normalizedType == "microsoft.blueprint/blueprints") {
+			slog.Warn("unsupported Azure Government extractor, skipping; scan coverage is partial",
+				"name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID)
+			continue
+		}
 		if err := ext.Fn(ctx, r, out); err != nil {
 			slog.Warn("azure extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)
 		}

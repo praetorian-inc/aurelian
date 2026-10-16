@@ -9,6 +9,7 @@ aurelian azure recon find-secrets [flags]
 ### Options
 
 ```
+      --cloud-type string              Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); empty defaults to public (default "public")
       --concurrency int                Maximum concurrent API requests (default 5)
       --db-path string                 Path for Titus SQLite database
       --disabled-titus-rules strings   Rule IDs to exclude from scanning

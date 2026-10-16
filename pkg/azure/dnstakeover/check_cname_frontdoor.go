@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/frontdoor/armfrontdoor"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -23,7 +25,7 @@ type frontDoorNameAvailabilityClient interface {
 }
 
 func checkFrontDoor(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
-	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
 	if err != nil {
 		return fmt.Errorf("create front door client: %w", err)
 	}
