@@ -201,7 +201,7 @@ func emitUDFs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resou
 }
 
 func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
+	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}
@@ -211,15 +211,8 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("no databaseAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint, err := resourceEndpoint(r, accountName, azurecloud.ForCredential(ctx.Cred).CosmosSuffix, "documentEndpoint")
-	if err != nil {
-		return err
-	}
-	regionalEndpoints, err := cosmosRegionalEndpoints(ctx, r.SubscriptionID, resourceGroup, accountName)
-	if err != nil {
-		return err
-	}
-	client, err := azcosmos.NewClient(endpoint, ctx.Cred, &azcosmos.ClientOptions{ClientOptions: azurecloud.ClientOptions(endpoint, regionalEndpoints...)})
+	endpoint := fmt.Sprintf("https://%s.%s", accountName, azurecloud.ForCredential(ctx.Cred).CosmosSuffix)
+	client, err := azcosmos.NewClient(endpoint, ctx.Cred, &azcosmos.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create Cosmos data-plane client: %w", err)
 	}

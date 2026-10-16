@@ -35,6 +35,6 @@ func ForCredential(cred azcore.TokenCredential) Environment {
 	if configured, ok := cred.(*credential); ok {
 		return configured.environment
 	}
-	environment, _ := Resolve("")
+	environment, _ := Resolve(Public)
 	return environment
 }

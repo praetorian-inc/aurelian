@@ -6,8 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
@@ -114,7 +112,7 @@ func fetchRunbookContent(ctx extractContext, subscriptionID, resourceGroup, acco
 	environment := azurecloud.ForCredential(ctx.Cred)
 	endpoint := fmt.Sprintf(
 		"%s/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Automation/automationAccounts/%s/runbooks/%s/content?api-version=2023-11-01",
-		environment.ARM, url.PathEscape(subscriptionID), url.PathEscape(resourceGroup), url.PathEscape(accountName), url.PathEscape(runbookName),
+		environment.ARM, subscriptionID, resourceGroup, accountName, runbookName,
 	)
 
 	token, err := ctx.Cred.GetToken(ctx.Context, policy.TokenRequestOptions{
@@ -130,7 +128,7 @@ func fetchRunbookContent(ctx extractContext, subscriptionID, resourceGroup, acco
 	}
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
-	resp, err := azurecloud.HTTPClient(30 * time.Second).Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

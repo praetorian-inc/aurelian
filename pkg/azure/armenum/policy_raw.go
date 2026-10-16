@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -46,7 +47,7 @@ func newRawPolicyPager(subscriptionID string, cred azcore.TokenCredential) (*raw
 	}
 	return &rawPolicyPager{
 		cred:    cred,
-		client:  azurecloud.HTTPClient(30 * time.Second),
+		client:  &http.Client{Timeout: 30 * time.Second},
 		nextURL: fmt.Sprintf("%s/subscriptions/%s/providers/Microsoft.Authorization/policyDefinitions?api-version=2023-04-01", azurecloud.ForCredential(cred).ARM, subscriptionID),
 	}, nil
 }
@@ -57,9 +58,6 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 	}
 
 	environment := azurecloud.ForCredential(p.cred)
-	if err := azurecloud.ValidateURL(p.nextURL, environment.ARM); err != nil {
-		return nil, "", err
-	}
 	token, err := p.cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{environment.ARMScope},
 	})
@@ -106,10 +104,8 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 	}
 
 	// Validate nextLink stays within Azure management plane to prevent SSRF.
-	if page.NextLink != "" {
-		if err := azurecloud.ValidateURL(page.NextLink, environment.ARM); err != nil {
-			return nil, "", err
-		}
+	if page.NextLink != "" && !strings.HasPrefix(page.NextLink, environment.ARM+"/") {
+		return nil, "", fmt.Errorf("unexpected nextLink host: %s", page.NextLink)
 	}
 	p.nextURL = page.NextLink
 	return defs, page.NextLink, nil

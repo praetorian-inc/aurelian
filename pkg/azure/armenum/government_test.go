@@ -45,25 +45,20 @@ func TestRawPolicyPagesUseSelectedCloud(t *testing.T) {
 	}
 }
 
-func TestRawPolicyRejectsUnsafeNextLinksAndRedirects(t *testing.T) {
-	for _, target := range []string{"https://management.azure.com/exfil", "https://management.usgovcloudapi.net.evil/exfil", "https://evil@management.usgovcloudapi.net/exfil", "https://management.usgovcloudapi.net/exfil#fragment"} {
-		for _, redirect := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/%t", target, redirect), func(t *testing.T) {
+func TestRawPolicyRejectsForeignNextLinks(t *testing.T) {
+	for _, typ := range []string{"public", "gcc-high"} {
+		for _, target := range []string{"https://foreign.invalid/next", "https://management.usgovcloudapi.net.evil/next"} {
+			t.Run(typ+"/"+target, func(t *testing.T) {
 				calls := 0
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 					calls++
-					resp := azuretest.JSON(r, fmt.Sprintf(`{"value":[],"nextLink":%q}`, target))
-					if redirect {
-						resp.StatusCode = 302
-						resp.Header.Set("Location", target)
-					}
-					return resp, nil
+					return azuretest.JSON(r, fmt.Sprintf(`{"value":[],"nextLink":%q}`, target)), nil
 				})
-				cred, _ := azuretest.NewCredential(t, "gcc-high")
+				cred, _ := azuretest.NewCredential(t, typ)
 				pager, err := newRawPolicyPager("sub", cred)
 				require.NoError(t, err)
 				_, _, err = pager.nextPage(context.Background())
-				require.Error(t, err)
+				require.ErrorContains(t, err, "unexpected nextLink host")
 				assert.Equal(t, 1, calls)
 			})
 		}

@@ -4,7 +4,6 @@ package azurecloud
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	_ "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime" // register official ARM endpoints and audiences
@@ -28,8 +27,7 @@ type Environment struct {
 	TrafficManagerSuffix string
 }
 
-// Resolve treats missing/empty legacy configuration as public. Explicit unknown
-// values (including China and DoD/L5) must not fall back to public.
+// Resolve treats missing/empty legacy configuration as public.
 func Resolve(value string) (Environment, error) {
 	var e Environment
 	switch value {
@@ -53,41 +51,4 @@ func Resolve(value string) (Environment, error) {
 	e.ARM = arm.Endpoint
 	e.ARMScope = strings.TrimRight(arm.Audience, "/") + "/.default"
 	return e, nil
-}
-
-// ValidateURL enforces an exact HTTPS origin, including pagination URLs. Do not
-// include the raw URL in errors: queries can contain SAS/continuation tokens.
-func ValidateURL(raw, origin string) error {
-	u, err := url.Parse(raw)
-	base, baseErr := url.Parse(origin)
-	if err != nil || baseErr != nil || u.Scheme != "https" || !strings.EqualFold(strings.TrimSuffix(u.Host, ":443"), strings.TrimSuffix(base.Host, ":443")) || u.User != nil || u.Fragment != "" || u.Opaque != "" {
-		return fmt.Errorf("Azure request must remain on the selected HTTPS service origin")
-	}
-	return nil
-}
-
-// ValidateBlobURL validates a service-returned SAS URL in the selected cloud.
-// Managed boot diagnostics may use a provider-owned account, so the exact account
-// is supplied by ARM rather than inferred from the VM name. Redirects are disabled.
-func ValidateBlobURL(raw string, environment Environment) error {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.User != nil || u.Fragment != "" || u.Port() != "" && u.Port() != "443" || !strings.HasSuffix(strings.ToLower(u.Hostname()), "."+environment.BlobSuffix) {
-		return fmt.Errorf("boot diagnostics URL must use the selected Azure Blob cloud")
-	}
-	name := strings.TrimSuffix(strings.ToLower(u.Hostname()), "."+environment.BlobSuffix)
-	_, err = Endpoint(name, environment.BlobSuffix)
-	return err
-}
-
-// Endpoint constructs only a single resource hostname, not an arbitrary URL.
-func Endpoint(name, suffix string) (string, error) {
-	if name == "" {
-		return "", fmt.Errorf("Azure resource name is empty")
-	}
-	for _, c := range name {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
-			return "", fmt.Errorf("invalid Azure resource hostname")
-		}
-	}
-	return "https://" + name + "." + suffix, nil
 }

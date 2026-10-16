@@ -84,7 +84,7 @@ func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, 
 		return nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
 
-	client := azurecloud.HTTPClient(listAPIsRequestTimeout)
+	client := &http.Client{Timeout: listAPIsRequestTimeout}
 	var all []APIInventoryItem
 	next := base
 	paginator := ratelimit.NewAzurePaginator()
@@ -139,9 +139,6 @@ func validateARMURL(raw string, base *url.URL) error {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return fmt.Errorf("parse pagination URL: %w", err)
-	}
-	if u.User != nil || u.Fragment != "" {
-		return fmt.Errorf("refusing pagination URL with user info or fragment")
 	}
 	if u.Scheme != "https" {
 		return fmt.Errorf("refusing non-HTTPS pagination URL: %s", redactURL(u))

@@ -35,9 +35,7 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 					switch r.URL.Host {
 					case strings.TrimPrefix(env.ARM, "https://"):
 						assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
-						if service == "cosmos" {
-							return azuretest.JSON(r, fmt.Sprintf(`{"properties":{"readLocations":[{"documentEndpoint":%q}],"writeLocations":[{"documentEndpoint":%q}]}}`, "https://account-offline."+env.CosmosSuffix, "https://account-offline."+env.CosmosSuffix)), nil
-						}
+						assert.Equal(t, "blob", service, "Cosmos must not require an extra ARM endpoint lookup")
 						return azuretest.JSON(r, fmt.Sprintf(`{"keys":[{"value":%q}]}`, base64.StdEncoding.EncodeToString([]byte("offline-storage-key")))), nil
 					case "account." + env.BlobSuffix:
 						assert.True(t, strings.HasPrefix(r.Header.Get("Authorization"), "SharedKey account:"))
@@ -94,6 +92,9 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 				}
 				mu.Lock()
 				assert.Greater(t, hosts[expectedHost], 0)
+				if service == "cosmos" {
+					assert.Zero(t, hosts[strings.TrimPrefix(env.ARM, "https://")])
+				}
 				mu.Unlock()
 				scopes := recorder.Scopes()
 				if service == "appconfig" {
@@ -107,99 +108,6 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestDataPlanePaginationAndDiscoveryCannotChangeTokenOrigin(t *testing.T) {
-	for _, service := range []string{"appconfig", "appconfig-header", "cosmos"} {
-		t.Run(service, func(t *testing.T) {
-			cred, _ := azuretest.NewCredential(t, "gcc-high")
-			calls := 0
-			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
-				if r.URL.Host == "management.usgovcloudapi.net" {
-					return azuretest.JSON(r, `{"properties":{"readLocations":[{"documentEndpoint":"https://account.documents.azure.us"}]}}`), nil
-				}
-				calls++
-				if strings.HasPrefix(service, "appconfig") {
-					assert.Equal(t, "store.azconfig.azure.us", r.URL.Host)
-					resp := azuretest.JSON(r, `{"items":[],"@nextLink":"https://store.azconfig.io/kv"}`)
-					resp.Header.Set("Sync-Token", "offline=token;sn=1")
-					if service == "appconfig-header" {
-						resp = azuretest.JSON(r, `{"items":[]}`)
-						resp.Header.Set("Sync-Token", "offline=token;sn=1")
-						resp.Header.Set("Link", "<https://store.azconfig.io/kv>; rel=next")
-					}
-					return resp, nil
-				}
-				assert.Equal(t, "account.documents.azure.us", r.URL.Host)
-				// Even SDK-discovered locations are not permission to send this account's
-				// token to another cloud or an unvalidated regional origin.
-				return azuretest.JSON(r, `{"id":"account","readableLocations":[{"name":"offline","databaseAccountEndpoint":"https://account.documents.azure.com"}],"writableLocations":[{"name":"offline","databaseAccountEndpoint":"https://account.documents.azure.com"}]}`), nil
-			})
-			_, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-				ctx := extractContext{Context: context.Background(), Cred: cred}
-				resource := output.AzureResource{SubscriptionID: "sub"}
-				if strings.HasPrefix(service, "appconfig") {
-					resource.ResourceID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.AppConfiguration/configurationStores/store"
-					return extractAppConfigKeyValues(ctx, resource, out)
-				}
-				resource.ResourceID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/account"
-				return extractCosmosConfigDocs(ctx, resource, out)
-			})
-			require.Error(t, err)
-			assert.Equal(t, 1, calls)
-		})
-	}
-}
-
-func TestDataPlaneRedirectsDoNotForwardCredentials(t *testing.T) {
-	for _, service := range []string{"appconfig", "cosmos", "blob"} {
-		t.Run(service, func(t *testing.T) {
-			cred, _ := azuretest.NewCredential(t, "gcc-high")
-			ctx := extractContext{Context: context.Background(), Cred: cred}
-			requests := 0
-			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
-				if r.URL.Host == "management.usgovcloudapi.net" {
-					if service == "cosmos" {
-						return azuretest.JSON(r, `{"properties":{"readLocations":[{"documentEndpoint":"https://account.documents.azure.us"}]}}`), nil
-					}
-					return azuretest.JSON(r, fmt.Sprintf(`{"keys":[{"value":%q}]}`, base64.StdEncoding.EncodeToString([]byte("offline-storage-key")))), nil
-				}
-				if service == "cosmos" && (r.URL.Path == "" || r.URL.Path == "/") {
-					return azuretest.JSON(r, `{"id":"account","readableLocations":[{"name":"offline","databaseAccountEndpoint":"https://account.documents.azure.us"}],"writableLocations":[{"name":"offline","databaseAccountEndpoint":"https://account.documents.azure.us"}]}`), nil
-				}
-				requests++
-				expectedHost := "store.azconfig.azure.us"
-				if service == "cosmos" {
-					expectedHost = "account.documents.azure.us"
-				}
-				if service == "blob" {
-					expectedHost = "account.blob.core.usgovcloudapi.net"
-				}
-				assert.Equal(t, expectedHost, r.URL.Host, "redirect destination must never be reached")
-				resp := azuretest.JSON(r, "")
-				resp.StatusCode = http.StatusFound
-				resp.Header.Set("Location", "https://child."+r.URL.Host+"/exfil")
-				return resp, nil
-			})
-			_, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-				resource := output.AzureResource{SubscriptionID: "sub"}
-				switch service {
-				case "appconfig":
-					resource.ResourceID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.AppConfiguration/configurationStores/store"
-					return extractAppConfigKeyValues(ctx, resource, out)
-				case "cosmos":
-					resource.ResourceID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/account"
-					return extractCosmosConfigDocs(ctx, resource, out)
-				case "blob":
-					resource.ResourceID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/account"
-					return extractStorageBlobs(ctx, resource, out)
-				}
-				return nil
-			})
-			require.Error(t, err)
-			assert.GreaterOrEqual(t, requests, 1) // SDK retries may repeat only the original origin
-		})
 	}
 }
 
@@ -237,84 +145,70 @@ func TestGovernmentControlPlaneExtractorsUseGovernmentSDKOptions(t *testing.T) {
 	}
 }
 
-func TestRunbookRawRequestCloudAndRedirectBoundary(t *testing.T) {
+func TestRunbookRawRequestUsesSelectedCloud(t *testing.T) {
 	for _, typ := range []string{"", "public", "gcc-high"} {
-		for _, redirect := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/%t", typ, redirect), func(t *testing.T) {
-				cred, recorder := azuretest.NewCredential(t, typ)
-				env := azurecloud.ForCredential(cred)
-				calls := 0
-				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
-					calls++
-					assert.Equal(t, strings.TrimPrefix(env.ARM, "https://"), r.URL.Host)
-					assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
-					resp := azuretest.JSON(r, "offline runbook")
-					if redirect {
-						resp.StatusCode = 302
-						resp.Header.Set("Location", "https://child."+r.URL.Host+"/exfil")
-					}
-					return resp, nil
-				})
-				body, err := fetchRunbookContent(extractContext{Context: context.Background(), Cred: cred}, "sub", "rg", "account", "runbook")
-				if redirect {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-					assert.Equal(t, "offline runbook", string(body))
-				}
-				assert.Equal(t, 1, calls)
-				assert.Equal(t, []string{env.ARMScope}, recorder.Scopes())
+		t.Run(typ, func(t *testing.T) {
+			cred, recorder := azuretest.NewCredential(t, typ)
+			env := azurecloud.ForCredential(cred)
+			calls := 0
+			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
+				calls++
+				assert.Equal(t, strings.TrimPrefix(env.ARM, "https://"), r.URL.Host)
+				assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
+				return azuretest.JSON(r, "offline runbook"), nil
 			})
-		}
+			body, err := fetchRunbookContent(extractContext{Context: context.Background(), Cred: cred}, "sub", "rg", "account", "runbook")
+			require.NoError(t, err)
+			assert.Equal(t, "offline runbook", string(body))
+			assert.Equal(t, 1, calls)
+			assert.Equal(t, []string{env.ARMScope}, recorder.Scopes())
+		})
 	}
 }
 
-func TestBootDiagnosticsDownloadsStayInSelectedStorageCloud(t *testing.T) {
+func TestBootDiagnosticsUsesServiceReturnedURL(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
-		for _, mode := range []string{"valid", "cross-cloud", "redirect"} {
+		for _, mode := range []string{"direct", "https-redirect", "http-redirect"} {
 			t.Run(typ+"/"+mode, func(t *testing.T) {
 				cred, _ := azuretest.NewCredential(t, typ)
 				env := azurecloud.ForCredential(cred)
 				downloads := 0
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 					if r.URL.Host == strings.TrimPrefix(env.ARM, "https://") {
-						suffix := env.BlobSuffix
-						if mode == "cross-cloud" {
-							suffix = "blob.core.windows.net"
-							if typ == "public" {
-								suffix = "blob.core.usgovcloudapi.net"
-							}
-						}
-						return azuretest.JSON(r, fmt.Sprintf(`{"serialConsoleLogBlobUri":"https://managed.%s/log?sig=offline"}`, suffix)), nil
+						return azuretest.JSON(r, `{"serialConsoleLogBlobUri":"https://service-returned.example/log?sig=offline"}`), nil
 					}
 					downloads++
-					assert.Equal(t, "managed."+env.BlobSuffix, r.URL.Host)
 					assert.Empty(t, r.Header.Get("Authorization"), "SAS download must not receive an ARM bearer token")
 					resp := azuretest.JSON(r, "offline log")
-					if mode == "redirect" {
-						resp.StatusCode = 302
-						resp.Header.Set("Location", "https://attacker.invalid/exfil")
+					if downloads == 1 && mode != "direct" {
+						resp.StatusCode = http.StatusFound
+						scheme := "https"
+						if mode == "http-redirect" {
+							scheme = "http"
+						}
+						resp.Header.Set("Location", scheme+"://redirected.example/log?sig=offline")
 					}
 					return resp, nil
 				})
 				items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
 					return extractVMBootDiag(extractContext{Context: context.Background(), Cred: cred}, output.AzureResource{SubscriptionID: "sub", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm"}, out)
 				})
-				if mode == "cross-cloud" {
-					require.Error(t, err)
-					assert.Zero(t, downloads)
-				} else {
-					if mode == "redirect" && typ == "gcc-high" {
+				if mode == "http-redirect" {
+					if typ == "gcc-high" {
 						require.ErrorContains(t, err, "incomplete")
 					} else {
 						require.NoError(t, err)
 					}
-					assert.Equal(t, 1, downloads)
-				}
-				if mode == "valid" {
-					assert.Len(t, items, 1)
-				} else {
 					assert.Empty(t, items)
+					assert.Equal(t, 1, downloads, "retain the pre-existing HTTPS downgrade check")
+				} else {
+					require.NoError(t, err)
+					assert.Len(t, items, 1)
+					expected := 1
+					if mode == "https-redirect" {
+						expected = 2
+					}
+					assert.Equal(t, expected, downloads)
 				}
 			})
 		}

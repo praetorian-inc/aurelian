@@ -27,13 +27,8 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no configurationStores segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint, err := resourceEndpoint(r, storeName, azurecloud.ForCredential(ctx.Cred).AppConfigSuffix, "endpoint")
-	if err != nil {
-		return err
-	}
-	options := azurecloud.ClientOptions(endpoint)
-	options.PerCallPolicies = append(options.PerCallPolicies, appConfigPaginationPolicy{endpoint: endpoint})
-	client, err := azappconfig.NewClient(endpoint, ctx.Cred, &azappconfig.ClientOptions{ClientOptions: options})
+	endpoint := fmt.Sprintf("https://%s.%s", storeName, azurecloud.ForCredential(ctx.Cred).AppConfigSuffix)
+	client, err := azappconfig.NewClient(endpoint, ctx.Cred, &azappconfig.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create App Configuration client: %w", err)
 	}

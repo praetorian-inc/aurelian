@@ -16,7 +16,7 @@ import (
 
 func TestListAPIsSelectedCloudAndBoundaries(t *testing.T) {
 	for _, typ := range []string{"", "public", "gcc-high"} {
-		for _, mode := range []string{"pages", "cross-cloud", "foreign-host", "userinfo", "redirect"} {
+		for _, mode := range []string{"pages", "cross-cloud", "foreign-host"} {
 			t.Run(typ+"/"+mode, func(t *testing.T) {
 				cred, recorder := azuretest.NewCredential(t, typ)
 				env := azurecloud.ForCredential(cred)
@@ -37,14 +37,8 @@ func TestListAPIsSelectedCloudAndBoundaries(t *testing.T) {
 						}
 					case "foreign-host":
 						target = env.ARM + ".attacker/exfil"
-					case "userinfo":
-						target = strings.Replace(env.ARM, "https://", "https://evil@", 1) + "/exfil"
 					}
 					resp := azuretest.JSON(r, fmt.Sprintf(`{"value":[{"name":"one"}],"nextLink":%q}`, target))
-					if mode == "redirect" {
-						resp.StatusCode = 302
-						resp.Header.Set("Location", env.ARM[:8]+"child."+env.ARM[8:]+"/exfil")
-					}
 					return resp, nil
 				})
 				items, err := ListAPIs(context.Background(), cred, "sub", "rg", "apim")

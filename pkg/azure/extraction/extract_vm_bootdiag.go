@@ -44,12 +44,15 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 		return nil
 	}
 
-	// The service returns a SAS URL, not an ARM bearer-token destination.
-	// Validate the selected storage cloud before downloading, and never follow redirects.
-	if err := azurecloud.ValidateBlobURL(*result.SerialConsoleLogBlobURI, azurecloud.ForCredential(ctx.Cred)); err != nil {
-		return err
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != "https" {
+				return fmt.Errorf("refusing non-HTTPS redirect")
+			}
+			return nil
+		},
 	}
-	httpClient := azurecloud.HTTPClient(30 * time.Second)
 
 	resp, err := httpClient.Get(*result.SerialConsoleLogBlobURI)
 	if err != nil {

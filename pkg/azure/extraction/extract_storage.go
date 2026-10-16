@@ -37,11 +37,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no storageAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	serviceURL, err := resourceEndpoint(r, accountName, azurecloud.ForCredential(ctx.Cred).BlobSuffix, "primaryEndpoints", "blob")
-	if err != nil {
-		return err
-	}
-	client, err := newBlobClientWithAccountKey(ctx, r.SubscriptionID, resourceGroup, accountName, serviceURL)
+	client, err := newBlobClientWithAccountKey(ctx, r.SubscriptionID, resourceGroup, accountName)
 	if err != nil {
 		return fmt.Errorf("failed to create blob client for %s: %w", accountName, err)
 	}
@@ -70,7 +66,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 // newBlobClientWithAccountKey fetches storage account keys via the management plane
 // and returns a blob client authenticated with a shared key. This avoids requiring
 // the "Storage Blob Data Reader" data-plane RBAC role.
-func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGroup, accountName, serviceURL string) (*azblob.Client, error) {
+func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGroup, accountName string) (*azblob.Client, error) {
 	accountsClient, err := armstorage.NewAccountsClient(subscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage accounts client: %w", err)
@@ -101,7 +97,8 @@ func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGro
 		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
 	}
 
-	return azblob.NewClientWithSharedKeyCredential(serviceURL, sharedKeyCred, &azblob.ClientOptions{ClientOptions: azurecloud.ClientOptions(serviceURL)})
+	serviceURL := fmt.Sprintf("https://%s.%s", accountName, azurecloud.ForCredential(ctx.Cred).BlobSuffix)
+	return azblob.NewClientWithSharedKeyCredential(serviceURL, sharedKeyCred, &azblob.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 }
 
 func extractBlobsFromContainer(ctx extractContext, client *azblob.Client, r output.AzureResource, containerName string, out *pipeline.P[output.ScanInput]) error {
