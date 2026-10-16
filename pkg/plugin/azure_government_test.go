@@ -19,15 +19,15 @@ func (m azureModuleID) ID() string { return m.id }
 func TestAzureCloudBindingDefaultsAndSequentialReuse(t *testing.T) {
 	var params AzureCommonRecon
 	for _, args := range []map[string]any{
-		{"cloud-type": "usgovernment"}, {}, {"cloud-type": "usgovernment"}, {"cloud-type": ""}, {"cloud-type": "public"}, {"cloud-type": "usgovernment"},
+		{"cloud-type": "gcc-high"}, {}, {"cloud-type": "gcc-high"}, {"cloud-type": ""}, {"cloud-type": "public"}, {"cloud-type": "gcc-high"},
 	} {
 		previous := params.AzureCredential
 		cfg := Config{Args: args}
 		require.NoError(t, Bind(cfg, &params))
 		require.NoError(t, params.PostBind(cfg, azureModuleID{id: "list-all"}))
 		expected := "public"
-		if args["cloud-type"] == "usgovernment" {
-			expected = "usgovernment"
+		if args["cloud-type"] == "gcc-high" {
+			expected = "gcc-high"
 		}
 		assert.Equal(t, expected, azurecloud.ForCredential(params.AzureCredential).Name)
 		if previous != nil {
@@ -38,7 +38,7 @@ func TestAzureCloudBindingDefaultsAndSequentialReuse(t *testing.T) {
 
 func TestAzureGovernmentOnlyEnablesFiveVerifiedModulePaths(t *testing.T) {
 	for _, id := range []string{"list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover", "apim-audit", "conditional-access-policies", "unknown"} {
-		params := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: "usgovernment"}}
+		params := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: "gcc-high"}}
 		err := params.PostBind(Config{}, azureModuleID{id: id})
 		switch id {
 		case "list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover":
@@ -47,13 +47,18 @@ func TestAzureGovernmentOnlyEnablesFiveVerifiedModulePaths(t *testing.T) {
 			require.ErrorContains(t, err, "not supported")
 		}
 	}
-	params := AzureEntraRecon{AzureReconBase: AzureReconBase{CloudType: "usgovernment"}}
+	params := AzureEntraRecon{AzureReconBase: AzureReconBase{CloudType: "gcc-high"}}
 	require.ErrorContains(t, params.PostBind(Config{}, nil), "not supported")
 	for _, value := range []string{"", "public"} {
 		params.CloudType = value
 		require.NoError(t, params.PostBind(Config{}, nil))
 	}
-	unknown := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: "unexpected"}}
-	require.ErrorContains(t, unknown.PostBind(Config{}, nil), "unsupported Azure cloud type")
-	assert.Nil(t, unknown.AzureCredential)
+	for _, value := range []string{"unexpected", "usgovernment"} {
+		unknown := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: value}}
+		require.ErrorContains(t, unknown.PostBind(Config{}, nil), "unsupported Azure cloud type")
+		assert.Nil(t, unknown.AzureCredential)
+		unknownEntra := AzureEntraRecon{AzureReconBase: AzureReconBase{CloudType: value}}
+		require.ErrorContains(t, unknownEntra.PostBind(Config{}, nil), "unsupported Azure cloud type")
+		assert.Nil(t, unknownEntra.AzureCredential)
+	}
 }

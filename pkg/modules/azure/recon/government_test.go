@@ -36,13 +36,13 @@ func TestAzureRegisteredModuleIsolationBothOrdersAndConcurrent(t *testing.T) {
 			}
 			token := "public"
 			if strings.HasSuffix(r.URL.Host, ".us") {
-				token = "usgovernment"
+				token = "gcc-high"
 			}
 			return azuretest.JSON(r, fmt.Sprintf(`{"access_token":%q,"expires_in":3600,"token_type":"Bearer"}`, "offline-"+token)), nil
 		case "management.azure.com", "management.usgovcloudapi.net":
 			typ := "public"
 			if r.URL.Host == "management.usgovcloudapi.net" {
-				typ = "usgovernment"
+				typ = "gcc-high"
 			}
 			assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
 			if strings.Contains(r.URL.Path, "Microsoft.ResourceGraph") {
@@ -65,14 +65,14 @@ func TestAzureRegisteredModuleIsolationBothOrdersAndConcurrent(t *testing.T) {
 		_, err := out.Collect()
 		assert.NoError(t, err)
 	}
-	for _, order := range [][]string{{"public", "usgovernment", "omitted"}, {"usgovernment", "public", ""}} {
+	for _, order := range [][]string{{"public", "gcc-high", "omitted"}, {"gcc-high", "public", ""}} {
 		for _, typ := range order {
 			run(typ)
 		}
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
-		for _, typ := range []string{"public", "usgovernment", "omitted"} {
+		for _, typ := range []string{"public", "gcc-high", "omitted"} {
 			wg.Add(1)
 			go func() { defer wg.Done(); run(typ) }()
 		}
@@ -83,7 +83,7 @@ func TestAzureRegisteredModuleIsolationBothOrdersAndConcurrent(t *testing.T) {
 }
 
 func TestFiveAzureCapabilitiesSelectedCloud(t *testing.T) {
-	for _, typ := range []string{"", "public", "usgovernment"} {
+	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, id := range []string{"list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover"} {
 			t.Run(typ+"/"+id, func(t *testing.T) {
 				const sub = "00000000-0000-0000-0000-000000000001"

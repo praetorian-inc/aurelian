@@ -19,26 +19,30 @@ import (
 )
 
 func TestResolveDefaultsAndSDKMetadata(t *testing.T) {
-	for _, value := range []string{"", "public", "usgovernment"} {
+	for _, value := range []string{"", "public", "gcc-high"} {
 		e, err := azurecloud.Resolve(value)
 		require.NoError(t, err)
 		expected := cloud.AzurePublic
-		if value == "usgovernment" {
+		expectedName := "public"
+		if value == "gcc-high" {
 			expected = cloud.AzureGovernment
+			expectedName = "gcc-high"
 		}
+		assert.Equal(t, expectedName, e.Name)
 		assert.Equal(t, expected.Services[cloud.ResourceManager].Endpoint, e.ARM)
 		assert.Equal(t, strings.TrimRight(expected.Services[cloud.ResourceManager].Audience, "/")+"/.default", e.ARMScope)
 		e.Cloud.Services[cloud.ResourceManager] = cloud.ServiceConfiguration{Endpoint: "mutated"}
 		assert.NotEqual(t, "mutated", expected.Services[cloud.ResourceManager].Endpoint)
 	}
-	for _, invalid := range []string{"gcc", "GCCHigh", "USGovernment", "china", "usgovernmentdod", " public", "unknown"} {
+	for _, invalid := range []string{"gcc", "GCCHigh", "GCC-High", "usgovernment", "USGovernment", "china", "usgovernmentdod", " public", "gcc-high ", "unknown"} {
 		_, err := azurecloud.Resolve(invalid)
 		require.ErrorContains(t, err, "unsupported Azure cloud type")
+		assert.Contains(t, err.Error(), "choose public or gcc-high")
 	}
 }
 
 func TestExactOriginAndBlobBoundaries(t *testing.T) {
-	e, _ := azurecloud.Resolve("usgovernment")
+	e, _ := azurecloud.Resolve("gcc-high")
 	for _, raw := range []string{"https://management.azure.com/x", "http://management.usgovcloudapi.net/x", "https://management.usgovcloudapi.net.attacker/x", "https://evil@management.usgovcloudapi.net/x", "https://management.usgovcloudapi.net:444/x", "https://management.usgovcloudapi.net/x#fragment", "//management.usgovcloudapi.net/x"} {
 		require.Error(t, azurecloud.ValidateURL(raw, e.ARM), raw)
 	}
@@ -55,7 +59,7 @@ func TestExactOriginAndBlobBoundaries(t *testing.T) {
 }
 
 func TestARMClientsRejectCrossCloudPaginationAndRedirects(t *testing.T) {
-	for _, cloudType := range []string{"public", "usgovernment"} {
+	for _, cloudType := range []string{"public", "gcc-high"} {
 		for _, attack := range []string{"pagination", "redirect", "subdomain-redirect"} {
 			t.Run(cloudType+"/"+attack, func(t *testing.T) {
 				cred, recorder := azuretest.NewCredential(t, cloudType)
@@ -99,7 +103,7 @@ func TestCloudIsolationBothOrdersAndConcurrent(t *testing.T) {
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 		typ := "public"
 		if r.URL.Host == "management.usgovcloudapi.net" {
-			typ = "usgovernment"
+			typ = "gcc-high"
 		} else {
 			assert.Equal(t, "management.azure.com", r.URL.Host)
 		}
@@ -116,14 +120,14 @@ func TestCloudIsolationBothOrdersAndConcurrent(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, []string{azurecloud.ForCredential(cred).ARMScope}, recorder.Scopes())
 	}
-	for _, order := range [][]string{{"public", "usgovernment"}, {"usgovernment", "public"}} {
+	for _, order := range [][]string{{"public", "gcc-high"}, {"gcc-high", "public"}} {
 		for _, typ := range order {
 			run(typ)
 		}
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		for _, typ := range []string{"public", "usgovernment"} {
+		for _, typ := range []string{"public", "gcc-high"} {
 			wg.Add(1)
 			go func() { defer wg.Done(); run(typ) }()
 		}

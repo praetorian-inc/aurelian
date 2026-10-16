@@ -18,7 +18,7 @@ import (
 )
 
 func TestDNSAvailabilityChecksRespectSelectedCloudAndSuffix(t *testing.T) {
-	for _, typ := range []string{"", "public", "usgovernment"} {
+	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, service := range []string{"appservice", "blob", "trafficmanager"} {
 			t.Run(typ+"/"+service, func(t *testing.T) {
 				cred, recorder := azuretest.NewCredential(t, typ)
@@ -58,7 +58,7 @@ func TestDNSAvailabilityChecksRespectSelectedCloudAndSuffix(t *testing.T) {
 }
 
 func TestGovernmentDNSUnverifiedChecksStayGated(t *testing.T) {
-	cred, _ := azuretest.NewCredential(t, "usgovernment")
+	cred, _ := azuretest.NewCredential(t, "gcc-high")
 	calls := 0
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 		calls++

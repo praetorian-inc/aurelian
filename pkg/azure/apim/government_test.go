@@ -15,7 +15,7 @@ import (
 )
 
 func TestListAPIsSelectedCloudAndBoundaries(t *testing.T) {
-	for _, typ := range []string{"", "public", "usgovernment"} {
+	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, mode := range []string{"pages", "cross-cloud", "foreign-host", "userinfo", "redirect"} {
 			t.Run(typ+"/"+mode, func(t *testing.T) {
 				cred, recorder := azuretest.NewCredential(t, typ)

@@ -213,7 +213,7 @@ aurelian list-modules
 
 ### Azure Reconnaissance
 
-For Azure Government/GCC High, use `--cloud-type usgovernment` on the five supported Azure capability modules. Omitted/empty defaults to public (including ordinary GCC). Live Government validation is outstanding.
+For Azure Government/GCC High, use `--cloud-type gcc-high` on the five supported Azure capability modules. Omitted/empty defaults to public (including ordinary GCC). Live Government validation is outstanding.
 
 | Module | Description |
 |--------|-------------|

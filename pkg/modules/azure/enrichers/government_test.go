@@ -17,12 +17,12 @@ import (
 func TestGovernmentEnricherSDKPaths(t *testing.T) {
 	for _, resourceType := range []string{"Microsoft.Web/sites", "Microsoft.Compute/virtualMachines", "Microsoft.Sql/servers", "Microsoft.DBforPostgreSQL/flexibleServers", "Microsoft.DBforMySQL/flexibleServers", "Microsoft.Synapse/workspaces"} {
 		t.Run(resourceType, func(t *testing.T) {
-			cred, recorder := azuretest.NewCredential(t, "usgovernment")
+			cred, recorder := azuretest.NewCredential(t, "gcc-high")
 			calls := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 				calls++
 				assert.Equal(t, "management.usgovcloudapi.net", r.URL.Host)
-				assert.Equal(t, "Bearer offline-usgovernment", r.Header.Get("Authorization"))
+				assert.Equal(t, "Bearer offline-gcc-high", r.Header.Get("Authorization"))
 				return azuretest.JSON(r, `{"value":[],"properties":{"platform":{"enabled":false}}}`), nil
 			})
 			result := templates.ARGQueryResult{SubscriptionID: "00000000-0000-0000-0000-000000000001", ResourceName: "resource", ResourceType: resourceType, ResourceID: "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/" + resourceType + "/resource", Properties: map[string]any{"kind": "functionapp", "principalId": "11111111-1111-1111-1111-111111111111"}}
@@ -46,7 +46,7 @@ func TestGovernmentEnricherSDKPaths(t *testing.T) {
 }
 
 func TestGovernmentEnricherFailuresAreNotCleanResults(t *testing.T) {
-	for _, typ := range []string{"public", "usgovernment"} {
+	for _, typ := range []string{"public", "gcc-high"} {
 		t.Run(typ, func(t *testing.T) {
 			cred, _ := azuretest.NewCredential(t, typ)
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
@@ -58,7 +58,7 @@ func TestGovernmentEnricherFailuresAreNotCleanResults(t *testing.T) {
 			for _, fn := range []plugin.AzureEnricherFunc{enrichAppServiceAuth, enrichRemoteDebugging, enrichFunctionAnonymousAccess} {
 				result := templates.ARGQueryResult{SubscriptionID: "00000000-0000-0000-0000-000000000001", ResourceName: "site", ResourceID: "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.Web/sites/site", Properties: map[string]any{"kind": "functionapp"}}
 				err := fn(cfg, &result)
-				if typ == "usgovernment" {
+				if typ == "gcc-high" {
 					require.Error(t, err)
 				} else {
 					require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestGovernmentEnricherFailuresAreNotCleanResults(t *testing.T) {
 }
 
 func TestGovernmentSynapseFirewallUsesWorkspaceAPI(t *testing.T) {
-	cred, _ := azuretest.NewCredential(t, "usgovernment")
+	cred, _ := azuretest.NewCredential(t, "gcc-high")
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 		assert.Equal(t, "management.usgovcloudapi.net", r.URL.Host)
 		assert.Contains(t, r.URL.Path, "/providers/Microsoft.Synapse/workspaces/workspace/firewallRules")

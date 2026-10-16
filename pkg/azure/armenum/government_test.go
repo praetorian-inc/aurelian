@@ -15,7 +15,7 @@ import (
 )
 
 func TestRawPolicyPagesUseSelectedCloud(t *testing.T) {
-	for _, typ := range []string{"", "public", "usgovernment"} {
+	for _, typ := range []string{"", "public", "gcc-high"} {
 		t.Run(typ, func(t *testing.T) {
 			cred, recorder := azuretest.NewCredential(t, typ)
 			env := azurecloud.ForCredential(cred)
@@ -59,7 +59,7 @@ func TestRawPolicyRejectsUnsafeNextLinksAndRedirects(t *testing.T) {
 					}
 					return resp, nil
 				})
-				cred, _ := azuretest.NewCredential(t, "usgovernment")
+				cred, _ := azuretest.NewCredential(t, "gcc-high")
 				pager, err := newRawPolicyPager("sub", cred)
 				require.NoError(t, err)
 				_, _, err = pager.nextPage(context.Background())

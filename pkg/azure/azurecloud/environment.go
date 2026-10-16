@@ -13,7 +13,7 @@ import (
 
 const (
 	Public     = "public"
-	Government = "usgovernment"
+	Government = "gcc-high"
 )
 
 type Environment struct {
@@ -38,7 +38,7 @@ func Resolve(value string) (Environment, error) {
 	case Government:
 		e = Environment{Name: Government, Cloud: cloud.AzureGovernment, BlobSuffix: "blob.core.usgovcloudapi.net", CosmosSuffix: "documents.azure.us", AppConfigSuffix: "azconfig.azure.us", AppServiceSuffix: "azurewebsites.us", TrafficManagerSuffix: "usgovtrafficmanager.net"}
 	default:
-		return Environment{}, fmt.Errorf("unsupported Azure cloud type %q: choose public or usgovernment", value)
+		return Environment{}, fmt.Errorf("unsupported Azure cloud type %q: choose public or gcc-high", value)
 	}
 	// Copy SDK metadata: callers must not mutate SDK-global maps or another job.
 	services := make(map[cloud.ServiceName]cloud.ServiceConfiguration, len(e.Cloud.Services))

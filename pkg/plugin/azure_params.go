@@ -12,7 +12,7 @@ import (
 // AzureReconBase contains base parameters shared by all Azure recon modules.
 type AzureReconBase struct {
 	OutputDir string `param:"output-dir" desc:"Base output directory" default:"aurelian-output"`
-	CloudType string `param:"cloud-type" desc:"Azure deployment: public (Commercial/GCC) or usgovernment (GCC High); empty defaults to public" default:"public"`
+	CloudType string `param:"cloud-type" desc:"Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); empty defaults to public" default:"public"`
 }
 
 // AzureCommonRecon contains common parameters for Azure reconnaissance modules.

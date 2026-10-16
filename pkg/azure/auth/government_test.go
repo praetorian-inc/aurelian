@@ -22,7 +22,7 @@ func TestCredentialAuthenticatesAgainstSelectedAuthority(t *testing.T) {
 	t.Setenv("AZURE_CLIENT_SECRET", "offline-test-secret")
 	t.Setenv("AZURE_TOKEN_CREDENTIALS", "EnvironmentCredential")
 	t.Setenv("AZURE_AUTHORITY_HOST", "https://attacker.invalid") // explicit module cloud wins
-	for _, value := range []string{"", "public", "usgovernment"} {
+	for _, value := range []string{"", "public", "gcc-high"} {
 		t.Run(value, func(t *testing.T) {
 			e, err := azurecloud.Resolve(value)
 			require.NoError(t, err)
@@ -59,6 +59,9 @@ func TestUnknownCloudFailsBeforeCredentialConstructionOrNetwork(t *testing.T) {
 		t.Error("unexpected network request")
 		return nil, fmt.Errorf("network forbidden")
 	})
-	_, err := NewAzureCredentialForCloud("china")
-	require.ErrorContains(t, err, "unsupported Azure cloud type")
+	for _, value := range []string{"china", "usgovernment"} {
+		cred, err := NewAzureCredentialForCloud(value)
+		require.ErrorContains(t, err, "unsupported Azure cloud type")
+		assert.Nil(t, cred)
+	}
 }

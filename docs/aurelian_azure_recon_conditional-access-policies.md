@@ -9,7 +9,7 @@ aurelian azure recon conditional-access-policies [flags]
 ### Options
 
 ```
-      --cloud-type string   Azure deployment: public (Commercial/GCC) or usgovernment (GCC High); empty defaults to public (default "public")
+      --cloud-type string   Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); empty defaults to public (default "public")
   -h, --help                help for conditional-access-policies
       --output-dir string   Base output directory (default "aurelian-output")
 ```

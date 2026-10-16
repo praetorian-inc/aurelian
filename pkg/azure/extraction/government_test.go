@@ -19,7 +19,7 @@ import (
 )
 
 func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
-	for _, typ := range []string{"", "public", "usgovernment"} {
+	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, service := range []string{"appconfig", "cosmos", "blob"} {
 			t.Run(typ+"/"+service, func(t *testing.T) {
 				cred, recorder := azuretest.NewCredential(t, typ)
@@ -113,7 +113,7 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 func TestDataPlanePaginationAndDiscoveryCannotChangeTokenOrigin(t *testing.T) {
 	for _, service := range []string{"appconfig", "appconfig-header", "cosmos"} {
 		t.Run(service, func(t *testing.T) {
-			cred, _ := azuretest.NewCredential(t, "usgovernment")
+			cred, _ := azuretest.NewCredential(t, "gcc-high")
 			calls := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 				if r.URL.Host == "management.usgovcloudapi.net" {
@@ -155,7 +155,7 @@ func TestDataPlanePaginationAndDiscoveryCannotChangeTokenOrigin(t *testing.T) {
 func TestDataPlaneRedirectsDoNotForwardCredentials(t *testing.T) {
 	for _, service := range []string{"appconfig", "cosmos", "blob"} {
 		t.Run(service, func(t *testing.T) {
-			cred, _ := azuretest.NewCredential(t, "usgovernment")
+			cred, _ := azuretest.NewCredential(t, "gcc-high")
 			ctx := extractContext{Context: context.Background(), Cred: cred}
 			requests := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
@@ -217,12 +217,12 @@ func TestGovernmentControlPlaneExtractorsUseGovernmentSDKOptions(t *testing.T) {
 	}
 	for _, resourceType := range types {
 		t.Run(resourceType, func(t *testing.T) {
-			cred, recorder := azuretest.NewCredential(t, "usgovernment")
+			cred, recorder := azuretest.NewCredential(t, "gcc-high")
 			calls := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 				calls++
 				assert.Equal(t, "management.usgovcloudapi.net", r.URL.Host)
-				assert.Equal(t, "Bearer offline-usgovernment", r.Header.Get("Authorization"))
+				assert.Equal(t, "Bearer offline-gcc-high", r.Header.Get("Authorization"))
 				return azuretest.JSON(r, `{"value":[]}`), nil
 			})
 			_, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
@@ -238,7 +238,7 @@ func TestGovernmentControlPlaneExtractorsUseGovernmentSDKOptions(t *testing.T) {
 }
 
 func TestRunbookRawRequestCloudAndRedirectBoundary(t *testing.T) {
-	for _, typ := range []string{"", "public", "usgovernment"} {
+	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, redirect := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/%t", typ, redirect), func(t *testing.T) {
 				cred, recorder := azuretest.NewCredential(t, typ)
@@ -270,7 +270,7 @@ func TestRunbookRawRequestCloudAndRedirectBoundary(t *testing.T) {
 }
 
 func TestBootDiagnosticsDownloadsStayInSelectedStorageCloud(t *testing.T) {
-	for _, typ := range []string{"public", "usgovernment"} {
+	for _, typ := range []string{"public", "gcc-high"} {
 		for _, mode := range []string{"valid", "cross-cloud", "redirect"} {
 			t.Run(typ+"/"+mode, func(t *testing.T) {
 				cred, _ := azuretest.NewCredential(t, typ)
@@ -304,7 +304,7 @@ func TestBootDiagnosticsDownloadsStayInSelectedStorageCloud(t *testing.T) {
 					require.Error(t, err)
 					assert.Zero(t, downloads)
 				} else {
-					if mode == "redirect" && typ == "usgovernment" {
+					if mode == "redirect" && typ == "gcc-high" {
 						require.ErrorContains(t, err, "incomplete")
 					} else {
 						require.NoError(t, err)
@@ -322,7 +322,7 @@ func TestBootDiagnosticsDownloadsStayInSelectedStorageCloud(t *testing.T) {
 }
 
 func TestGovernmentExtractionFailuresAreNotCleanResults(t *testing.T) {
-	for _, typ := range []string{"public", "usgovernment"} {
+	for _, typ := range []string{"public", "gcc-high"} {
 		t.Run(typ, func(t *testing.T) {
 			cred, _ := azuretest.NewCredential(t, typ)
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
@@ -333,7 +333,7 @@ func TestGovernmentExtractionFailuresAreNotCleanResults(t *testing.T) {
 			_, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
 				return NewAzureExtractor(cred).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: "Microsoft.Web/sites", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/site"}, out)
 			})
-			if typ == "usgovernment" {
+			if typ == "gcc-high" {
 				require.ErrorContains(t, err, "incomplete")
 			} else {
 				require.NoError(t, err)
@@ -343,7 +343,7 @@ func TestGovernmentExtractionFailuresAreNotCleanResults(t *testing.T) {
 }
 
 func TestGovernmentUnsupportedExtractorsAreExplicitWithoutNetwork(t *testing.T) {
-	cred, _ := azuretest.NewCredential(t, "usgovernment")
+	cred, _ := azuretest.NewCredential(t, "gcc-high")
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 		t.Error("unsupported service must not authenticate or make HTTP requests")
 		return nil, fmt.Errorf("offline")
