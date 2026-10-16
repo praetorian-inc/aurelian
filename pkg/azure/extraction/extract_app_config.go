@@ -40,7 +40,7 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		pageNum++
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "app-config-keyvalues", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "app-config-keyvalues", r.ResourceID)
 		}
 
 		type kvPair struct {

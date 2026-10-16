@@ -38,7 +38,7 @@ func extractVMUserData(ctx extractContext, r output.AzureResource, out *pipeline
 		Expand: &userDataExpand,
 	})
 	if err != nil {
-		return handleExtractError(err, "vm-userdata", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "vm-userdata", r.ResourceID)
 	}
 
 	if vmDetails.Properties == nil {
@@ -97,7 +97,7 @@ func extractVMExtensions(ctx extractContext, r output.AzureResource, out *pipeli
 
 	extResult, err := extClient.List(ctx.Context, resourceGroup, vmName, nil)
 	if err != nil {
-		return handleExtractError(err, "vm-extensions", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "vm-extensions", r.ResourceID)
 	}
 
 	if extResult.Value == nil {

@@ -32,7 +32,7 @@ func extractDeploymentParams(ctx extractContext, r output.AzureResource, out *pi
 
 	result, err := client.Get(ctx.Context, resourceGroup, deploymentName, nil)
 	if err != nil {
-		return handleExtractError(err, "deployment-params", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "deployment-params", r.ResourceID)
 	}
 
 	if result.Properties == nil {

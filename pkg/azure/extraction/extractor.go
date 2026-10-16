@@ -46,17 +46,14 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	}
 
 	var failures error
-	government := azurecloud.ForCredential(e.cred).Name == azurecloud.Government
+	isGovernment := azurecloud.ForCredential(e.cred).Name == azurecloud.Government
 	for _, ext := range extractors {
-		if government && (normalizedType == "microsoft.digitaltwins/digitaltwinsinstances" || normalizedType == "microsoft.blueprint/blueprints") {
+		if isGovernment && (normalizedType == "microsoft.digitaltwins/digitaltwinsinstances" || normalizedType == "microsoft.blueprint/blueprints") {
 			failures = errors.Join(failures, fmt.Errorf("Azure Government extractor %s is unsupported (service/API availability unverified)", ext.Name))
 			continue
 		}
 		if err := ext.Fn(ctx, r, out); err != nil {
 			slog.Warn("azure extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)
-			if government {
-				failures = errors.Join(failures, fmt.Errorf("Azure Government extraction incomplete (%s): %w", ext.Name, err))
-			}
 		}
 	}
 

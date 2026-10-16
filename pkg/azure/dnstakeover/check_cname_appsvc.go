@@ -34,9 +34,6 @@ func checkAppService(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model
 		if err != nil {
 			slog.Warn("app service name check failed",
 				"record", rec.RecordName, "app", appName, "error", err)
-			if azurecloud.ForCredential(ctx.Credential).Name == azurecloud.Government {
-				return fmt.Errorf("Azure Government app service availability check incomplete: %w", err)
-			}
 			continue
 		}
 

@@ -37,7 +37,7 @@ func extractADFPipelines(ctx extractContext, r output.AzureResource, out *pipeli
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "adf-pipelines", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "adf-pipelines", r.ResourceID)
 		}
 
 		for _, p := range page.Value {
@@ -83,7 +83,7 @@ func extractADFLinkedServices(ctx extractContext, r output.AzureResource, out *p
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "adf-linkedservices", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "adf-linkedservices", r.ResourceID)
 		}
 
 		for _, svc := range page.Value {

@@ -37,7 +37,7 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 
 	result, err := vmClient.RetrieveBootDiagnosticsData(ctx.Context, resourceGroup, vmName, nil)
 	if err != nil {
-		return handleExtractError(err, "vm-bootdiag", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "vm-bootdiag", r.ResourceID)
 	}
 
 	if result.SerialConsoleLogBlobURI == nil || *result.SerialConsoleLogBlobURI == "" {
@@ -58,27 +58,18 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 	if err != nil {
 		// net/http errors include the request URL, which contains a SAS token.
 		slog.Warn("failed to download boot diagnostics log", "vm", vmName)
-		if azurecloud.ForCredential(ctx.Cred).Name == azurecloud.Government {
-			return fmt.Errorf("Azure Government boot diagnostics download incomplete")
-		}
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Warn("unexpected status downloading boot diagnostics log", "vm", vmName, "status", resp.StatusCode)
-		if azurecloud.ForCredential(ctx.Cred).Name == azurecloud.Government {
-			return fmt.Errorf("Azure Government boot diagnostics download incomplete (HTTP %d)", resp.StatusCode)
-		}
 		return nil
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, bootDiagMaxBytes))
 	if err != nil {
 		slog.Warn("failed to read boot diagnostics log", "vm", vmName, "error", err)
-		if azurecloud.ForCredential(ctx.Cred).Name == azurecloud.Government {
-			return fmt.Errorf("Azure Government boot diagnostics download incomplete")
-		}
 		return nil
 	}
 

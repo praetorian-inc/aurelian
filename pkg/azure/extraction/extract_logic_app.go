@@ -28,7 +28,7 @@ func extractLogicAppDefinition(ctx extractContext, r output.AzureResource, out *
 
 	resp, err := client.Get(ctx.Context, rg, workflowName, nil)
 	if err != nil {
-		return handleExtractError(err, "logic-app-definition", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "logic-app-definition", r.ResourceID)
 	}
 
 	if resp.Properties != nil && resp.Properties.Definition != nil {

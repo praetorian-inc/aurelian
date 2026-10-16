@@ -60,7 +60,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "automation-variables", r.ResourceID, ctx.Cred)
+	return handleExtractError(err, "automation-variables", r.ResourceID)
 }
 
 func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -102,7 +102,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "automation-runbooks", r.ResourceID, ctx.Cred)
+	return handleExtractError(err, "automation-runbooks", r.ResourceID)
 }
 
 // fetchRunbookContent retrieves the actual content of a runbook via the REST API.

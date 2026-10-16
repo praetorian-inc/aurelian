@@ -35,7 +35,7 @@ func extractArcExtensions(ctx extractContext, r output.AzureResource, out *pipel
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "arc-extensions", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "arc-extensions", r.ResourceID)
 		}
 		for _, ext := range page.Value {
 			if ext.Properties == nil {

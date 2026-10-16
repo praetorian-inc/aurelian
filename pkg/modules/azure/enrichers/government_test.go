@@ -45,7 +45,7 @@ func TestGovernmentEnricherSDKPaths(t *testing.T) {
 	}
 }
 
-func TestGovernmentEnricherFailuresAreNotCleanResults(t *testing.T) {
+func TestEnricherFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
 		t.Run(typ, func(t *testing.T) {
 			cred, _ := azuretest.NewCredential(t, typ)
@@ -58,11 +58,8 @@ func TestGovernmentEnricherFailuresAreNotCleanResults(t *testing.T) {
 			for _, fn := range []plugin.AzureEnricherFunc{enrichAppServiceAuth, enrichRemoteDebugging, enrichFunctionAnonymousAccess} {
 				result := templates.ARGQueryResult{SubscriptionID: "00000000-0000-0000-0000-000000000001", ResourceName: "site", ResourceID: "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.Web/sites/site", Properties: map[string]any{"kind": "functionapp"}}
 				err := fn(cfg, &result)
-				if typ == "gcc-high" {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-				}
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"kind": "functionapp"}, result.Properties)
 			}
 		})
 	}

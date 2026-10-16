@@ -34,9 +34,6 @@ func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[m
 		if err != nil {
 			slog.Warn("traffic manager dns check failed",
 				"record", rec.RecordName, "profile", profileName, "error", err)
-			if azurecloud.ForCredential(ctx.Credential).Name == azurecloud.Government {
-				return fmt.Errorf("Azure Government traffic manager availability check incomplete: %w", err)
-			}
 			continue
 		}
 

@@ -41,9 +41,6 @@ func (e *DNSEnumerator) EnumerateSubscription(subscriptionID string, out *pipeli
 		page, err := pager.NextPage(context.Background())
 		if err != nil {
 			slog.Warn("failed to list dns zones", "subscription", subscriptionID, "error", err)
-			if azurecloud.ForCredential(e.credential).Name == azurecloud.Government {
-				return fmt.Errorf("Azure Government DNS enumeration incomplete: %w", err)
-			}
 			return nil
 		}
 
@@ -55,9 +52,6 @@ func (e *DNSEnumerator) EnumerateSubscription(subscriptionID string, out *pipeli
 			if err := e.enumerateZoneRecords(recordClient, subscriptionID, rg, *zone.Name, out); err != nil {
 				slog.Warn("failed to enumerate zone records",
 					"subscription", subscriptionID, "zone", *zone.Name, "error", err)
-				if azurecloud.ForCredential(e.credential).Name == azurecloud.Government {
-					return err
-				}
 			}
 		}
 	}

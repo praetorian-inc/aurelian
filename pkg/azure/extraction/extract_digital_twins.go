@@ -38,7 +38,7 @@ func extractDigitalTwinsProperties(ctx extractContext, r output.AzureResource, o
 
 	result, err := armClient.Get(ctx.Context, resourceGroup, instanceName, nil)
 	if err != nil {
-		return handleExtractError(err, "digitaltwins-properties", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "digitaltwins-properties", r.ResourceID)
 	}
 
 	if result.Properties == nil {

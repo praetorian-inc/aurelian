@@ -34,9 +34,6 @@ func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[mode
 		if err != nil {
 			slog.Warn("storage account name check failed",
 				"record", rec.RecordName, "account", accountName, "error", err)
-			if azurecloud.ForCredential(ctx.Credential).Name == azurecloud.Government {
-				return fmt.Errorf("Azure Government storage account availability check incomplete: %w", err)
-			}
 			continue
 		}
 

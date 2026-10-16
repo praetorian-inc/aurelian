@@ -2,8 +2,6 @@ package dnstakeover
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
@@ -44,7 +42,6 @@ func (c *DNSTakeoverChecker) Check(rec AzureDNSRecord, out *pipeline.P[model.Aur
 	checkCtx := c.ctx
 	checkCtx.SubscriptionID = rec.SubscriptionID
 
-	var failures error
 	for _, chk := range checkers {
 		if azurecloud.ForCredential(checkCtx.Credential).Name == azurecloud.Government && (chk.Name == "cdn-takeover" || chk.Name == "frontdoor-takeover" || chk.Name == "ns-delegation") {
 			continue
@@ -57,10 +54,7 @@ func (c *DNSTakeoverChecker) Check(rec AzureDNSRecord, out *pipeline.P[model.Aur
 				"zone", rec.ZoneName,
 				"error", err,
 			)
-			if azurecloud.ForCredential(checkCtx.Credential).Name == azurecloud.Government {
-				failures = errors.Join(failures, fmt.Errorf("Azure Government DNS check incomplete (%s): %w", chk.Name, err))
-			}
 		}
 	}
-	return failures
+	return nil
 }

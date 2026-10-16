@@ -28,7 +28,7 @@ func extractStaticWebAppSettings(ctx extractContext, r output.AzureResource, out
 
 	settings, err := client.ListStaticSiteAppSettings(ctx.Context, rg, siteName, nil)
 	if err != nil {
-		return handleExtractError(err, "static-webapp-settings", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "static-webapp-settings", r.ResourceID)
 	}
 
 	if len(settings.Properties) > 0 {

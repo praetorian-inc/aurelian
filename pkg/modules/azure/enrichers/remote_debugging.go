@@ -30,9 +30,6 @@ func enrichRemoteDebugging(cfg plugin.AzureEnricherConfig, result *templates.ARG
 	if err != nil {
 		slog.Warn("could not get site config, skipping",
 			"resource", result.ResourceID, "error", err)
-		if azurecloud.ForCredential(cfg.Credential).Name == azurecloud.Government {
-			return err
-		}
 		return nil
 	}
 

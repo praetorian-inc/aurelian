@@ -194,11 +194,7 @@ func TestBootDiagnosticsUsesServiceReturnedURL(t *testing.T) {
 					return extractVMBootDiag(extractContext{Context: context.Background(), Cred: cred}, output.AzureResource{SubscriptionID: "sub", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm"}, out)
 				})
 				if mode == "http-redirect" {
-					if typ == "gcc-high" {
-						require.ErrorContains(t, err, "incomplete")
-					} else {
-						require.NoError(t, err)
-					}
+					require.NoError(t, err)
 					assert.Empty(t, items)
 					assert.Equal(t, 1, downloads, "retain the pre-existing HTTPS downgrade check")
 				} else {
@@ -215,24 +211,60 @@ func TestBootDiagnosticsUsesServiceReturnedURL(t *testing.T) {
 	}
 }
 
-func TestGovernmentExtractionFailuresAreNotCleanResults(t *testing.T) {
+func TestExtractionFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
-		t.Run(typ, func(t *testing.T) {
-			cred, _ := azuretest.NewCredential(t, typ)
-			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
-				resp := azuretest.JSON(r, `{"error":{"code":"ResourceNotFound","message":"offline unavailable service"}}`)
-				resp.StatusCode = 404
-				return resp, nil
-			})
-			_, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-				return NewAzureExtractor(cred).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: "Microsoft.Web/sites", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/site"}, out)
-			})
-			if typ == "gcc-high" {
-				require.ErrorContains(t, err, "incomplete")
-			} else {
+		for _, status := range []int{http.StatusForbidden, http.StatusNotFound, http.StatusTeapot} {
+			t.Run(fmt.Sprintf("%s/%d", typ, status), func(t *testing.T) {
+				cred, _ := azuretest.NewCredential(t, typ)
+				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
+					resp := azuretest.JSON(r, `{"error":{"code":"OfflineFailure","message":"offline unavailable service"}}`)
+					resp.StatusCode = status
+					return resp, nil
+				})
+				items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
+					return NewAzureExtractor(cred).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: "Microsoft.Web/sites", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/site", Tags: map[string]string{"setting": "offline-value"}}, out)
+				})
 				require.NoError(t, err)
-			}
-		})
+				assert.Len(t, items, 1, "tag extraction must continue after API failures")
+			})
+		}
+	}
+}
+
+func TestCosmosNestedFailuresRemainBestEffortAcrossClouds(t *testing.T) {
+	for _, typ := range []string{"public", "gcc-high"} {
+		for _, stage := range []string{"containers", "documents"} {
+			t.Run(typ+"/"+stage, func(t *testing.T) {
+				cred, _ := azuretest.NewCredential(t, typ)
+				failed := false
+				var mu sync.Mutex
+				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
+					if r.URL.Path == "" || r.URL.Path == "/" {
+						return azuretest.JSON(r, `{"id":"account","readableLocations":[],"writableLocations":[]}`), nil
+					}
+					if r.URL.Path == "/dbs" {
+						return azuretest.JSON(r, `{"Databases":[{"id":"db"}],"_count":1}`), nil
+					}
+					if r.URL.Path == "/dbs/db/colls" && stage != "containers" {
+						return azuretest.JSON(r, `{"DocumentCollections":[{"id":"settings"}],"_count":1}`), nil
+					}
+					mu.Lock()
+					failed = true
+					mu.Unlock()
+					resp := azuretest.JSON(r, `{"code":"NotFound","message":"offline unavailable"}`)
+					resp.StatusCode = http.StatusNotFound
+					return resp, nil
+				})
+				items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
+					return extractCosmosConfigDocs(extractContext{Context: context.Background(), Cred: cred}, output.AzureResource{ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/account"}, out)
+				})
+				require.NoError(t, err)
+				assert.Empty(t, items)
+				mu.Lock()
+				assert.True(t, failed, "fixture must exercise the nested failure")
+				mu.Unlock()
+			})
+		}
 	}
 }
 

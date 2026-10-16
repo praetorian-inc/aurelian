@@ -34,7 +34,7 @@ func extractBatchPoolStartTasks(ctx extractContext, r output.AzureResource, out 
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "batch-pool-starttasks", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "batch-pool-starttasks", r.ResourceID)
 		}
 		for _, pool := range page.Value {
 			if pool.Properties == nil || pool.Properties.StartTask == nil {

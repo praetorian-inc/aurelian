@@ -60,7 +60,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 		}
 		return containerPager.More(), nil
 	})
-	return handleExtractError(err, "storage-blobs", r.ResourceID, ctx.Cred)
+	return handleExtractError(err, "storage-blobs", r.ResourceID)
 }
 
 // newBlobClientWithAccountKey fetches storage account keys via the management plane

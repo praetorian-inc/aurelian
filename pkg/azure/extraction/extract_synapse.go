@@ -39,7 +39,7 @@ func extractSynapseProperties(ctx extractContext, r output.AzureResource, out *p
 
 	result, err := wsClient.Get(ctx.Context, resourceGroup, workspaceName, nil)
 	if err != nil {
-		return handleExtractError(err, "synapse-properties", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "synapse-properties", r.ResourceID)
 	}
 
 	if result.Properties == nil {

@@ -33,7 +33,7 @@ func extractContainerInstanceEnvVars(ctx extractContext, r output.AzureResource,
 
 	result, err := client.Get(ctx.Context, resourceGroup, name, nil)
 	if err != nil {
-		return handleExtractError(err, "container-instance-envvars", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "container-instance-envvars", r.ResourceID)
 	}
 
 	if result.Properties == nil || result.Properties.Containers == nil {

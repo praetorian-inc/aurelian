@@ -38,9 +38,6 @@ func enrichFunctionAnonymousAccess(cfg plugin.AzureEnricherConfig, result *templ
 		if err != nil {
 			slog.Warn("could not list functions, skipping",
 				"resource", result.ResourceID, "error", err)
-			if azurecloud.ForCredential(cfg.Credential).Name == azurecloud.Government {
-				return err
-			}
 			return nil
 		}
 

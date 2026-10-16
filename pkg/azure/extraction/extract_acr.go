@@ -34,7 +34,7 @@ func extractACRTasks(ctx extractContext, r output.AzureResource, out *pipeline.P
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "acr-tasks", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "acr-tasks", r.ResourceID)
 		}
 		for _, task := range page.Value {
 			if task.Properties == nil {

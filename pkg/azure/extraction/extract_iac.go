@@ -40,7 +40,7 @@ func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "template-spec-versions", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "template-spec-versions", r.ResourceID)
 		}
 		for _, version := range page.Value {
 			if version.Properties == nil {
@@ -86,7 +86,7 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "blueprint-artifacts", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "blueprint-artifacts", r.ResourceID)
 		}
 		for _, artifact := range page.Value {
 			if artifact == nil {
@@ -122,7 +122,7 @@ func extractPolicyDefinitions(ctx extractContext, r output.AzureResource, out *p
 
 	result, err := client.Get(ctx.Context, policyName, nil)
 	if err != nil {
-		return handleExtractError(err, "policy-definitions", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "policy-definitions", r.ResourceID)
 	}
 
 	if result.Properties == nil {

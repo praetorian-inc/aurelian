@@ -32,7 +32,7 @@ func extractAppInsightsKeys(ctx extractContext, r output.AzureResource, out *pip
 
 	result, err := client.Get(ctx.Context, resourceGroup, componentName, nil)
 	if err != nil {
-		return handleExtractError(err, "app-insights-keys", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "app-insights-keys", r.ResourceID)
 	}
 
 	if result.Properties == nil {

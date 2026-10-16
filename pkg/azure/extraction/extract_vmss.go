@@ -38,7 +38,7 @@ func extractVMSSUserData(ctx extractContext, r output.AzureResource, out *pipeli
 		Expand: &expand,
 	})
 	if err != nil {
-		return handleExtractError(err, "vmss-userdata", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "vmss-userdata", r.ResourceID)
 	}
 
 	if result.Properties == nil || result.Properties.VirtualMachineProfile == nil {
@@ -88,7 +88,7 @@ func extractVMSSExtensions(ctx extractContext, r output.AzureResource, out *pipe
 	for pager.More() {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
-			return handleExtractError(err, "vmss-extensions", r.ResourceID, ctx.Cred)
+			return handleExtractError(err, "vmss-extensions", r.ResourceID)
 		}
 		for _, ext := range page.Value {
 			if ext.Properties == nil {

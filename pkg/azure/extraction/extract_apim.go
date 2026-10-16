@@ -32,7 +32,7 @@ func extractAPIMPolicies(ctx extractContext, r output.AzureResource, out *pipeli
 
 	resp, err := client.ListByService(ctx.Context, rg, serviceName, nil)
 	if err != nil {
-		return handleExtractError(err, "apim-policies", r.ResourceID, ctx.Cred)
+		return handleExtractError(err, "apim-policies", r.ResourceID)
 	}
 
 	if resp.Value != nil {
@@ -76,7 +76,7 @@ func extractAPIMBackends(ctx extractContext, r output.AzureResource, out *pipeli
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "apim-backends", r.ResourceID, ctx.Cred)
+	return handleExtractError(err, "apim-backends", r.ResourceID)
 }
 
 func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -110,7 +110,7 @@ func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pip
 			if valueName != "" {
 				secretResp, secretErr := namedValueClient.ListValue(ctx.Context, rg, serviceName, valueName, nil)
 				if secretErr != nil {
-					if herr := handleExtractError(secretErr, "apim-namedvalues", r.ResourceID, ctx.Cred); herr != nil {
+					if herr := handleExtractError(secretErr, "apim-namedvalues", r.ResourceID); herr != nil {
 						slog.Warn("failed to list named value secret", "namedValue", valueName, "error", herr)
 					}
 				} else if secretResp.Value != nil {
@@ -132,7 +132,7 @@ func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pip
 		}
 		return pager.More(), nil
 	})
-	return handleExtractError(err, "apim-namedvalues", r.ResourceID, ctx.Cred)
+	return handleExtractError(err, "apim-namedvalues", r.ResourceID)
 }
 
 func parseAPIMID(resourceID string) (resourceGroup, serviceName string, err error) {

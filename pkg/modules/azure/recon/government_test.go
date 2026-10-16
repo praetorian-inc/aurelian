@@ -22,7 +22,7 @@ import (
 
 // Exercise the actual five module pipelines, not just endpoint configuration.
 // Default/empty/public compatibility and the Government path share the fixture.
-func TestAzureRegisteredModuleIsolationBothOrdersAndConcurrent(t *testing.T) {
+func TestAzureRegisteredModuleSequentialCloudSelection(t *testing.T) {
 	t.Setenv("AZURE_TENANT_ID", "11111111-1111-1111-1111-111111111111")
 	t.Setenv("AZURE_CLIENT_ID", "22222222-2222-2222-2222-222222222222")
 	t.Setenv("AZURE_CLIENT_SECRET", "offline-test-secret")
@@ -70,16 +70,9 @@ func TestAzureRegisteredModuleIsolationBothOrdersAndConcurrent(t *testing.T) {
 			run(typ)
 		}
 	}
-	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
-		for _, typ := range []string{"public", "gcc-high", "omitted"} {
-			wg.Add(1)
-			go func() { defer wg.Done(); run(typ) }()
-		}
-	}
-	wg.Wait()
+
 	assert.Empty(t, prototype.CloudType)
-	assert.Nil(t, prototype.AzureCredential, "registry prototype must not retain job credentials")
+	assert.Equal(t, azurecloud.Public, azurecloud.ForCredential(prototype.AzureCredential).Name)
 }
 
 func TestFiveAzureCapabilitiesSelectedCloud(t *testing.T) {

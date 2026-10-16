@@ -30,9 +30,6 @@ func enrichAppServiceAuth(cfg plugin.AzureEnricherConfig, result *templates.ARGQ
 	if err != nil {
 		slog.Warn("could not get auth settings, skipping",
 			"resource", result.ResourceID, "error", err)
-		if azurecloud.ForCredential(cfg.Credential).Name == azurecloud.Government {
-			return err
-		}
 		return nil
 	}
 
