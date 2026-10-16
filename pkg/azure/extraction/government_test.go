@@ -98,7 +98,11 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 				mu.Unlock()
 				scopes := recorder.Scopes()
 				if service == "appconfig" {
-					assert.Contains(t, scopes, "https://store."+env.AppConfigSuffix+"/.default")
+					expectedScope := "https://store." + env.AppConfigSuffix + "/.default"
+					if typ == "gcc-high" {
+						expectedScope = "https://appconfig.azure.us/.default"
+					}
+					assert.Equal(t, []string{expectedScope}, scopes)
 				}
 				if service == "cosmos" {
 					assert.Contains(t, scopes, "https://account."+env.CosmosSuffix+"/.default")
@@ -268,6 +272,35 @@ func TestCosmosNestedFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	}
 }
 
+func TestGovernmentUnsupportedExtractorsDoNotAbortPipeline(t *testing.T) {
+	for _, concurrency := range []int{1, 3} {
+		t.Run(fmt.Sprint(concurrency), func(t *testing.T) {
+			cred, recorder := azuretest.NewCredential(t, "gcc-high")
+			calls := 0
+			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
+				calls++
+				assert.Equal(t, "store.azconfig.azure.us", r.URL.Host, "unsupported resources must not make network requests")
+				resp := azuretest.JSON(r, `{"items":[{"key":"setting","value":"offline-value"}]}`)
+				resp.Header.Set("Sync-Token", "offline=token;sn=1")
+				return resp, nil
+			})
+			resources := []output.AzureResource{
+				{ResourceType: "Microsoft.DigitalTwins/digitalTwinsInstances", Tags: map[string]string{"setting": "offline-value"}},
+				{ResourceType: "Microsoft.Blueprint/blueprints", Tags: map[string]string{"setting": "offline-value"}},
+				{ResourceType: "Microsoft.AppConfiguration/configurationStores", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.AppConfiguration/configurationStores/store"},
+			}
+			extractor := NewAzureExtractor(cred)
+			out := pipeline.New[output.ScanInput]()
+			pipeline.Pipe(pipeline.From(resources...), extractor.Extract, out, &pipeline.PipeOpts{Concurrency: concurrency})
+			items, err := out.Collect()
+			require.NoError(t, err)
+			assert.Len(t, items, 3, "unsupported service extraction must not suppress tags or later supported resources")
+			assert.Equal(t, 1, calls)
+			assert.Equal(t, []string{"https://appconfig.azure.us/.default"}, recorder.Scopes())
+		})
+	}
+}
+
 func TestGovernmentUnsupportedExtractorsAreExplicitWithoutNetwork(t *testing.T) {
 	cred, _ := azuretest.NewCredential(t, "gcc-high")
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
@@ -277,7 +310,7 @@ func TestGovernmentUnsupportedExtractorsAreExplicitWithoutNetwork(t *testing.T) 
 	for _, resourceType := range []string{"Microsoft.DigitalTwins/digitalTwinsInstances", "Microsoft.Blueprint/blueprints"} {
 		out := pipeline.New[output.ScanInput]()
 		err := NewAzureExtractor(cred).Extract(output.AzureResource{ResourceType: resourceType}, out)
-		require.ErrorContains(t, err, "unsupported")
+		require.NoError(t, err)
 		out.Close()
 	}
 }

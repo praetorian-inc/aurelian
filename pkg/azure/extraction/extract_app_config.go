@@ -1,16 +1,32 @@
 package extraction
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azappconfig "github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
+
+// azappconfig v1.2.0 derives scopes from the store endpoint and has no audience
+// option. Government requires the service audience instead:
+// https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-enable-rbac#app-configuration-audience
+// Apply this adapter only to App Configuration, never to the shared credential.
+type governmentAppConfigCredential struct {
+	azcore.TokenCredential
+}
+
+func (c governmentAppConfigCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	options.Scopes = []string{"https://appconfig.azure.us/.default"}
+	return c.TokenCredential.GetToken(ctx, options)
+}
 
 func init() {
 	mustRegister("microsoft.appconfiguration/configurationstores", "app-config-keyvalues", extractAppConfigKeyValues)
@@ -27,8 +43,13 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no configurationStores segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.%s", storeName, azurecloud.ForCredential(ctx.Cred).AppConfigSuffix)
-	client, err := azappconfig.NewClient(endpoint, ctx.Cred, &azappconfig.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
+	environment := azurecloud.ForCredential(ctx.Cred)
+	endpoint := fmt.Sprintf("https://%s.%s", storeName, environment.AppConfigSuffix)
+	cred := ctx.Cred
+	if environment.Name == azurecloud.Government {
+		cred = governmentAppConfigCredential{TokenCredential: cred}
+	}
+	client, err := azappconfig.NewClient(endpoint, cred, &azappconfig.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create App Configuration client: %w", err)
 	}

@@ -2,8 +2,6 @@ package extraction
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -45,11 +43,11 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 		MaxCosmosDocScan: e.MaxCosmosDocScan,
 	}
 
-	var failures error
 	isGovernment := azurecloud.ForCredential(e.cred).Name == azurecloud.Government
 	for _, ext := range extractors {
 		if isGovernment && (normalizedType == "microsoft.digitaltwins/digitaltwinsinstances" || normalizedType == "microsoft.blueprint/blueprints") {
-			failures = errors.Join(failures, fmt.Errorf("azure government extractor %s is unsupported (service/API availability unverified)", ext.Name))
+			slog.Warn("unsupported Azure Government extractor, skipping; scan coverage is partial",
+				"name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID)
 			continue
 		}
 		if err := ext.Fn(ctx, r, out); err != nil {
@@ -62,5 +60,5 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 		slog.Warn("tag extraction failed", "resource", r.ResourceID, "error", err)
 	}
 
-	return failures
+	return nil
 }
