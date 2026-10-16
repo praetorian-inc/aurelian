@@ -19,11 +19,11 @@ func WithCloud(cred azcore.TokenCredential, cloudType string) (azcore.TokenCrede
 		return nil, err
 	}
 	if cred == nil {
-		return nil, fmt.Errorf("Azure credential is nil")
+		return nil, fmt.Errorf("azure credential is nil")
 	}
 	if previous, ok := cred.(*credential); ok {
 		if previous.environment.Name != environment.Name {
-			return nil, fmt.Errorf("Azure credential cloud conflicts with module cloud selection")
+			return nil, fmt.Errorf("azure credential cloud conflicts with module cloud selection")
 		}
 		return cred, nil
 	}

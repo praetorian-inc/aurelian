@@ -32,7 +32,7 @@ func (c *AzureCommonRecon) PostBind(_ Config, module Module) error {
 		switch module.ID() {
 		case "list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover":
 		default:
-			return fmt.Errorf("Azure Government is not supported for module %q", module.ID())
+			return fmt.Errorf("azure government is not supported for module %q", module.ID())
 		}
 	}
 	// Recreate the credential for each bind, including when a module instance
@@ -59,7 +59,7 @@ func (c *AzureEntraRecon) PostBind(_ Config, _ Module) error {
 		return err
 	}
 	if environment.Name == azurecloud.Government {
-		return fmt.Errorf("Azure Government is not supported for Aurelian Entra modules")
+		return fmt.Errorf("azure government is not supported for Aurelian Entra modules")
 	}
 	cred, err := azureauth.NewAzureCredentialForCloud(c.CloudType)
 	if err != nil {
