@@ -178,7 +178,7 @@ output "template_severity_map" {
   value = {
     aks_local_accounts_enabled                  = "low"
     app_service_auth_disabled                    = "medium"
-    app_service_remote_debugging_enabled         = "high"
+    app_service_remote_debugging_enabled         = "exposure"
     databases_allow_azure_services               = "high"
     function_app_http_anonymous_access           = "high"
     function_apps_admin_managed_identity         = "low"
