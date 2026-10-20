@@ -30,7 +30,7 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 		return fmt.Errorf("no virtualMachines segment in resource ID %s", r.ResourceID)
 	}
 
-	vmClient, err := armcompute.NewVirtualMachinesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	vmClient, err := armcompute.NewVirtualMachinesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create VM client: %w", err)
 	}

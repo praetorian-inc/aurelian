@@ -25,7 +25,7 @@ func extractACRTasks(ctx extractContext, r output.AzureResource, out *pipeline.P
 		return fmt.Errorf("no registries segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcontainerregistry.NewTasksClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armcontainerregistry.NewTasksClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create ACR tasks client: %w", err)
 	}

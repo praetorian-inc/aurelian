@@ -72,7 +72,7 @@ func TestAzureRegisteredModuleSequentialCloudSelection(t *testing.T) {
 	}
 
 	assert.Empty(t, prototype.CloudType)
-	assert.Equal(t, azurecloud.Public, azurecloud.ForCredential(prototype.AzureCredential).Name)
+	assert.Equal(t, azurecloud.Public, prototype.Environment.Name)
 }
 
 func TestFiveAzureCapabilitiesSelectedCloud(t *testing.T) {
@@ -81,15 +81,14 @@ func TestFiveAzureCapabilitiesSelectedCloud(t *testing.T) {
 			t.Run(typ+"/"+id, func(t *testing.T) {
 				const sub = "00000000-0000-0000-0000-000000000001"
 				resourceID := "/subscriptions/" + sub + "/resourceGroups/rg/providers/Microsoft.Web/sites/site"
-				cred, recorder := azuretest.NewCredential(t, typ)
-				env := azurecloud.ForCredential(cred)
+				cred, env := azuretest.NewCredential(t, typ)
 				var mu sync.Mutex
 				requests := map[string]int{}
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 					mu.Lock()
 					requests[r.URL.Path]++
 					mu.Unlock()
-					if r.URL.Host != strings.TrimPrefix(env.ARM, "https://") {
+					if r.URL.Host != strings.TrimPrefix(env.ARMEndpoint(), "https://") {
 						return nil, fmt.Errorf("wrong cloud host: %s", r.URL.Host)
 					}
 					assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
@@ -122,27 +121,32 @@ func TestFiveAzureCapabilitiesSelectedCloud(t *testing.T) {
 					m := &AzureListAllResourcesModule{}
 					require.NoError(t, plugin.Bind(cfg, m.Parameters()))
 					m.AzureCredential = cred
+					m.Environment = env
 					module = m
 				case "configuration-scan":
 					m := &AzureConfigurationScanModule{}
 					require.NoError(t, plugin.Bind(cfg, m.Parameters()))
 					m.AzureCredential = cred
+					m.Environment = env
 					module = m
 				case "public-resources":
 					m := &AzurePublicResourcesModule{}
 					require.NoError(t, plugin.Bind(cfg, m.Parameters()))
 					m.AzureCredential = cred
+					m.Environment = env
 					module = m
 				case "find-secrets":
 					m := &AzureFindSecretsModule{}
 					cfg.Args["resource-id"] = []string{resourceID}
 					require.NoError(t, plugin.Bind(cfg, m.Parameters()))
 					m.AzureCredential = cred
+					m.Environment = env
 					module = m
 				case "subdomain-takeover":
 					m := &AzureSubdomainTakeoverModule{}
 					require.NoError(t, plugin.Bind(cfg, m.Parameters()))
 					m.AzureCredential = cred
+					m.Environment = env
 					module = m
 				}
 				out := pipeline.New[model.AurelianModel]()
@@ -164,8 +168,8 @@ func TestFiveAzureCapabilitiesSelectedCloud(t *testing.T) {
 					}
 					assert.Greater(t, authRequests, 0, "configuration enrichers must use Government SDK clients too: %v", requests)
 				}
-				for _, scope := range recorder.Scopes() {
-					assert.Equal(t, env.ARMScope, scope)
+				for _, scope := range cred.Scopes() {
+					assert.Equal(t, env.ARMScope(), scope)
 				}
 			})
 		}

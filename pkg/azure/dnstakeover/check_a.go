@@ -71,7 +71,7 @@ func fetchAllocatedPublicIPs(ctx CheckContext) (map[string]bool, error) {
 	allocated := make(map[string]bool)
 
 	for _, subID := range ctx.SubscriptionIDs {
-		client, err := armnetwork.NewPublicIPAddressesClient(subID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
+		client, err := armnetwork.NewPublicIPAddressesClient(subID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 		if err != nil {
 			slog.Warn("failed to create public ip client", "subscription", subID, "error", err)
 			continue

@@ -64,11 +64,10 @@ func parseAPIListPage(body []byte) ([]APIInventoryItem, string, error) {
 // host matches the original ARM endpoint — never send the bearer token to a
 // foreign host. Transient 429/503 errors surface as *azcore.ResponseError so
 // the standard Azure paginator retries them.
-func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, resourceGroup, serviceName string) ([]APIInventoryItem, error) {
-	environment := azurecloud.ForCredential(cred)
+func ListAPIs(ctx context.Context, cred azcore.TokenCredential, env azurecloud.Environment, subscriptionID, resourceGroup, serviceName string) ([]APIInventoryItem, error) {
 	base := fmt.Sprintf(
 		"%s/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ApiManagement/service/%s/apis?api-version=%s",
-		environment.ARM,
+		env.ARMEndpoint(),
 		url.PathEscape(subscriptionID),
 		url.PathEscape(resourceGroup),
 		url.PathEscape(serviceName),
@@ -79,7 +78,7 @@ func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, 
 		return nil, fmt.Errorf("parse base URL: %w", err)
 	}
 
-	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{environment.ARMScope}})
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{env.ARMScope()}})
 	if err != nil {
 		return nil, fmt.Errorf("acquire ARM token: %w", err)
 	}

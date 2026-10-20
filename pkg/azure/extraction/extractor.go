@@ -15,14 +15,19 @@ import (
 // AzureExtractor extracts scannable content from Azure resources.
 type AzureExtractor struct {
 	cred             azcore.TokenCredential
+	env              azurecloud.Environment
 	MaxCosmosDocSize int // 0 uses defaultMaxCosmosDocSize (1 MB)
 	MaxCosmosDocScan int // 0 uses defaultMaxCosmosDocScan (50)
 }
 
 // NewAzureExtractor creates an extractor with shared Azure credentials.
-func NewAzureExtractor(cred azcore.TokenCredential) *AzureExtractor {
+func NewAzureExtractor(cred azcore.TokenCredential, env azurecloud.Environment) *AzureExtractor {
+	if skipped := unsupportedExtractors(env); len(skipped) > 0 {
+		slog.Warn("extractors unavailable in selected cloud; results are partial", "cloud", env.Name, "extractors", skipped)
+	}
 	return &AzureExtractor{
 		cred: cred,
+		env:  env,
 	}
 }
 
@@ -39,15 +44,14 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	ctx := extractContext{
 		Context:          context.Background(),
 		Cred:             e.cred,
+		Env:              e.env,
 		MaxCosmosDocSize: e.MaxCosmosDocSize,
 		MaxCosmosDocScan: e.MaxCosmosDocScan,
 	}
 
-	isGovernment := azurecloud.ForCredential(e.cred).Name == azurecloud.Government
 	for _, ext := range extractors {
-		if isGovernment && (normalizedType == "microsoft.digitaltwins/digitaltwinsinstances" || normalizedType == "microsoft.blueprint/blueprints") {
-			slog.Warn("unsupported Azure Government extractor, skipping; scan coverage is partial",
-				"name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID)
+		if !e.env.Supports(ext.Clouds) {
+			slog.Debug("extractor not supported in selected cloud, skipping", "name", ext.Name, "cloud", e.env.Name, "resource", r.ResourceID)
 			continue
 		}
 		if err := ext.Fn(ctx, r, out); err != nil {

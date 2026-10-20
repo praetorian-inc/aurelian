@@ -42,7 +42,7 @@ func enrichVMIdentity(cfg plugin.AzureEnricherConfig, result *templates.ARGQuery
 		return nil
 	}
 
-	client, err := armauthorization.NewRoleAssignmentsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
+	client, err := armauthorization.NewRoleAssignmentsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return fmt.Errorf("creating role assignments client: %w", err)
 	}

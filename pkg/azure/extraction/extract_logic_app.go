@@ -21,7 +21,7 @@ func extractLogicAppDefinition(ctx extractContext, r output.AzureResource, out *
 		return err
 	}
 
-	client, err := armlogic.NewWorkflowsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armlogic.NewWorkflowsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create logic workflows client: %w", err)
 	}

@@ -13,6 +13,8 @@ import (
 type AzureReconBase struct {
 	OutputDir string `param:"output-dir" desc:"Base output directory" default:"aurelian-output"`
 	CloudType string `param:"cloud-type" desc:"Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); empty defaults to public" default:"public"`
+
+	Environment azurecloud.Environment `param:"-"`
 }
 
 // AzureCommonRecon contains common parameters for Azure reconnaissance modules.
@@ -37,10 +39,11 @@ func (c *AzureCommonRecon) PostBind(_ Config, module Module) error {
 	}
 	// Recreate the credential for each bind, including when a module instance
 	// is reused for a different cloud. Never retain the previous job's chain/cache.
-	cred, err := azureauth.NewAzureCredentialForCloud(c.CloudType)
+	cred, err := azureauth.NewAzureCredential(environment)
 	if err != nil {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}
+	c.Environment = environment
 	c.AzureCredential = cred
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
@@ -61,10 +64,11 @@ func (c *AzureEntraRecon) PostBind(_ Config, _ Module) error {
 	if environment.Name == azurecloud.Government {
 		return fmt.Errorf("azure government is not supported for Aurelian Entra modules")
 	}
-	cred, err := azureauth.NewAzureCredentialForCloud(c.CloudType)
+	cred, err := azureauth.NewAzureCredential(environment)
 	if err != nil {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}
+	c.Environment = environment
 	c.AzureCredential = cred
 	return nil
 }

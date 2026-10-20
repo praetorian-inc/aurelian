@@ -20,6 +20,7 @@ import (
 // (e.g., "assignPermissions": "true" instead of true in custom policies).
 type rawPolicyPager struct {
 	cred    azcore.TokenCredential
+	env     azurecloud.Environment
 	client  *http.Client
 	nextURL string
 }
@@ -41,14 +42,15 @@ type rawPolicyPage struct {
 	NextLink string            `json:"nextLink"`
 }
 
-func newRawPolicyPager(subscriptionID string, cred azcore.TokenCredential) (*rawPolicyPager, error) {
+func newRawPolicyPager(subscriptionID string, cred azcore.TokenCredential, env azurecloud.Environment) (*rawPolicyPager, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("credential is nil")
 	}
 	return &rawPolicyPager{
 		cred:    cred,
+		env:     env,
 		client:  &http.Client{Timeout: 30 * time.Second},
-		nextURL: fmt.Sprintf("%s/subscriptions/%s/providers/Microsoft.Authorization/policyDefinitions?api-version=2023-04-01", azurecloud.ForCredential(cred).ARM, subscriptionID),
+		nextURL: fmt.Sprintf("%s/subscriptions/%s/providers/Microsoft.Authorization/policyDefinitions?api-version=2023-04-01", env.ARMEndpoint(), subscriptionID),
 	}, nil
 }
 
@@ -57,9 +59,8 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 		return nil, "", nil
 	}
 
-	environment := azurecloud.ForCredential(p.cred)
 	token, err := p.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{environment.ARMScope},
+		Scopes: []string{p.env.ARMScope()},
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("acquiring token: %w", err)
@@ -104,7 +105,7 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 	}
 
 	// Validate nextLink stays within Azure management plane to prevent SSRF.
-	if page.NextLink != "" && !strings.HasPrefix(page.NextLink, environment.ARM+"/") {
+	if page.NextLink != "" && !strings.HasPrefix(page.NextLink, p.env.ARMEndpoint()+"/") {
 		return nil, "", fmt.Errorf("unexpected nextLink host: %s", page.NextLink)
 	}
 	p.nextURL = page.NextLink

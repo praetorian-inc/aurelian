@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -17,7 +18,7 @@ import (
 func TestEnrich_UnregisteredType_PassesThrough(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Unknown/thing", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -39,7 +40,7 @@ func TestEnrich_MutatesProperties(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -65,8 +66,8 @@ func TestEnrich_ErrorStillForwards(t *testing.T) {
 	})
 	for _, cloudType := range []string{"public", "gcc-high"} {
 		t.Run(cloudType, func(t *testing.T) {
-			cred, _ := azuretest.NewCredential(t, cloudType)
-			e := NewAzureEnricher(context.Background(), cred, 120*time.Second)
+			cred, env := azuretest.NewCredential(t, cloudType)
+			e := NewAzureEnricher(context.Background(), cred, env, 120*time.Second)
 			result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 			items, err := azuretest.Collect(func(out *pipeline.P[templates.ARGQueryResult]) error {
 				return e.Enrich(result, out)
@@ -90,7 +91,7 @@ func TestEnrich_MultipleEnrichersAllRun(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -114,7 +115,7 @@ func TestEnrich_CaseInsensitiveResourceType(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/Sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -137,7 +138,7 @@ func TestEnrich_NilProperties_Initialized(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()

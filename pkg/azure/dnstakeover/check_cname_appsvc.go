@@ -19,7 +19,7 @@ func init() {
 }
 
 func checkAppService(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
-	suffix := "." + azurecloud.ForCredential(ctx.Credential).AppServiceSuffix
+	suffix := "." + ctx.Env.AppServiceSuffix
 	for _, val := range rec.Values {
 		if !strings.HasSuffix(strings.ToLower(val), suffix) {
 			continue
@@ -66,7 +66,7 @@ func checkAppService(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model
 }
 
 func checkWebAppNameAvailability(ctx CheckContext, appName string) (bool, error) {
-	client, err := armappservice.NewWebSiteManagementClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
+	client, err := armappservice.NewWebSiteManagementClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return false, fmt.Errorf("create app service client: %w", err)
 	}

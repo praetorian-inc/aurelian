@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/test/azuretest"
 )
 
 func ptrTo(s string) *string { return &s }
@@ -595,9 +596,11 @@ func TestExtractPolicyDefinitions_SubscriptionScopeIDParsing(t *testing.T) {
 	// the ARM API call, but ONLY if the ID parsing step succeeded. If ID parsing
 	// fails, the function returns an ID parsing error before reaching the API call.
 
+	_, env := azuretest.NewCredential(t, "public")
 	ctx := extractContext{
 		Context: context.Background(),
 		Cred:    nil, // nil cred causes ARM client creation to succeed but API call to fail
+		Env:     env,
 	}
 
 	// Subscription-scope ID (no resource group): this is what the ARM enumerator emits

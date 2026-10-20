@@ -51,7 +51,7 @@ func (m *AzureSubdomainTakeoverModule) SupportedResourceTypes() []string {
 }
 
 func (m *AzureSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential, m.Environment)
 
 	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
@@ -66,7 +66,7 @@ func (m *AzureSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[mo
 	cfg.Info("scanning Azure DNS across %d subscriptions", len(subscriptionIDs))
 
 	checker := dnstakeover.NewDNSTakeoverChecker(cfg.Context, m.AzureCommonRecon, subscriptionIDs)
-	enumerator := dnstakeover.NewDNSEnumerator(m.AzureCredential)
+	enumerator := dnstakeover.NewDNSEnumerator(m.AzureCredential, m.Environment)
 
 	subStream := pipeline.From(subscriptionIDs...)
 

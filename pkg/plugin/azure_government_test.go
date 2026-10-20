@@ -5,8 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 )
 
 type azureModuleID struct {
@@ -29,7 +27,7 @@ func TestAzureCloudBindingDefaultsAndSequentialReuse(t *testing.T) {
 		if args["cloud-type"] == "gcc-high" {
 			expected = "gcc-high"
 		}
-		assert.Equal(t, expected, azurecloud.ForCredential(params.AzureCredential).Name)
+		assert.Equal(t, expected, params.Environment.Name)
 		if previous != nil {
 			assert.NotSame(t, previous, params.AzureCredential, "new job must get a fresh token chain/cache")
 		}

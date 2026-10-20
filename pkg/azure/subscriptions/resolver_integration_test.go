@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -20,7 +21,9 @@ func TestSubscriptionResolverResolve(t *testing.T) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	require.NoError(t, err)
 
-	resolver := NewSubscriptionResolver(cred)
+	env, err := azurecloud.Resolve(azurecloud.Public)
+	require.NoError(t, err)
+	resolver := NewSubscriptionResolver(cred, env)
 	subscriptionID := fixture.Output("subscription_id")
 
 	out := pipeline.New[azuretypes.SubscriptionInfo]()

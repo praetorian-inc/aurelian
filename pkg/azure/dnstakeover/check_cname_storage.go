@@ -19,7 +19,7 @@ func init() {
 }
 
 func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
-	suffix := "." + azurecloud.ForCredential(ctx.Credential).BlobSuffix
+	suffix := "." + ctx.Env.BlobSuffix
 	for _, val := range rec.Values {
 		if !strings.HasSuffix(strings.ToLower(val), suffix) {
 			continue
@@ -65,7 +65,7 @@ func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[mode
 }
 
 func checkStorageAccountAvailability(ctx CheckContext, accountName string) (bool, error) {
-	client, err := armstorage.NewAccountsClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
+	client, err := armstorage.NewAccountsClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return false, fmt.Errorf("create storage client: %w", err)
 	}

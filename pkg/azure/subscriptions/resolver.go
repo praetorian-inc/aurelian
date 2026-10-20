@@ -14,10 +14,11 @@ import (
 
 type SubscriptionResolver struct {
 	cred azcore.TokenCredential
+	env  azurecloud.Environment
 }
 
-func NewSubscriptionResolver(cred azcore.TokenCredential) *SubscriptionResolver {
-	resolver := &SubscriptionResolver{cred: cred}
+func NewSubscriptionResolver(cred azcore.TokenCredential, env azurecloud.Environment) *SubscriptionResolver {
+	resolver := &SubscriptionResolver{cred: cred, env: env}
 	return resolver
 }
 
@@ -71,7 +72,7 @@ func (r *SubscriptionResolver) ListAllSubscriptions() ([]azuretypes.Subscription
 }
 
 func (r *SubscriptionResolver) newClient() (*armsubscriptions.Client, error) {
-	client, err := armsubscriptions.NewClient(r.cred, azurecloud.ARMClientOptions(r.cred))
+	client, err := armsubscriptions.NewClient(r.cred, azurecloud.ARMClientOptions(r.env))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create subscriptions client: %w", err)
 	}

@@ -39,7 +39,7 @@ func enrichDatabaseFirewall(cfg plugin.AzureEnricherConfig, result *templates.AR
 
 func checkFirewallRules(cfg plugin.AzureEnricherConfig, subID, rg, name, resourceType string) (bool, error) {
 	lower := strings.ToLower(resourceType)
-	if azurecloud.ForCredential(cfg.Credential).Name == azurecloud.Government && strings.Contains(lower, "microsoft.synapse") {
+	if cfg.Env.Name == azurecloud.Government && strings.Contains(lower, "microsoft.synapse") {
 		return checkSynapseFirewall(cfg, subID, rg, name)
 	}
 	switch {
@@ -56,7 +56,7 @@ func checkFirewallRules(cfg plugin.AzureEnricherConfig, subID, rg, name, resourc
 }
 
 func checkSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName string) (bool, error) {
-	factory, err := armsql.NewClientFactory(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
+	factory, err := armsql.NewClientFactory(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return false, fmt.Errorf("creating SQL client: %w", err)
 	}
@@ -82,7 +82,7 @@ func checkSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName stri
 // Government workspaces use the Synapse resource provider, not SQL servers.
 // Preserve the existing public path; do not infer a namespace from the workload name.
 func checkSynapseFirewall(cfg plugin.AzureEnricherConfig, subID, rg, workspaceName string) (bool, error) {
-	client, err := armsynapse.NewIPFirewallRulesClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
+	client, err := armsynapse.NewIPFirewallRulesClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +102,7 @@ func checkSynapseFirewall(cfg plugin.AzureEnricherConfig, subID, rg, workspaceNa
 }
 
 func checkPostgreSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName string) (bool, error) {
-	client, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
+	client, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return false, fmt.Errorf("creating PostgreSQL firewall client: %w", err)
 	}
@@ -127,7 +127,7 @@ func checkPostgreSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverNa
 }
 
 func checkMySQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName string) (bool, error) {
-	factory, err := armmysqlflexibleservers.NewClientFactory(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
+	factory, err := armmysqlflexibleservers.NewClientFactory(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return false, fmt.Errorf("creating MySQL client: %w", err)
 	}

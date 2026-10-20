@@ -3,7 +3,6 @@ package azurecloud_test
 import (
 	"context"
 	"net/http"
-	"strings"
 	"sync"
 	"testing"
 
@@ -22,21 +21,36 @@ func TestResolveDefaultsAndSDKMetadata(t *testing.T) {
 		require.NoError(t, err)
 		expected := cloud.AzurePublic
 		expectedName := "public"
+		expectedScope := "https://management.core.windows.net//.default"
+		expectedAppConfigAudience := ""
 		if value == "gcc-high" {
 			expected = cloud.AzureGovernment
 			expectedName = "gcc-high"
+			expectedScope = "https://management.core.usgovcloudapi.net//.default"
+			expectedAppConfigAudience = "https://appconfig.azure.us"
 		}
 		assert.Equal(t, expectedName, e.Name)
-		assert.Equal(t, expected.Services[cloud.ResourceManager].Endpoint, e.ARM)
-		assert.Equal(t, strings.TrimRight(expected.Services[cloud.ResourceManager].Audience, "/")+"/.default", e.ARMScope)
-		e.Cloud.Services[cloud.ResourceManager] = cloud.ServiceConfiguration{Endpoint: "mutated"}
-		assert.NotEqual(t, "mutated", expected.Services[cloud.ResourceManager].Endpoint)
+		assert.Equal(t, expected.Services[cloud.ResourceManager].Endpoint, e.ARMEndpoint())
+		// Matches what azcore/arm/runtime requests, trailing-slash audience included.
+		assert.Equal(t, expectedScope, e.ARMScope())
+		assert.Equal(t, expectedAppConfigAudience, e.AppConfigAudience)
 	}
 	for _, invalid := range []string{"gcc", "GCCHigh", "GCC-High", "usgovernment", "USGovernment", "china", "usgovernmentdod", " public", "gcc-high ", "unknown"} {
 		_, err := azurecloud.Resolve(invalid)
 		require.ErrorContains(t, err, "unsupported Azure cloud type")
 		assert.Contains(t, err.Error(), "choose public or gcc-high")
 	}
+}
+
+func TestSupports(t *testing.T) {
+	public, err := azurecloud.Resolve(azurecloud.Public)
+	require.NoError(t, err)
+	gov, err := azurecloud.Resolve(azurecloud.Government)
+	require.NoError(t, err)
+	assert.True(t, public.Supports(nil))
+	assert.True(t, gov.Supports(nil))
+	assert.True(t, public.Supports([]string{azurecloud.Public}))
+	assert.False(t, gov.Supports([]string{azurecloud.Public}))
 }
 
 func TestCloudIsolationBothOrdersAndConcurrent(t *testing.T) {
@@ -51,14 +65,14 @@ func TestCloudIsolationBothOrdersAndConcurrent(t *testing.T) {
 		return azuretest.JSON(r, `{"value":[]}`), nil
 	})
 	run := func(typ string) {
-		cred, recorder := azuretest.NewCredential(t, typ)
-		client, err := armsubscriptions.NewClient(cred, azurecloud.ARMClientOptions(cred))
+		cred, env := azuretest.NewCredential(t, typ)
+		client, err := armsubscriptions.NewClient(cred, azurecloud.ARMClientOptions(env))
 		if !assert.NoError(t, err) {
 			return
 		}
 		_, err = client.NewListPager(nil).NextPage(context.Background())
 		assert.NoError(t, err)
-		assert.Equal(t, []string{azurecloud.ForCredential(cred).ARMScope}, recorder.Scopes())
+		assert.Equal(t, []string{env.ARMScope()}, cred.Scopes())
 	}
 	for _, order := range [][]string{{"public", "gcc-high"}, {"gcc-high", "public"}} {
 		for _, typ := range order {

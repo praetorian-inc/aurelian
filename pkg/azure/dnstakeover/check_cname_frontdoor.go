@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	mustRegister("CNAME", "frontdoor-takeover", checkFrontDoor)
+	mustRegister("CNAME", "frontdoor-takeover", checkFrontDoor, azurecloud.Public)
 }
 
 const frontdoorSuffix = ".azurefd.net"
@@ -25,7 +25,7 @@ type frontDoorNameAvailabilityClient interface {
 }
 
 func checkFrontDoor(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
-	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
+	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("create front door client: %w", err)
 	}

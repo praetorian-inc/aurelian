@@ -11,12 +11,14 @@ import (
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/test/azuretest"
 )
 
 // TestARMEnumerator_List_NilCred verifies List does not panic when
 // credentials are nil. The raw policy pager constructor rejects nil creds.
 func TestARMEnumerator_List_NilCred(t *testing.T) {
-	e := NewARMEnumerator(nil)
+	_, env := azuretest.NewCredential(t, "public")
+	e := NewARMEnumerator(nil, env)
 	sub := azuretypes.SubscriptionInfo{ID: "00000000-0000-0000-0000-000000000000"}
 
 	out := pipeline.New[output.AzureResource]()

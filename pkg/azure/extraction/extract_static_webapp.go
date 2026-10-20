@@ -21,7 +21,7 @@ func extractStaticWebAppSettings(ctx extractContext, r output.AzureResource, out
 		return err
 	}
 
-	client, err := armappservice.NewStaticSitesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armappservice.NewStaticSitesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create static sites client: %w", err)
 	}

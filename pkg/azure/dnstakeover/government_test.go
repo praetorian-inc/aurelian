@@ -21,8 +21,7 @@ func TestDNSAvailabilityChecksRespectSelectedCloudAndSuffix(t *testing.T) {
 	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, service := range []string{"appservice", "blob", "trafficmanager"} {
 			t.Run(typ+"/"+service, func(t *testing.T) {
-				cred, recorder := azuretest.NewCredential(t, typ)
-				env := azurecloud.ForCredential(cred)
+				cred, env := azuretest.NewCredential(t, typ)
 				suffix := env.AppServiceSuffix
 				check := checkAppService
 				switch service {
@@ -36,17 +35,17 @@ func TestDNSAvailabilityChecksRespectSelectedCloudAndSuffix(t *testing.T) {
 				calls := 0
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 					calls++
-					assert.Equal(t, strings.TrimPrefix(env.ARM, "https://"), r.URL.Host)
+					assert.Equal(t, strings.TrimPrefix(env.ARMEndpoint(), "https://"), r.URL.Host)
 					assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
 					return azuretest.JSON(r, `{"nameAvailable":true}`), nil
 				})
-				ctx := CheckContext{Ctx: context.Background(), Credential: cred, SubscriptionID: "sub"}
+				ctx := CheckContext{Ctx: context.Background(), Credential: cred, Env: env, SubscriptionID: "sub"}
 				rec := AzureDNSRecord{Type: "CNAME", Values: []string{"unclaimed." + suffix}, FQDN: "www.example.test"}
 				items, err := azuretest.Collect(func(out *pipeline.P[model.AurelianModel]) error { return check(ctx, rec, out) })
 				require.NoError(t, err)
 				assert.Len(t, items, 1)
 				assert.Equal(t, 1, calls)
-				assert.Equal(t, []string{env.ARMScope}, recorder.Scopes())
+				assert.Equal(t, []string{env.ARMScope()}, cred.Scopes())
 				// A similarly named domain is not a service suffix and must not trigger a lookup.
 				rec.Values = []string{"unclaimed." + suffix + ".attacker"}
 				_, err = azuretest.Collect(func(out *pipeline.P[model.AurelianModel]) error { return check(ctx, rec, out) })
@@ -61,8 +60,7 @@ func TestDNSAvailabilityFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
 		for _, service := range []string{"appservice", "blob", "trafficmanager"} {
 			t.Run(typ+"/"+service, func(t *testing.T) {
-				cred, _ := azuretest.NewCredential(t, typ)
-				env := azurecloud.ForCredential(cred)
+				cred, env := azuretest.NewCredential(t, typ)
 				suffix := env.AppServiceSuffix
 				switch service {
 				case "blob":
@@ -80,7 +78,7 @@ func TestDNSAvailabilityFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 					}
 					return resp, nil
 				})
-				checker := NewDNSTakeoverChecker(context.Background(), plugin.AzureCommonRecon{AzureCredential: cred}, []string{"sub"})
+				checker := newTestChecker(cred, env)
 				items, err := azuretest.Collect(func(out *pipeline.P[model.AurelianModel]) error {
 					return checker.Check(AzureDNSRecord{SubscriptionID: "sub", Type: "CNAME", FQDN: "www.example.test", Values: []string{"failed." + suffix, "available." + suffix}}, out)
 				})
@@ -96,7 +94,7 @@ func TestDNSEnumerationFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
 		for _, stage := range []string{"zones", "records"} {
 			t.Run(typ+"/"+stage, func(t *testing.T) {
-				cred, _ := azuretest.NewCredential(t, typ)
+				cred, env := azuretest.NewCredential(t, typ)
 				calls := 0
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 					calls++
@@ -111,7 +109,7 @@ func TestDNSEnumerationFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 					return azuretest.JSON(r, `{"value":[{"name":"www","type":"Microsoft.Network/dnsZones/CNAME","properties":{"CNAMERecord":{"cname":"example.test"}}}]}`), nil
 				})
 				items, err := azuretest.Collect(func(out *pipeline.P[AzureDNSRecord]) error {
-					return NewDNSEnumerator(cred).EnumerateSubscription("sub", out)
+					return NewDNSEnumerator(cred, env).EnumerateSubscription("sub", out)
 				})
 				require.NoError(t, err)
 				if stage == "zones" {
@@ -127,13 +125,13 @@ func TestDNSEnumerationFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 }
 
 func TestGovernmentDNSUnverifiedChecksStayGated(t *testing.T) {
-	cred, _ := azuretest.NewCredential(t, "gcc-high")
+	cred, env := azuretest.NewCredential(t, "gcc-high")
 	calls := 0
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 		calls++
 		return nil, fmt.Errorf("unverified check must not send Government credentials")
 	})
-	checker := NewDNSTakeoverChecker(context.Background(), plugin.AzureCommonRecon{AzureCredential: cred}, []string{"sub"})
+	checker := newTestChecker(cred, env)
 	for _, rec := range []AzureDNSRecord{
 		{Type: "CNAME", Values: []string{"unclaimed.azureedge.net"}},
 		{Type: "CNAME", Values: []string{"unclaimed.azurefd.net"}},
@@ -144,4 +142,34 @@ func TestGovernmentDNSUnverifiedChecksStayGated(t *testing.T) {
 		out.Close()
 	}
 	assert.Zero(t, calls)
+}
+
+func TestCDNCheckDispatchFollowsRegisteredClouds(t *testing.T) {
+	for typ, expectedCalls := range map[string]int{"public": 1, "gcc-high": 0} {
+		t.Run(typ, func(t *testing.T) {
+			cred, env := azuretest.NewCredential(t, typ)
+			calls := 0
+			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
+				calls++
+				return azuretest.JSON(r, `{"nameAvailable":false}`), nil
+			})
+			out := pipeline.New[model.AurelianModel]()
+			require.NoError(t, newTestChecker(cred, env).Check(AzureDNSRecord{SubscriptionID: "sub", Type: "CNAME", Values: []string{"unclaimed.azureedge.net"}}, out))
+			out.Close()
+			assert.Equal(t, expectedCalls, calls)
+		})
+	}
+}
+
+func TestUnsupportedCheckersPerCloud(t *testing.T) {
+	_, public := azuretest.NewCredential(t, "public")
+	_, gov := azuretest.NewCredential(t, "gcc-high")
+	assert.Empty(t, unsupportedCheckers(public))
+	assert.ElementsMatch(t, []string{"cdn-takeover", "frontdoor-takeover", "ns-delegation"}, unsupportedCheckers(gov))
+}
+
+func newTestChecker(cred *azuretest.Credential, env azurecloud.Environment) *DNSTakeoverChecker {
+	opts := plugin.AzureCommonRecon{AzureCredential: cred}
+	opts.Environment = env
+	return NewDNSTakeoverChecker(context.Background(), opts, []string{"sub"})
 }

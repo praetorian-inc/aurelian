@@ -67,7 +67,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 // and returns a blob client authenticated with a shared key. This avoids requiring
 // the "Storage Blob Data Reader" data-plane RBAC role.
 func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGroup, accountName string) (*azblob.Client, error) {
-	accountsClient, err := armstorage.NewAccountsClient(subscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	accountsClient, err := armstorage.NewAccountsClient(subscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage accounts client: %w", err)
 	}
@@ -97,7 +97,7 @@ func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGro
 		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
 	}
 
-	serviceURL := fmt.Sprintf("https://%s.%s", accountName, azurecloud.ForCredential(ctx.Cred).BlobSuffix)
+	serviceURL := fmt.Sprintf("https://%s.%s", accountName, ctx.Env.BlobSuffix)
 	return azblob.NewClientWithSharedKeyCredential(serviceURL, sharedKeyCred, &azblob.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 }
 

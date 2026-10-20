@@ -46,10 +46,12 @@ func TestGovernmentAppConfigAcquiresServiceAudienceToken(t *testing.T) {
 			return nil, fmt.Errorf("unexpected offline App Configuration destination: %s", r.URL.Host)
 		}
 	})
-	cred, err := auth.NewAzureCredentialForCloud(azurecloud.Government)
+	env, err := azurecloud.Resolve(azurecloud.Government)
+	require.NoError(t, err)
+	cred, err := auth.NewAzureCredential(env)
 	require.NoError(t, err)
 	items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-		return extractAppConfigKeyValues(extractContext{Context: context.Background(), Cred: cred}, output.AzureResource{ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.AppConfiguration/configurationStores/store"}, out)
+		return extractAppConfigKeyValues(extractContext{Context: context.Background(), Cred: cred, Env: env}, output.AzureResource{ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.AppConfiguration/configurationStores/store"}, out)
 	})
 	require.NoError(t, err)
 	assert.Len(t, items, 1)

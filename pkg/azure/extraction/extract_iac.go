@@ -16,7 +16,7 @@ import (
 
 func init() {
 	mustRegister("microsoft.resources/templatespecs", "template-spec-versions", extractTemplateSpecVersions)
-	mustRegister("microsoft.blueprint/blueprints", "blueprint-artifacts", extractBlueprintArtifacts)
+	mustRegister("microsoft.blueprint/blueprints", "blueprint-artifacts", extractBlueprintArtifacts, azurecloud.Public)
 	mustRegister("microsoft.authorization/policydefinitions", "policy-definitions", extractPolicyDefinitions)
 }
 
@@ -31,7 +31,7 @@ func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out
 		return fmt.Errorf("no templateSpecs segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armtemplatespecs.NewTemplateSpecVersionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armtemplatespecs.NewTemplateSpecVersionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create template spec versions client: %w", err)
 	}
@@ -74,7 +74,7 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no blueprints segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armblueprint.NewArtifactsClient(ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armblueprint.NewArtifactsClient(ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create blueprint artifacts client: %w", err)
 	}
@@ -115,7 +115,7 @@ func extractPolicyDefinitions(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("could not extract policy name from resource ID %s", r.ResourceID)
 	}
 
-	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create policy definitions client: %w", err)
 	}

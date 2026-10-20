@@ -28,7 +28,7 @@ func extractWebAppSettings(ctx extractContext, r output.AzureResource, out *pipe
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -52,7 +52,7 @@ func extractWebAppConnections(ctx extractContext, r output.AzureResource, out *p
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -83,7 +83,7 @@ func extractWebAppHostKeys(ctx extractContext, r output.AzureResource, out *pipe
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -117,7 +117,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}
@@ -176,7 +176,7 @@ func extractWebAppSiteConfig(ctx extractContext, r output.AzureResource, out *pi
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armappservice.NewWebAppsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create web apps client: %w", err)
 	}

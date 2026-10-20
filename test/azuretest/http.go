@@ -60,12 +60,11 @@ func (c *Credential) Scopes() []string {
 	return append([]string(nil), c.scopes...)
 }
 
-func NewCredential(t *testing.T, cloudType string) (azcore.TokenCredential, *Credential) {
+func NewCredential(t *testing.T, cloudType string) (*Credential, azurecloud.Environment) {
 	t.Helper()
-	recorder := &Credential{Token: "offline-" + cloudType}
-	cred, err := azurecloud.WithCloud(recorder, cloudType)
+	env, err := azurecloud.Resolve(cloudType)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cred, recorder
+	return &Credential{Token: "offline-" + cloudType}, env
 }

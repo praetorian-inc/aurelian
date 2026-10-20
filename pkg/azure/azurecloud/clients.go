@@ -8,9 +8,12 @@ import (
 )
 
 // ARMClientOptions applies the official SDK endpoint and audience.
-func ARMClientOptions(cred azcore.TokenCredential) *arm.ClientOptions {
+func ARMClientOptions(env Environment) *arm.ClientOptions {
+	if env.Name == "" {
+		panic("azurecloud: unresolved Environment; azcore would silently default to Public")
+	}
 	options := ClientOptions()
-	options.Cloud = ForCredential(cred).Cloud
+	options.Cloud = env.Cloud
 	return &arm.ClientOptions{ClientOptions: options}
 }
 

@@ -39,29 +39,15 @@ func TestCredentialAuthenticatesAgainstSelectedAuthority(t *testing.T) {
 				tokenRequests++
 				require.NoError(t, r.ParseForm())
 				assert.Equal(t, "offline-test-secret", r.Form.Get("client_secret"))
-				assert.Contains(t, r.Form.Get("scope"), e.ARMScope)
+				assert.Contains(t, r.Form.Get("scope"), e.ARMScope())
 				return azuretest.JSON(r, `{"access_token":"offline-token","expires_in":3600,"token_type":"Bearer"}`), nil
 			})
-			cred, err := NewAzureCredentialForCloud(value)
+			cred, err := NewAzureCredential(e)
 			require.NoError(t, err)
-			token, err := cred.GetToken(context.Background(), policy.TokenRequestOptions{Scopes: []string{e.ARMScope}})
+			token, err := cred.GetToken(context.Background(), policy.TokenRequestOptions{Scopes: []string{e.ARMScope()}})
 			require.NoError(t, err)
 			assert.Equal(t, "offline-token", token.Token)
 			assert.Equal(t, 1, tokenRequests)
-			assert.Equal(t, e.Name, azurecloud.ForCredential(cred).Name)
 		})
-	}
-}
-
-func TestUnknownCloudFailsBeforeCredentialConstructionOrNetwork(t *testing.T) {
-	t.Setenv("AZURE_TOKEN_CREDENTIALS", "invalid-chain")
-	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
-		t.Error("unexpected network request")
-		return nil, fmt.Errorf("network forbidden")
-	})
-	for _, value := range []string{"china", "usgovernment"} {
-		cred, err := NewAzureCredentialForCloud(value)
-		require.ErrorContains(t, err, "unsupported Azure cloud type")
-		assert.Nil(t, cred)
 	}
 }

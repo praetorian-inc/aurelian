@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/test/azuretest"
@@ -22,9 +21,8 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 	for _, typ := range []string{"", "public", "gcc-high"} {
 		for _, service := range []string{"appconfig", "cosmos", "blob"} {
 			t.Run(typ+"/"+service, func(t *testing.T) {
-				cred, recorder := azuretest.NewCredential(t, typ)
-				env := azurecloud.ForCredential(cred)
-				ctx := extractContext{Context: context.Background(), Cred: cred}
+				cred, env := azuretest.NewCredential(t, typ)
+				ctx := extractContext{Context: context.Background(), Cred: cred, Env: env}
 				var mu sync.Mutex
 				hosts := map[string]int{}
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
@@ -33,7 +31,7 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 					call := hosts[r.URL.Host]
 					mu.Unlock()
 					switch r.URL.Host {
-					case strings.TrimPrefix(env.ARM, "https://"):
+					case strings.TrimPrefix(env.ARMEndpoint(), "https://"):
 						assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
 						assert.Equal(t, "blob", service, "Cosmos must not require an extra ARM endpoint lookup")
 						return azuretest.JSON(r, fmt.Sprintf(`{"keys":[{"value":%q}]}`, base64.StdEncoding.EncodeToString([]byte("offline-storage-key")))), nil
@@ -93,10 +91,10 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 				mu.Lock()
 				assert.Greater(t, hosts[expectedHost], 0)
 				if service == "cosmos" {
-					assert.Zero(t, hosts[strings.TrimPrefix(env.ARM, "https://")])
+					assert.Zero(t, hosts[strings.TrimPrefix(env.ARMEndpoint(), "https://")])
 				}
 				mu.Unlock()
-				scopes := recorder.Scopes()
+				scopes := cred.Scopes()
 				if service == "appconfig" {
 					expectedScope := "https://store." + env.AppConfigSuffix + "/.default"
 					if typ == "gcc-high" {
@@ -108,7 +106,7 @@ func TestExtractionDataPlanesSelectedCloud(t *testing.T) {
 					assert.Contains(t, scopes, "https://account."+env.CosmosSuffix+"/.default")
 				}
 				if service == "blob" {
-					assert.Contains(t, scopes, env.ARMScope)
+					assert.Contains(t, scopes, env.ARMScope())
 				}
 			})
 		}
@@ -129,7 +127,7 @@ func TestGovernmentControlPlaneExtractorsUseGovernmentSDKOptions(t *testing.T) {
 	}
 	for _, resourceType := range types {
 		t.Run(resourceType, func(t *testing.T) {
-			cred, recorder := azuretest.NewCredential(t, "gcc-high")
+			cred, env := azuretest.NewCredential(t, "gcc-high")
 			calls := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 				calls++
@@ -138,12 +136,12 @@ func TestGovernmentControlPlaneExtractorsUseGovernmentSDKOptions(t *testing.T) {
 				return azuretest.JSON(r, `{"value":[]}`), nil
 			})
 			_, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-				return NewAzureExtractor(cred).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: resourceType, ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/" + resourceType + "/resource"}, out)
+				return NewAzureExtractor(cred, env).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: resourceType, ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/" + resourceType + "/resource"}, out)
 			})
 			require.NoError(t, err)
 			assert.Greater(t, calls, 0, "must exercise the extractor's SDK client")
-			for _, scope := range recorder.Scopes() {
-				assert.Equal(t, "https://management.core.usgovcloudapi.net/.default", scope)
+			for _, scope := range cred.Scopes() {
+				assert.Equal(t, env.ARMScope(), scope)
 			}
 		})
 	}
@@ -152,20 +150,19 @@ func TestGovernmentControlPlaneExtractorsUseGovernmentSDKOptions(t *testing.T) {
 func TestRunbookRawRequestUsesSelectedCloud(t *testing.T) {
 	for _, typ := range []string{"", "public", "gcc-high"} {
 		t.Run(typ, func(t *testing.T) {
-			cred, recorder := azuretest.NewCredential(t, typ)
-			env := azurecloud.ForCredential(cred)
+			cred, env := azuretest.NewCredential(t, typ)
 			calls := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 				calls++
-				assert.Equal(t, strings.TrimPrefix(env.ARM, "https://"), r.URL.Host)
+				assert.Equal(t, strings.TrimPrefix(env.ARMEndpoint(), "https://"), r.URL.Host)
 				assert.Equal(t, "Bearer offline-"+typ, r.Header.Get("Authorization"))
 				return azuretest.JSON(r, "offline runbook"), nil
 			})
-			body, err := fetchRunbookContent(extractContext{Context: context.Background(), Cred: cred}, "sub", "rg", "account", "runbook")
+			body, err := fetchRunbookContent(extractContext{Context: context.Background(), Cred: cred, Env: env}, "sub", "rg", "account", "runbook")
 			require.NoError(t, err)
 			assert.Equal(t, "offline runbook", string(body))
 			assert.Equal(t, 1, calls)
-			assert.Equal(t, []string{env.ARMScope}, recorder.Scopes())
+			assert.Equal(t, []string{env.ARMScope()}, cred.Scopes())
 		})
 	}
 }
@@ -174,11 +171,10 @@ func TestBootDiagnosticsUsesServiceReturnedURL(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
 		for _, mode := range []string{"direct", "https-redirect", "http-redirect"} {
 			t.Run(typ+"/"+mode, func(t *testing.T) {
-				cred, _ := azuretest.NewCredential(t, typ)
-				env := azurecloud.ForCredential(cred)
+				cred, env := azuretest.NewCredential(t, typ)
 				downloads := 0
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
-					if r.URL.Host == strings.TrimPrefix(env.ARM, "https://") {
+					if r.URL.Host == strings.TrimPrefix(env.ARMEndpoint(), "https://") {
 						return azuretest.JSON(r, `{"serialConsoleLogBlobUri":"https://service-returned.example/log?sig=offline"}`), nil
 					}
 					downloads++
@@ -195,7 +191,7 @@ func TestBootDiagnosticsUsesServiceReturnedURL(t *testing.T) {
 					return resp, nil
 				})
 				items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-					return extractVMBootDiag(extractContext{Context: context.Background(), Cred: cred}, output.AzureResource{SubscriptionID: "sub", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm"}, out)
+					return extractVMBootDiag(extractContext{Context: context.Background(), Cred: cred, Env: env}, output.AzureResource{SubscriptionID: "sub", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm"}, out)
 				})
 				if mode == "http-redirect" {
 					require.NoError(t, err)
@@ -219,14 +215,14 @@ func TestExtractionFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
 		for _, status := range []int{http.StatusForbidden, http.StatusNotFound, http.StatusTeapot} {
 			t.Run(fmt.Sprintf("%s/%d", typ, status), func(t *testing.T) {
-				cred, _ := azuretest.NewCredential(t, typ)
+				cred, env := azuretest.NewCredential(t, typ)
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 					resp := azuretest.JSON(r, `{"error":{"code":"OfflineFailure","message":"offline unavailable service"}}`)
 					resp.StatusCode = status
 					return resp, nil
 				})
 				items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-					return NewAzureExtractor(cred).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: "Microsoft.Web/sites", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/site", Tags: map[string]string{"setting": "offline-value"}}, out)
+					return NewAzureExtractor(cred, env).Extract(output.AzureResource{SubscriptionID: "sub", ResourceType: "Microsoft.Web/sites", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/site", Tags: map[string]string{"setting": "offline-value"}}, out)
 				})
 				require.NoError(t, err)
 				assert.Len(t, items, 1, "tag extraction must continue after API failures")
@@ -239,7 +235,7 @@ func TestCosmosNestedFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 	for _, typ := range []string{"public", "gcc-high"} {
 		for _, stage := range []string{"containers", "documents"} {
 			t.Run(typ+"/"+stage, func(t *testing.T) {
-				cred, _ := azuretest.NewCredential(t, typ)
+				cred, env := azuretest.NewCredential(t, typ)
 				failed := false
 				var mu sync.Mutex
 				azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
@@ -260,7 +256,7 @@ func TestCosmosNestedFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 					return resp, nil
 				})
 				items, err := azuretest.Collect(func(out *pipeline.P[output.ScanInput]) error {
-					return extractCosmosConfigDocs(extractContext{Context: context.Background(), Cred: cred}, output.AzureResource{ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/account"}, out)
+					return extractCosmosConfigDocs(extractContext{Context: context.Background(), Cred: cred, Env: env}, output.AzureResource{ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.DocumentDB/databaseAccounts/account"}, out)
 				})
 				require.NoError(t, err)
 				assert.Empty(t, items)
@@ -275,7 +271,7 @@ func TestCosmosNestedFailuresRemainBestEffortAcrossClouds(t *testing.T) {
 func TestGovernmentUnsupportedExtractorsDoNotAbortPipeline(t *testing.T) {
 	for _, concurrency := range []int{1, 3} {
 		t.Run(fmt.Sprint(concurrency), func(t *testing.T) {
-			cred, recorder := azuretest.NewCredential(t, "gcc-high")
+			cred, env := azuretest.NewCredential(t, "gcc-high")
 			calls := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 				calls++
@@ -289,28 +285,35 @@ func TestGovernmentUnsupportedExtractorsDoNotAbortPipeline(t *testing.T) {
 				{ResourceType: "Microsoft.Blueprint/blueprints", Tags: map[string]string{"setting": "offline-value"}},
 				{ResourceType: "Microsoft.AppConfiguration/configurationStores", ResourceID: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.AppConfiguration/configurationStores/store"},
 			}
-			extractor := NewAzureExtractor(cred)
+			extractor := NewAzureExtractor(cred, env)
 			out := pipeline.New[output.ScanInput]()
 			pipeline.Pipe(pipeline.From(resources...), extractor.Extract, out, &pipeline.PipeOpts{Concurrency: concurrency})
 			items, err := out.Collect()
 			require.NoError(t, err)
 			assert.Len(t, items, 3, "unsupported service extraction must not suppress tags or later supported resources")
 			assert.Equal(t, 1, calls)
-			assert.Equal(t, []string{"https://appconfig.azure.us/.default"}, recorder.Scopes())
+			assert.Equal(t, []string{"https://appconfig.azure.us/.default"}, cred.Scopes())
 		})
 	}
 }
 
 func TestGovernmentUnsupportedExtractorsAreExplicitWithoutNetwork(t *testing.T) {
-	cred, _ := azuretest.NewCredential(t, "gcc-high")
+	cred, env := azuretest.NewCredential(t, "gcc-high")
 	azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
 		t.Error("unsupported service must not authenticate or make HTTP requests")
 		return nil, fmt.Errorf("offline")
 	})
 	for _, resourceType := range []string{"Microsoft.DigitalTwins/digitalTwinsInstances", "Microsoft.Blueprint/blueprints"} {
 		out := pipeline.New[output.ScanInput]()
-		err := NewAzureExtractor(cred).Extract(output.AzureResource{ResourceType: resourceType}, out)
+		err := NewAzureExtractor(cred, env).Extract(output.AzureResource{ResourceType: resourceType}, out)
 		require.NoError(t, err)
 		out.Close()
 	}
+}
+
+func TestUnsupportedExtractorsPerCloud(t *testing.T) {
+	_, public := azuretest.NewCredential(t, "public")
+	_, gov := azuretest.NewCredential(t, "gcc-high")
+	assert.Empty(t, unsupportedExtractors(public))
+	assert.ElementsMatch(t, []string{"digitaltwins-properties", "blueprint-artifacts"}, unsupportedExtractors(gov))
 }

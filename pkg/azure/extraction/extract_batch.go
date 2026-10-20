@@ -25,7 +25,7 @@ func extractBatchPoolStartTasks(ctx extractContext, r output.AzureResource, out 
 		return fmt.Errorf("no batchAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armbatch.NewPoolClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	client, err := armbatch.NewPoolClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create batch pool client: %w", err)
 	}

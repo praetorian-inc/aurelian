@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -18,14 +17,15 @@ type DNSTakeoverChecker struct {
 // NewDNSTakeoverChecker creates a checker with shared Azure credentials and options.
 // subscriptionIDs should contain the resolved (not "all") subscription IDs for cross-subscription lookups.
 func NewDNSTakeoverChecker(ctx context.Context, opts plugin.AzureCommonRecon, subscriptionIDs []string) *DNSTakeoverChecker {
-	if azurecloud.ForCredential(opts.AzureCredential).Name == azurecloud.Government {
-		slog.Warn("Azure Government DNS scan has unsupported checks; results are partial, not a clean bill of health", "checks", "CDN Classic, Front Door Classic, NS delegation (Government suffix/availability unverified)")
+	if skipped := unsupportedCheckers(opts.Environment); len(skipped) > 0 {
+		slog.Warn("checks unavailable in selected cloud; results are partial", "cloud", opts.Environment.Name, "checks", skipped)
 	}
 	return &DNSTakeoverChecker{
 		ctx: CheckContext{
 			Ctx:             ctx,
 			Opts:            opts,
 			Credential:      opts.AzureCredential,
+			Env:             opts.Environment,
 			SubscriptionIDs: subscriptionIDs,
 			PublicIPCache:   &publicIPCache{},
 		},
@@ -43,7 +43,8 @@ func (c *DNSTakeoverChecker) Check(rec AzureDNSRecord, out *pipeline.P[model.Aur
 	checkCtx.SubscriptionID = rec.SubscriptionID
 
 	for _, chk := range checkers {
-		if azurecloud.ForCredential(checkCtx.Credential).Name == azurecloud.Government && (chk.Name == "cdn-takeover" || chk.Name == "frontdoor-takeover" || chk.Name == "ns-delegation") {
+		if !checkCtx.Env.Supports(chk.Clouds) {
+			slog.Debug("check not supported in selected cloud, skipping", "check", chk.Name, "cloud", checkCtx.Env.Name)
 			continue
 		}
 		if err := chk.Fn(checkCtx, rec, out); err != nil {

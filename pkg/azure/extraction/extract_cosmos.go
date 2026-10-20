@@ -36,7 +36,7 @@ func init() {
 // newCosmosSQLClient creates a Cosmos ARM SQLResourcesClient for enumerating databases, containers,
 // stored procs, triggers, and UDFs via the management plane.
 func newCosmosSQLClient(ctx extractContext, subscriptionID string) (*armcosmos.SQLResourcesClient, error) {
-	return armcosmos.NewSQLResourcesClient(subscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Cred))
+	return armcosmos.NewSQLResourcesClient(subscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 }
 
 // cosmosDBContainers enumerates all SQL databases and containers for a Cosmos DB account
@@ -211,7 +211,7 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("no databaseAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.%s", accountName, azurecloud.ForCredential(ctx.Cred).CosmosSuffix)
+	endpoint := fmt.Sprintf("https://%s.%s", accountName, ctx.Env.CosmosSuffix)
 	client, err := azcosmos.NewClient(endpoint, ctx.Cred, &azcosmos.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create Cosmos data-plane client: %w", err)

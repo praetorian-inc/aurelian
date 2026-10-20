@@ -21,7 +21,7 @@ func enrichAppServiceAuth(cfg plugin.AzureEnricherConfig, result *templates.ARGQ
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Credential))
+	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return err
 	}

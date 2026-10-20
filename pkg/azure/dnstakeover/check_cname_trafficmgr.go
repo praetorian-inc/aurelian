@@ -19,7 +19,7 @@ func init() {
 }
 
 func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
-	suffix := "." + azurecloud.ForCredential(ctx.Credential).TrafficManagerSuffix
+	suffix := "." + ctx.Env.TrafficManagerSuffix
 	for _, val := range rec.Values {
 		if !strings.HasSuffix(strings.ToLower(val), suffix) {
 			continue
@@ -66,7 +66,7 @@ func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[m
 }
 
 func checkTrafficManagerDNSAvailability(ctx CheckContext, profileName string) (bool, error) {
-	client, err := armtrafficmanager.NewProfilesClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Credential))
+	client, err := armtrafficmanager.NewProfilesClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return false, fmt.Errorf("create traffic manager client: %w", err)
 	}
