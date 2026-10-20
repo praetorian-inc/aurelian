@@ -143,7 +143,7 @@ func TestConfigScanToRisk(t *testing.T) {
 }
 
 func TestConfigScanToRisk_SeverityPreserved(t *testing.T) {
-	severities := []string{"low", "medium", "high", "critical"}
+	severities := []string{"exposure", "low", "medium", "high", "critical"}
 
 	for _, sev := range severities {
 		t.Run(sev, func(t *testing.T) {
