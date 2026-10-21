@@ -208,7 +208,7 @@ func generatePrincipalEvalRequests(
 ) {
 	allActions, err := state.ExtractActions(&identityStatements)
 	if err != nil {
-		slog.Error("Error extracting actions for principal, skipping evaluation",
+		slog.Error("SKIPPED principal evaluation due to action extraction failure — this principal will have no priv-esc results (potential false negative)",
 			"principal", principalArn, "error", err)
 		return
 	}

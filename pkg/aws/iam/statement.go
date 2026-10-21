@@ -2,12 +2,13 @@ package iam
 
 import (
 	"fmt"
-	"github.com/praetorian-inc/aurelian/pkg/types"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // evaluateStatement evaluates a policy statement against a request context
@@ -122,6 +123,7 @@ func CompilePattern(pattern string) (*regexp.Regexp, error) {
 func MatchesPattern(pattern, input string) bool {
 	re, err := CompilePattern(pattern)
 	if err != nil {
+		slog.Warn("CompilePattern failed, treating as no-match", "pattern", pattern, "error", err)
 		return false
 	}
 	return re.MatchString(input)
