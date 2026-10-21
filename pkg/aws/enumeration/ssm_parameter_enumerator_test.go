@@ -57,6 +57,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 
 	t.Run("non-parameter resource returns error", func(t *testing.T) {
 		// Valid SSM ARN but resource type is "document/", not "parameter/"
+
 		err := enum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:document/MyDoc", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid SSM parameter ARN resource")
@@ -64,6 +65,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 
 	t.Run("ARN missing region returns error", func(t *testing.T) {
 		// Construct a valid ARN with empty region
+
 		err := enum.EnumerateByARN("arn:aws:ssm::123456789012:parameter/my-param", out)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "missing region")
@@ -72,6 +74,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	t.Run("SecureString parameter is filtered", func(t *testing.T) {
 		// Inject a fake HTTP transport so DescribeParameters returns a SecureString parameter
 		// without hitting real AWS. The provider.configs map is package-internal and accessible here.
+
 		body := `{"Parameters":[{"Name":"/prefix/secure-param","Type":"SecureString","Tier":"Standard","DataType":"text"}]}`
 		fakeCfg := aws.Config{
 			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
@@ -93,6 +96,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 
 	t.Run("parameter with empty name is skipped", func(t *testing.T) {
 		// AWS always populates Name, but guard against a nil pointer returning "".
+
 		body := `{"Parameters":[{"Type":"String","Tier":"Standard"}]}`
 		fakeCfg := aws.Config{
 			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
@@ -115,10 +119,10 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 
 func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
 	cases := []struct {
-		name         string
-		arn          string
-		apiName      string // Name the fake API returns
-		wantID       string
+		name          string
+		arn           string
+		apiName       string // Name the fake API returns
+		wantID        string
 		wantARNSuffix string
 	}{
 		{

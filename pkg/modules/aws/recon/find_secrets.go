@@ -119,9 +119,17 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	s.ScanFlushAndClose(extracted, scanned, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("scanning for secrets"),
 	})
-	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
-
-	if err := out.Wait(); err != nil {
+	// Forward through a pipeline this module owns and Send into `out`
+	// ourselves. Handing the caller-owned `out` to an inner Pipe would let that
+	// Pipe's deferred close consume out's closeOnce, which destroys the
+	// happens-before edge the outer Pipe needs to publish any error Run returns
+	// — the error would be silently dropped (ENG-8768).
+	risks := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, risks)
+	for r := range risks.Range() {
+		out.Send(r)
+	}
+	if err := risks.Wait(); err != nil {
 		return err
 	}
 

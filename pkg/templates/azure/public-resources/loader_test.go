@@ -44,6 +44,7 @@ func TestNewLoader_AllSeveritiesAreValid(t *testing.T) {
 
 	validSeverities := map[output.RiskSeverity]bool{
 		output.RiskSeverityInfo:     true,
+		output.RiskSeverityExposure: true,
 		output.RiskSeverityLow:      true,
 		output.RiskSeverityMedium:   true,
 		output.RiskSeverityHigh:     true,

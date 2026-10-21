@@ -112,7 +112,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("app_service_remote_debugging_enabled", func(t *testing.T) {
 		rc := findRisk(t, "app_service_remote_debugging_enabled", "webapp_debug_id")
 		assert.Equal(t, "azure-app-service-remote-debugging-enabled", rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverityExposure, rc.Risk.Severity)
 		assert.Equal(t, "app_service_remote_debugging_enabled", rc.Template)
 
 		// The no-auth web app should NOT appear in remote debugging findings
@@ -222,7 +222,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 
 	t.Run("all risks have valid severity", func(t *testing.T) {
 		validSeverities := map[output.RiskSeverity]bool{
-			output.RiskSeverityInfo: true, output.RiskSeverityLow: true,
+			output.RiskSeverityInfo: true, output.RiskSeverityExposure: true, output.RiskSeverityLow: true,
 			output.RiskSeverityMedium: true, output.RiskSeverityHigh: true,
 			output.RiskSeverityCritical: true,
 		}
