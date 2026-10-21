@@ -21,7 +21,6 @@ const (
 	FactCodeBuildServiceRole         = "codebuild_service_role"
 	FactLaunchTemplateInstanceProfile = "launch_template_instance_profile"
 	FactCloudFormationStackRole      = "cloudformation_stack_role"
-	FactCloudFormationStackSetRole   = "cloudformation_stackset_role"
 	FactLambdaExecutionRole          = "lambda_execution_role"
 	FactECSTaskRole                  = "ecs_task_role"
 	FactGlueJobRole                  = "glue_job_role"
@@ -56,15 +55,18 @@ var extractors = []extractor{
 	{"AWS::CloudFormation::Stack", FactCloudFormationStackRole, []string{"RoleARN"}},
 
 	// Priority 2: remaining chain-rule facts from the expanded scope.
-	{"AWS::CloudFormation::StackSet", FactCloudFormationStackSetRole, []string{"AdministrationRoleARN", "ExecutionRoleName"}},
+	// NOTE: StackSet extraction is deferred — AdministrationRoleARN targets the
+	// management-account role (wrong principal) and ExecutionRoleName is a bare
+	// name, not an ARN. Proper extraction requires resolving target-account
+	// execution role ARNs from StackSet instances.
 	{"AWS::Lambda::Function", FactLambdaExecutionRole, []string{"Role"}},
-	{"AWS::ECS::TaskDefinition", FactECSTaskRole, []string{"TaskRoleArn", "ExecutionRoleArn"}},
+	{"AWS::ECS::TaskDefinition", FactECSTaskRole, []string{"TaskRoleArn"}},
 	{"AWS::Glue::Job", FactGlueJobRole, []string{"Role"}},
 	{"AWS::Glue::DevEndpoint", FactGlueEndpointRole, []string{"RoleArn"}},
 	{"AWS::AppRunner::Service", FactAppRunnerServiceRole, []string{"InstanceRoleArn"}},
 	{"AWS::StepFunctions::StateMachine", FactStepFunctionsRole, []string{"RoleArn"}},
 	{"AWS::SageMaker::NotebookInstance", FactSageMakerNotebookRole, []string{"RoleArn"}},
-	{"AWS::Batch::JobDefinition", FactBatchJobRole, []string{"JobRoleArn", "ExecutionRoleArn"}},
+	{"AWS::Batch::JobDefinition", FactBatchJobRole, []string{"JobRoleArn"}},
 	{"AWS::BedrockAgentCore::CodeInterpreter", FactBedrockInterpreterRole, []string{"ExecutionRoleArn"}},
 	{"AWS::EC2::Instance", FactInstanceProfile, []string{"IamInstanceProfile"}},
 	{"AWS::Cognito::IdentityPool", FactCognitoPoolRole, []string{"authenticatedRole", "unauthenticatedRole"}},
@@ -111,27 +113,12 @@ func Collect(resources store.Map[output.AWSResource]) []output.StructuralFact {
 	return facts
 }
 
-// propString reads a string property from the Properties map. If the value is
-// a map (e.g. EC2's IamInstanceProfile: {Arn: "..."} form), it extracts the
-// "Arn" sub-key instead. Returns "" for nil/absent/non-string values.
+// propString reads a string property from the Properties map.
+// Returns "" for nil/absent/non-string values.
 func propString(props map[string]any, key string) string {
 	if props == nil {
 		return ""
 	}
-	v := props[key]
-	if v == nil {
-		return ""
-	}
-	switch val := v.(type) {
-	case string:
-		return val
-	case map[string]any:
-		// EC2 instance profile can be {Arn: "..."} map form.
-		if arn, ok := val["Arn"].(string); ok {
-			return arn
-		}
-		return ""
-	default:
-		return ""
-	}
+	s, _ := props[key].(string)
+	return s
 }

@@ -22,7 +22,6 @@ import "github.com/praetorian-inc/aurelian/pkg/model"
 //   - sagemaker_notebook_role:             SageMaker notebook -> execution role
 //   - batch_job_role:                      Batch job definition -> role
 //   - bedrock_interpreter_role:            Bedrock code interpreter -> execution role
-//   - cloudformation_stackset_role:        CloudFormation stack set -> admin/exec role
 //   - instance_profile:                    EC2 instance -> instance profile role
 //   - cognito_pool_role:                   Cognito identity pool -> auth/unauth role
 type StructuralFact struct {

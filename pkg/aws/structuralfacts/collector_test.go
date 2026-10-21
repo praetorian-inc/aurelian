@@ -279,10 +279,6 @@ func TestCollectAllFactTypes(t *testing.T) {
 		"arn:aws:bedrock-agentcore:us-east-1:111:code-interpreter/ci", "111", "us-east-1",
 		map[string]any{"ExecutionRoleArn": "arn:aws:iam::111:role/bedrock-exec"})
 
-	addResource("cfn-ss", "AWS::CloudFormation::StackSet",
-		"arn:aws:cloudformation:us-east-1:111:stackset/ss", "111", "us-east-1",
-		map[string]any{"AdministrationRoleARN": "arn:aws:iam::111:role/cfn-ss-admin"})
-
 	addResource("ec2", "AWS::EC2::Instance",
 		"arn:aws:ec2:us-east-1:111:instance/i-1", "111", "us-east-1",
 		map[string]any{"IamInstanceProfile": "arn:aws:iam::111:instance-profile/ec2-ip"})
@@ -307,7 +303,6 @@ func TestCollectAllFactTypes(t *testing.T) {
 	assert.Equal(t, 1, typeCount[FactSageMakerNotebookRole], "sagemaker_notebook_role")
 	assert.Equal(t, 1, typeCount[FactBatchJobRole], "batch_job_role")
 	assert.Equal(t, 1, typeCount[FactBedrockInterpreterRole], "bedrock_interpreter_role")
-	assert.Equal(t, 1, typeCount[FactCloudFormationStackSetRole], "cloudformation_stackset_role")
 	assert.Equal(t, 1, typeCount[FactInstanceProfile], "instance_profile")
 	assert.Equal(t, 1, typeCount[FactCognitoPoolRole], "cognito_pool_role")
 }
@@ -336,8 +331,9 @@ func TestCollectEmptyResources(t *testing.T) {
 	assert.Empty(t, facts)
 }
 
-func TestCollectBatchJobDefinitionDualRoles(t *testing.T) {
-	// A Batch job definition with both JobRoleArn and ExecutionRoleArn emits two facts.
+func TestCollectBatchJobDefinition(t *testing.T) {
+	// A Batch job definition emits a fact only for JobRoleArn (the container
+	// role). ExecutionRoleArn is the infrastructure role and not attacker-accessible.
 	resources := store.NewMap[output.AWSResource]()
 	resources.Set("batch", output.AWSResource{
 		ResourceType: "AWS::Batch::JobDefinition",
@@ -359,42 +355,9 @@ func TestCollectBatchJobDefinitionDualRoles(t *testing.T) {
 		}
 	}
 
-	// Both roles emit a fact.
-	require.Len(t, batchFacts, 2)
-	roles := map[string]bool{}
-	for _, f := range batchFacts {
-		roles[f.RoleARN] = true
-	}
-	assert.True(t, roles["arn:aws:iam::111:role/batch-job"])
-	assert.True(t, roles["arn:aws:iam::111:role/batch-exec"])
-}
-
-func TestCollectEC2InstanceProfileMapForm(t *testing.T) {
-	// EC2 instances may carry IamInstanceProfile as a map with an Arn key.
-	resources := store.NewMap[output.AWSResource]()
-	resources.Set("ec2", output.AWSResource{
-		ResourceType: "AWS::EC2::Instance",
-		ARN:          "arn:aws:ec2:us-east-1:111:instance/i-1",
-		AccountRef:   "111",
-		Region:       "us-east-1",
-		Properties: map[string]any{
-			"IamInstanceProfile": map[string]any{
-				"Arn": "arn:aws:iam::111:instance-profile/ec2-ip",
-			},
-		},
-	})
-
-	facts := Collect(resources)
-
-	var ipFacts []output.StructuralFact
-	for _, f := range facts {
-		if f.FactType == FactInstanceProfile {
-			ipFacts = append(ipFacts, f)
-		}
-	}
-
-	require.Len(t, ipFacts, 1)
-	assert.Equal(t, "arn:aws:iam::111:instance-profile/ec2-ip", ipFacts[0].RoleARN)
+	// Only JobRoleArn emits a fact; ExecutionRoleArn is ignored.
+	require.Len(t, batchFacts, 1)
+	assert.Equal(t, "arn:aws:iam::111:role/batch-job", batchFacts[0].RoleARN)
 }
 
 func TestCollectCognitoMultipleRoles(t *testing.T) {
