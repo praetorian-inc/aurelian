@@ -2,6 +2,7 @@ package recon
 
 import (
 	"fmt"
+	"slices"
 
 	"golang.org/x/sync/errgroup"
 
@@ -563,14 +564,9 @@ func keepAllAndCollect(collector *resourcepolicies.ResourcePolicyCollector) func
 
 // appendUnique appends items to a slice, skipping duplicates.
 func appendUnique(base []string, items ...string) []string {
-	seen := make(map[string]bool, len(base))
-	for _, s := range base {
-		seen[s] = true
-	}
 	for _, s := range items {
-		if !seen[s] {
+		if !slices.Contains(base, s) {
 			base = append(base, s)
-			seen[s] = true
 		}
 	}
 	return base

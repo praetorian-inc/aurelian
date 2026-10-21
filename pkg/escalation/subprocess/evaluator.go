@@ -347,10 +347,10 @@ func (e *Evaluator) proposeWhoCanTargets(principal, action string, universe []st
 		return nil
 	}
 	proposed := make([]string, 0)
-	for _, arn := range universe {
+	for _, target := range universe {
 		for _, pattern := range allowPatterns {
-			if iam.MatchesPattern(pattern, arn) {
-				proposed = append(proposed, arn)
+			if iam.MatchesPattern(pattern, target) {
+				proposed = append(proposed, target)
 				break
 			}
 		}
@@ -436,11 +436,58 @@ func bulkWorkerCount() int {
 // CheckAnyTarget evaluates whether principal can perform action on any resource.
 // Unlike CheckSpecific, this scans identity policy statements directly rather
 // than using the full evaluator (which requires a concrete resource ARN for
-// action/resource validation).
+// action/resource validation). It also consults Deny statements and the
+// permission boundary to avoid reporting false escalation paths.
 func (e *Evaluator) CheckAnyTarget(principal, action string) (*CheckResponse, error) {
-	identityStmts, _ := e.collectStatementsForPrincipal(principal)
+	identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
 	if identityStmts == nil || len(*identityStmts) == 0 {
 		return &CheckResponse{Result: "denied", ResourceConstraint: nil}, nil
+	}
+
+	// Check for an explicit Deny on this action with Resource "*". A Deny
+	// scoped to a narrower resource does not block all targets, so we only
+	// check wildcard denies here.
+	for _, stmt := range *identityStmts {
+		if !strings.EqualFold(stmt.Effect, "Deny") {
+			continue
+		}
+		if stmt.Action == nil {
+			continue
+		}
+		for _, a := range *stmt.Action {
+			if iam.MatchesPattern(a, action) {
+				if stmt.Resource == nil || resourceContainsWildcard(stmt.Resource) {
+					return &CheckResponse{Result: "denied", ResourceConstraint: nil}, nil
+				}
+			}
+		}
+	}
+
+	// If a permissions boundary is attached, the action must be allowed by
+	// at least one boundary statement. A boundary that has no matching Allow
+	// (or only Deny) blocks the action regardless of identity policies.
+	if boundaryStmts != nil && len(*boundaryStmts) > 0 {
+		boundaryAllows := false
+		for _, stmt := range *boundaryStmts {
+			if !strings.EqualFold(stmt.Effect, "Allow") {
+				continue
+			}
+			if stmt.Action == nil {
+				continue
+			}
+			for _, a := range *stmt.Action {
+				if iam.MatchesPattern(a, action) {
+					boundaryAllows = true
+					break
+				}
+			}
+			if boundaryAllows {
+				break
+			}
+		}
+		if !boundaryAllows {
+			return &CheckResponse{Result: "denied", ResourceConstraint: nil}, nil
+		}
 	}
 
 	// Scan for any Allow statement matching the action.
@@ -464,11 +511,17 @@ func (e *Evaluator) CheckAnyTarget(principal, action string) (*CheckResponse, er
 			continue
 		}
 		found = true
-		// Extract the most specific resource constraint.
+		// Extract the most specific (longest non-wildcard) resource constraint.
+		// A longer ARN pattern is more specific than a shorter one; "*" is not
+		// a constraint at all.
 		if stmt.Resource != nil {
 			for _, r := range *stmt.Resource {
-				if r != "*" {
-					constraint = &r
+				if r == "*" {
+					continue
+				}
+				if constraint == nil || len(r) > len(*constraint) {
+					rc := r
+					constraint = &rc
 				}
 			}
 		}
@@ -483,6 +536,19 @@ func (e *Evaluator) CheckAnyTarget(principal, action string) (*CheckResponse, er
 		Conditions:         nil,
 		ResourceConstraint: constraint,
 	}, nil
+}
+
+// resourceContainsWildcard reports whether a resource list contains "*".
+func resourceContainsWildcard(resources *types.DynaString) bool {
+	if resources == nil {
+		return false
+	}
+	for _, r := range *resources {
+		if r == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckCounterfactual evaluates the permission with specified deny statements removed.

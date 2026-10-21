@@ -153,6 +153,19 @@ func TestEvaluator_CheckAnyTarget_ResourceConstraint(t *testing.T) {
 	assert.Equal(t, "arn:aws:s3:::my-bucket/*", *resp.ResourceConstraint)
 }
 
+func TestEvaluator_CheckAnyTarget_BoundaryDenied(t *testing.T) {
+	eval := NewEvaluator(newTestGAAD(), nil, nil)
+	// User Restricted has Allow * identity policy but a DenyIAM permissions
+	// boundary (Deny iam:*). CheckAnyTarget must consult the boundary and
+	// deny iam: actions even though the identity policy allows them.
+	resp, err := eval.CheckAnyTarget(
+		"arn:aws:iam::111111111111:user/Restricted",
+		"iam:PutRolePolicy",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "denied", resp.Result)
+}
+
 func TestEvaluator_CheckCounterfactual(t *testing.T) {
 	eval := NewEvaluator(newTestGAAD(), nil, nil)
 

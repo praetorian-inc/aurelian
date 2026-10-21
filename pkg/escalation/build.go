@@ -458,17 +458,22 @@ func appendPolicyAttachmentFacts(facts []StructuralFact, principalARN string, at
 	return facts
 }
 
-// isCustomerManagedPolicyARN reports whether arn is a rewriteable IAM managed
-// policy. Empty ARNs, non-IAM/non-policy ARNs, and AWS-managed policies
-// (arn:...:iam::aws:policy/...) are rejected.
+// isCustomerManagedPolicyARN reports whether policyARN is a rewriteable IAM
+// managed policy. Empty ARNs, non-IAM/non-policy ARNs, and AWS-managed
+// policies (account "aws") are rejected. Uses proper ARN parsing to avoid
+// false positives from substring matching.
 func isCustomerManagedPolicyARN(policyARN string) bool {
-	if policyARN == "" {
+	parsed, err := arn.Parse(policyARN)
+	if err != nil {
 		return false
 	}
-	if strings.Contains(policyARN, ":iam::aws:policy/") {
+	if parsed.Service != "iam" {
 		return false
 	}
-	return strings.Contains(policyARN, ":iam:") && strings.Contains(policyARN, ":policy/")
+	if parsed.AccountID == "aws" {
+		return false
+	}
+	return strings.HasPrefix(parsed.Resource, "policy/")
 }
 
 // extractProperty returns a string property from an AWSResource's Properties map.
