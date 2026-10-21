@@ -388,3 +388,50 @@ func TestPoliciesDLWithVersions(t *testing.T) {
 		assert.Len(t, *stmts[0].Action, 2)
 	})
 }
+
+func TestResolveManagedPolicyStatements(t *testing.T) {
+	allowStmts := PolicyStatementList{
+		{Effect: "Allow", Action: NewDynaString([]string{"s3:GetObject"}), Resource: NewDynaString([]string{"*"})},
+	}
+	gaad := NewAuthorizationAccountDetails("111111111111", nil, nil, nil, []ManagedPolicyDetail{
+		{
+			Arn:        "arn:aws:iam::111111111111:policy/TestPolicy",
+			PolicyName: "TestPolicy",
+			PolicyVersionList: []PolicyVersion{
+				{VersionId: "v1", IsDefaultVersion: true, Document: Policy{Statement: &allowStmts}},
+			},
+		},
+		{
+			Arn:               "arn:aws:iam::111111111111:policy/NoDefaultVersion",
+			PolicyName:        "NoDefaultVersion",
+			PolicyVersionList: []PolicyVersion{{VersionId: "v1", IsDefaultVersion: false}},
+		},
+		{
+			Arn:               "arn:aws:iam::111111111111:policy/NilStatements",
+			PolicyName:        "NilStatements",
+			PolicyVersionList: []PolicyVersion{{VersionId: "v1", IsDefaultVersion: true, Document: Policy{Statement: nil}}},
+		},
+	})
+
+	t.Run("returns statements for a found policy", func(t *testing.T) {
+		result := gaad.ResolveManagedPolicyStatements("arn:aws:iam::111111111111:policy/TestPolicy")
+		require.NotNil(t, result)
+		require.Len(t, *result, 1)
+		assert.Equal(t, "Allow", (*result)[0].Effect)
+	})
+
+	t.Run("returns nil for unknown ARN", func(t *testing.T) {
+		result := gaad.ResolveManagedPolicyStatements("arn:aws:iam::111111111111:policy/DoesNotExist")
+		assert.Nil(t, result)
+	})
+
+	t.Run("returns nil when no default version", func(t *testing.T) {
+		result := gaad.ResolveManagedPolicyStatements("arn:aws:iam::111111111111:policy/NoDefaultVersion")
+		assert.Nil(t, result)
+	})
+
+	t.Run("returns nil when default version has nil statements", func(t *testing.T) {
+		result := gaad.ResolveManagedPolicyStatements("arn:aws:iam::111111111111:policy/NilStatements")
+		assert.Nil(t, result)
+	})
+}

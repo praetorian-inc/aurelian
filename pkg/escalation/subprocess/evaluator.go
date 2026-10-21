@@ -663,26 +663,18 @@ func (e *Evaluator) collectRoleStatements(role *types.RoleDetail) types.PolicySt
 }
 
 func (e *Evaluator) resolveManagedPolicy(mp types.ManagedPolicy) types.PolicyStatementList {
-	policy, ok := e.gaad.Policies.Get(mp.PolicyArn)
-	if !ok {
+	stmts := e.gaad.ResolveManagedPolicyStatements(mp.PolicyArn)
+	if stmts == nil {
 		return nil
 	}
-	doc := policy.DefaultPolicyDocument()
-	if doc == nil || doc.Statement == nil {
-		return nil
-	}
-	return *doc.Statement
+	return *stmts
 }
 
 func (e *Evaluator) resolveBoundary(boundary types.ManagedPolicy) *types.PolicyStatementList {
 	if boundary.PolicyArn == "" {
 		return nil
 	}
-	stmts := e.resolveManagedPolicy(boundary)
-	if stmts == nil {
-		return nil
-	}
-	return &stmts
+	return e.gaad.ResolveManagedPolicyStatements(boundary.PolicyArn)
 }
 
 func (e *Evaluator) buildRequestContext(principalArn, resourceArn string) *iam.RequestContext {
@@ -802,15 +794,7 @@ func (e *Evaluator) ListGrants() (*ListGrantsResponse, error) {
 	})
 
 	e.gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
-		var stmts types.PolicyStatementList
-		for _, p := range g.GroupPolicyList {
-			if p.PolicyDocument.Statement != nil {
-				stmts = append(stmts, *p.PolicyDocument.Statement...)
-			}
-		}
-		for _, mp := range g.AttachedManagedPolicies {
-			stmts = append(stmts, e.resolveManagedPolicy(mp)...)
-		}
+		stmts := e.collectGroupStatements(&g)
 		entries = append(entries, ListGrantsEntry{
 			Principal:           g.Arn,
 			EffectiveStatements: flattenToGrantStatements(stmts),

@@ -203,30 +203,22 @@ func collectRoleEffectiveStatements(role types.RoleDetail, gaad *types.Authoriza
 
 // managedPolicyStatements resolves a managed policy attachment to flat statements.
 func managedPolicyStatements(gaad *types.AuthorizationAccountDetails, mp types.ManagedPolicy) []PolicyStatement {
-	policy, ok := gaad.Policies.Get(mp.PolicyArn)
-	if !ok {
-		return nil
-	}
-	doc := policy.DefaultPolicyDocument()
-	if doc == nil {
+	stmts := gaad.ResolveManagedPolicyStatements(mp.PolicyArn)
+	if stmts == nil {
 		return nil
 	}
 	source := fmt.Sprintf("managed:%s", mp.PolicyArn)
-	return flattenStatements(doc.Statement, source)
+	return flattenStatements(stmts, source)
 }
 
 // boundaryStatements converts a permission boundary into solver-format statements.
 func boundaryStatements(gaad *types.AuthorizationAccountDetails, boundary types.ManagedPolicy) []PolicyStatement {
-	policy, ok := gaad.Policies.Get(boundary.PolicyArn)
-	if !ok {
-		return nil
-	}
-	doc := policy.DefaultPolicyDocument()
-	if doc == nil {
+	stmts := gaad.ResolveManagedPolicyStatements(boundary.PolicyArn)
+	if stmts == nil {
 		return nil
 	}
 	source := fmt.Sprintf("boundary:%s", boundary.PolicyArn)
-	return flattenStatements(doc.Statement, source)
+	return flattenStatements(stmts, source)
 }
 
 // flattenStatements converts AWS PolicyStatements into the solver's flat format.
