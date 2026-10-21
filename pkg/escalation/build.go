@@ -186,61 +186,21 @@ func resourceMatchesStar(resource *types.DynaString) bool {
 	return false
 }
 
-// appendManagedPolicyStatements resolves each attached managed policy via the
-// GAAD and appends the default-version statements to dst. Shared helper used
-// by collectAllRoleStatements, collectAllGroupStatements, and
-// collectAllUserStatements to avoid duplicating the lookup pattern.
-func appendManagedPolicyStatements(dst []types.PolicyStatement, gaad *types.AuthorizationAccountDetails, policies []types.ManagedPolicy) []types.PolicyStatement {
-	for _, mp := range policies {
-		if stmts := gaad.ResolveManagedPolicyStatements(mp.PolicyArn); stmts != nil {
-			dst = append(dst, *stmts...)
-		}
-	}
-	return dst
-}
-
-// appendInlinePolicyStatements appends statements from inline policies to dst.
-func appendInlinePolicyStatements(dst []types.PolicyStatement, policies []types.InlinePolicy) []types.PolicyStatement {
-	for _, p := range policies {
-		if p.PolicyDocument.Statement != nil {
-			dst = append(dst, *p.PolicyDocument.Statement...)
-		}
-	}
-	return dst
-}
-
 // collectAllRoleStatements gathers all identity policy statements for a role.
 func collectAllRoleStatements(role types.RoleDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
-	var stmts []types.PolicyStatement
-	stmts = appendInlinePolicyStatements(stmts, role.RolePolicyList)
-	stmts = appendManagedPolicyStatements(stmts, gaad, role.AttachedManagedPolicies)
-	return stmts
+	return CollectRawRoleStatements(&role, GAADPolicyResolver(gaad))
 }
 
 // collectAllGroupStatements gathers all identity policy statements for a group
 // (inline + attached-managed).
 func collectAllGroupStatements(group types.GroupDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
-	var stmts []types.PolicyStatement
-	stmts = appendInlinePolicyStatements(stmts, group.GroupPolicyList)
-	stmts = appendManagedPolicyStatements(stmts, gaad, group.AttachedManagedPolicies)
-	return stmts
+	return CollectRawGroupStatements(&group, GAADPolicyResolver(gaad))
 }
 
 // collectAllUserStatements gathers all identity policy statements for a user,
 // including group policies.
 func collectAllUserStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails, groupsByName map[string]types.GroupDetail) []types.PolicyStatement {
-	var stmts []types.PolicyStatement
-	stmts = appendInlinePolicyStatements(stmts, user.UserPolicyList)
-	stmts = appendManagedPolicyStatements(stmts, gaad, user.AttachedManagedPolicies)
-	for _, groupName := range user.GroupList {
-		g, ok := groupsByName[groupName]
-		if !ok {
-			continue
-		}
-		stmts = appendInlinePolicyStatements(stmts, g.GroupPolicyList)
-		stmts = appendManagedPolicyStatements(stmts, gaad, g.AttachedManagedPolicies)
-	}
-	return stmts
+	return CollectRawUserStatements(&user, groupsByName, GAADPolicyResolver(gaad))
 }
 
 // ---------------------------------------------------------------------------

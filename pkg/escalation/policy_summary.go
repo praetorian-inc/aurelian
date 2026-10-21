@@ -66,15 +66,9 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 // collectGroupEffectiveStatements gathers all identity statements for a group
 // (inline, managed). The solver uses these for the add_user_to_group rule.
 func collectGroupEffectiveStatements(group types.GroupDetail, gaad *types.AuthorizationAccountDetails) []PolicyStatement {
-	var stmts []PolicyStatement
-	for _, p := range group.GroupPolicyList {
-		source := fmt.Sprintf("group-inline:%s/%s", group.GroupName, p.PolicyName)
-		stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
-	}
-	for _, mp := range group.AttachedManagedPolicies {
-		stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
-	}
-	return stmts
+	return walkToFlatStatements(func(visit StatementVisitor) {
+		WalkGroupStatements(&group, GAADPolicyResolver(gaad), visit)
+	})
 }
 
 // scpStatements extracts SCP statements for the principal's account and returns
@@ -141,35 +135,11 @@ func indexResourcePolicyGrants(resources store.Map[output.AWSResource]) map[stri
 // collectUserEffectiveStatements gathers all identity statements for a user
 // (inline, managed, group) plus permission boundary statements.
 func collectUserEffectiveStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails, groupsByName map[string]types.GroupDetail) []PolicyStatement {
-	var stmts []PolicyStatement
+	stmts := walkToFlatStatements(func(visit StatementVisitor) {
+		WalkUserStatements(&user, groupsByName, GAADPolicyResolver(gaad), visit)
+	})
 
-	// Inline policies
-	for _, p := range user.UserPolicyList {
-		source := fmt.Sprintf("inline:%s/%s", user.UserName, p.PolicyName)
-		stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
-	}
-
-	// Managed policies
-	for _, mp := range user.AttachedManagedPolicies {
-		stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
-	}
-
-	// Group policies
-	for _, groupName := range user.GroupList {
-		g, ok := groupsByName[groupName]
-		if !ok {
-			continue
-		}
-		for _, p := range g.GroupPolicyList {
-			source := fmt.Sprintf("group:%s/inline:%s", g.GroupName, p.PolicyName)
-			stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
-		}
-		for _, mp := range g.AttachedManagedPolicies {
-			stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
-		}
-	}
-
-	// Permission boundary
+	// Permission boundary (not part of the identity walk)
 	if user.PermissionsBoundary.PolicyArn != "" {
 		stmts = append(stmts, boundaryStatements(gaad, user.PermissionsBoundary)...)
 	}
@@ -180,20 +150,11 @@ func collectUserEffectiveStatements(user types.UserDetail, gaad *types.Authoriza
 // collectRoleEffectiveStatements gathers all identity statements for a role
 // (inline, managed) plus permission boundary statements.
 func collectRoleEffectiveStatements(role types.RoleDetail, gaad *types.AuthorizationAccountDetails) []PolicyStatement {
-	var stmts []PolicyStatement
+	stmts := walkToFlatStatements(func(visit StatementVisitor) {
+		WalkRoleStatements(&role, GAADPolicyResolver(gaad), visit)
+	})
 
-	// Inline policies
-	for _, p := range role.RolePolicyList {
-		source := fmt.Sprintf("inline:%s/%s", role.RoleName, p.PolicyName)
-		stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
-	}
-
-	// Managed policies
-	for _, mp := range role.AttachedManagedPolicies {
-		stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
-	}
-
-	// Permission boundary
+	// Permission boundary (not part of the identity walk)
 	if role.PermissionsBoundary.PolicyArn != "" {
 		stmts = append(stmts, boundaryStatements(gaad, role.PermissionsBoundary)...)
 	}
@@ -201,14 +162,48 @@ func collectRoleEffectiveStatements(role types.RoleDetail, gaad *types.Authoriza
 	return stmts
 }
 
-// managedPolicyStatements resolves a managed policy attachment to flat statements.
-func managedPolicyStatements(gaad *types.AuthorizationAccountDetails, mp types.ManagedPolicy) []PolicyStatement {
-	stmts := gaad.ResolveManagedPolicyStatements(mp.PolicyArn)
-	if stmts == nil {
-		return nil
+// walkToFlatStatements drives a Walk* function and flattens each visited
+// statement into solver-format PolicyStatements with a source label derived
+// from the PolicyOrigin.
+func walkToFlatStatements(walk func(visit StatementVisitor)) []PolicyStatement {
+	var stmts []PolicyStatement
+	walk(func(origin PolicyOrigin, s types.PolicyStatement) {
+		source := originToSource(origin)
+		actions := expandStmtActions(&s)
+		resources := expandStmtResources(&s)
+		conditions := convertConditions(s.Condition)
+		for _, action := range actions {
+			for _, resource := range resources {
+				stmts = append(stmts, PolicyStatement{
+					Effect:     normalizeEffect(s.Effect),
+					Action:     action,
+					Resource:   resource,
+					Source:     source,
+					Conditions: conditions,
+				})
+			}
+		}
+	})
+	return stmts
+}
+
+// originToSource builds the human-readable source label from a PolicyOrigin:
+//
+//	inline:alice/my-policy   (user or role inline policy)
+//	group-inline:devs/gp    (group inline policy, whether reached via user or group walk)
+//	managed:<arn>            (attached managed policy)
+func originToSource(o PolicyOrigin) string {
+	switch o.Type {
+	case OriginManaged:
+		return fmt.Sprintf("managed:%s", o.PolicyARN)
+	default: // OriginInline
+		switch o.PrincipalType {
+		case "group":
+			return fmt.Sprintf("group-inline:%s/%s", o.PrincipalName, o.PolicyName)
+		default:
+			return fmt.Sprintf("inline:%s/%s", o.PrincipalName, o.PolicyName)
+		}
 	}
-	source := fmt.Sprintf("managed:%s", mp.PolicyArn)
-	return flattenStatements(stmts, source)
 }
 
 // boundaryStatements converts a permission boundary into solver-format statements.
