@@ -38,6 +38,9 @@ type StructuralFact struct {
 	ResourceType string `json:"resource_type"`
 
 	// RoleARN is the ARN of the IAM role the resource operates as.
+	// For launch_template_instance_profile, this may be a bare instance profile
+	// name rather than a full ARN when the template was configured with a name
+	// instead of an ARN. Consumers should handle both forms.
 	RoleARN string `json:"role_arn"`
 
 	// AccountID is the AWS account ID that owns the resource.
