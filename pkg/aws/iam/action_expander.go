@@ -21,6 +21,15 @@ type ActionExpander struct {
 	initErr    error
 }
 
+// NewActionExpanderWithActions creates an ActionExpander pre-populated with
+// the given action list, bypassing the live AWS fetch. Useful for testing.
+func NewActionExpanderWithActions(actions []string) *ActionExpander {
+	ae := &ActionExpander{allActions: actions}
+	// Mark once as done so Expand never fetches from AWS.
+	ae.once.Do(func() {})
+	return ae
+}
+
 // Expand takes an IAM action pattern (potentially with wildcards) and returns
 // all matching concrete actions. Lazy-initializes on first call.
 func (ae *ActionExpander) Expand(pattern string) ([]string, error) {

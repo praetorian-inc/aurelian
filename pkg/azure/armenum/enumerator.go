@@ -45,6 +45,10 @@ func newPaginator() *ratelimit.Paginator {
 
 // List enumerates ARM-only resource types for the given subscription.
 func (e *ARMEnumerator) List(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
+	if e.cred == nil {
+		return fmt.Errorf("credential is nil")
+	}
+
 	if err := e.listDeployments(sub, out); err != nil {
 		return err
 	}

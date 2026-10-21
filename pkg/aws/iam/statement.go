@@ -2,12 +2,13 @@ package iam
 
 import (
 	"fmt"
-	"github.com/praetorian-inc/aurelian/pkg/types"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // evaluateStatement evaluates a policy statement against a request context
@@ -94,8 +95,10 @@ func matchesRegexPattern(pattern *regexp.Regexp, input string) bool {
 	return pattern.MatchString(input)
 }
 
-// MatchesPattern handles basic glob pattern matching (case insensitive)
-func MatchesPattern(pattern, input string) bool {
+// CompilePattern converts a glob pattern (with * and ? wildcards) into a
+// compiled case-insensitive regexp. Callers that need to match a single pattern
+// against many inputs should compile once and reuse the *regexp.Regexp.
+func CompilePattern(pattern string) (*regexp.Regexp, error) {
 	// Escape regex metacharacters, preserving * and ? for glob conversion
 	pattern = strings.ReplaceAll(pattern, ".", "\\.")
 	pattern = strings.ReplaceAll(pattern, "+", "\\+")
@@ -113,8 +116,17 @@ func MatchesPattern(pattern, input string) bool {
 	pattern = strings.ReplaceAll(pattern, "?", ".")
 	pattern = "(?i)^" + pattern + "$"
 
-	p := regexp.MustCompile(pattern)
-	return matchesRegexPattern(p, input)
+	return regexp.Compile(pattern)
+}
+
+// MatchesPattern handles basic glob pattern matching (case insensitive)
+func MatchesPattern(pattern, input string) bool {
+	re, err := CompilePattern(pattern)
+	if err != nil {
+		slog.Warn("CompilePattern failed, treating as no-match", "pattern", pattern, "error", err)
+		return false
+	}
+	return re.MatchString(input)
 }
 
 // matchesActions checks if an action matches any in the DynaString
