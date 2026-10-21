@@ -36,6 +36,7 @@ const (
 	FactInstanceProfile              = "instance_profile"
 	FactCognitoAuthenticatedRole     = "cognito_authenticated_role"
 	FactCognitoUnauthenticatedRole   = "cognito_unauthenticated_role"
+	FactStackSetAdminRole            = "stackset_admin_role"
 	FactStackSetExecutionRole        = "stackset_execution_role"
 )
 
@@ -60,7 +61,8 @@ var extractors = []extractor{
 	{"AWS::CloudFormation::Stack", FactCloudFormationStackRole, []string{"RoleARN"}},
 
 	// Priority 2: remaining chain-rule facts from the expanded scope.
-	{"AWS::CloudFormation::StackSet", FactStackSetExecutionRole, []string{"AdministrationRoleARN", "ExecutionRoleName"}},
+	{"AWS::CloudFormation::StackSet", FactStackSetAdminRole, []string{"AdministrationRoleARN"}},
+	{"AWS::CloudFormation::StackSet", FactStackSetExecutionRole, []string{"ExecutionRoleName"}},
 	{"AWS::Lambda::Function", FactLambdaExecutionRole, []string{"Role"}},
 	{"AWS::ECS::TaskDefinition", FactECSTaskRole, []string{"TaskRoleArn"}},
 	{"AWS::Glue::Job", FactGlueJobRole, []string{"Role"}},

@@ -25,7 +25,8 @@ import "github.com/praetorian-inc/aurelian/pkg/model"
 //   - instance_profile:                    EC2 instance -> instance profile role
 //   - cognito_authenticated_role:           Cognito identity pool -> authenticated role
 //   - cognito_unauthenticated_role:         Cognito identity pool -> unauthenticated role (attacker-accessible)
-//   - stackset_execution_role:              CloudFormation StackSet -> execution role
+//   - stackset_admin_role:                   CloudFormation StackSet -> administration role (full ARN)
+//   - stackset_execution_role:              CloudFormation StackSet -> execution role (bare name, not a full ARN)
 type StructuralFact struct {
 	model.BaseAurelianModel
 
@@ -41,7 +42,10 @@ type StructuralFact struct {
 	// RoleARN is the ARN of the IAM role the resource operates as.
 	// For launch_template_instance_profile, this may be a bare instance profile
 	// name rather than a full ARN when the template was configured with a name
-	// instead of an ARN. Consumers should handle both forms.
+	// instead of an ARN. For stackset_execution_role, this is always a bare role
+	// name (e.g. "AWSCloudFormationStackSetExecutionRole"), not a full ARN,
+	// because StackSets only store the execution role name without account context.
+	// Consumers should handle both forms.
 	RoleARN string `json:"role_arn"`
 
 	// AccountID is the AWS account ID that owns the resource.
