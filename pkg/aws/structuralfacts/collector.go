@@ -12,8 +12,11 @@
 package structuralfacts
 
 import (
+	"strings"
+
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/store"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // Fact type constants name the resource-to-role binding each fact captures.
@@ -84,10 +87,39 @@ func init() {
 	}
 }
 
+// instanceProfileKeys lists the property keys that hold instance-profile
+// references which may be bare names rather than ARNs.
+var instanceProfileKeys = map[string]bool{
+	"IamInstanceProfile": true,
+}
+
+// BuildInstanceProfileIndex builds a name→ARN lookup for IAM instance profiles
+// from the GAAD roles' InstanceProfileList. Returns an empty (non-nil) map when
+// gaad is nil or contains no instance profiles.
+func BuildInstanceProfileIndex(gaad *types.AuthorizationAccountDetails) map[string]string {
+	index := make(map[string]string)
+	if gaad == nil {
+		return index
+	}
+	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
+		for _, ip := range role.InstanceProfileList {
+			if ip.InstanceProfileName != "" && ip.Arn != "" {
+				index[ip.InstanceProfileName] = ip.Arn
+			}
+		}
+		return true
+	})
+	return index
+}
+
 // Collect walks the collected resources and returns all structural facts found.
 // Each resource whose Properties carry a non-empty role reference produces one
 // StructuralFact per role key.
-func Collect(resources store.Map[output.AWSResource]) []output.StructuralFact {
+//
+// instanceProfileIndex is an optional name→ARN lookup (built by
+// BuildInstanceProfileIndex) that resolves bare instance-profile names to full
+// ARNs. Pass nil to skip resolution.
+func Collect(resources store.Map[output.AWSResource], instanceProfileIndex map[string]string) []output.StructuralFact {
 	var facts []output.StructuralFact
 	resources.Range(func(_ string, r output.AWSResource) bool {
 		exts, ok := extractorIndex[r.ResourceType]
@@ -99,6 +131,9 @@ func Collect(resources store.Map[output.AWSResource]) []output.StructuralFact {
 				roleRef := propString(r.Properties, key)
 				if roleRef == "" {
 					continue
+				}
+				if instanceProfileKeys[key] {
+					roleRef = resolveInstanceProfile(roleRef, instanceProfileIndex)
 				}
 				facts = append(facts, output.StructuralFact{
 					FactType:     ext.factType,
@@ -113,6 +148,21 @@ func Collect(resources store.Map[output.AWSResource]) []output.StructuralFact {
 		return true
 	})
 	return facts
+}
+
+// resolveInstanceProfile returns the ARN for ref. If ref is already an ARN
+// (starts with "arn:") it is returned as-is. Otherwise it is looked up in the
+// index; a miss returns the bare name unchanged.
+func resolveInstanceProfile(ref string, index map[string]string) string {
+	if strings.HasPrefix(ref, "arn:") {
+		return ref
+	}
+	if index != nil {
+		if resolved, ok := index[ref]; ok {
+			return resolved
+		}
+	}
+	return ref
 }
 
 // propString reads a string property from the Properties map.
