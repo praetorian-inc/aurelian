@@ -25,6 +25,7 @@ import "github.com/praetorian-inc/aurelian/pkg/model"
 //   - instance_profile:                    EC2 instance -> instance profile role
 //   - cognito_authenticated_role:           Cognito identity pool -> authenticated role
 //   - cognito_unauthenticated_role:         Cognito identity pool -> unauthenticated role (attacker-accessible)
+//   - stackset_execution_role:              CloudFormation StackSet -> execution role
 type StructuralFact struct {
 	model.BaseAurelianModel
 

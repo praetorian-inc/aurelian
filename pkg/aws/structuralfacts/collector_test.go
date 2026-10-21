@@ -455,6 +455,10 @@ func TestCollectAllFactTypes(t *testing.T) {
 		"arn:aws:cognito-identity:us-east-1:111:identitypool/us-east-1:pool-1", "111", "us-east-1",
 		map[string]any{"authenticatedRole": "arn:aws:iam::111:role/cognito-auth"})
 
+	addResource("stackset", "AWS::CloudFormation::StackSet",
+		"arn:aws:cloudformation:us-east-1:111:stackset/ss:g", "111", "us-east-1",
+		map[string]any{"ExecutionRoleName": "AWSCloudFormationStackSetExecutionRole"})
+
 	facts := Collect(resources, nil)
 
 	typeCount := map[string]int{}
@@ -473,6 +477,7 @@ func TestCollectAllFactTypes(t *testing.T) {
 	assert.Equal(t, 1, typeCount[FactBedrockInterpreterRole], "bedrock_interpreter_role")
 	assert.Equal(t, 1, typeCount[FactInstanceProfile], "instance_profile")
 	assert.Equal(t, 1, typeCount[FactCognitoAuthenticatedRole], "cognito_authenticated_role")
+	assert.Equal(t, 1, typeCount[FactStackSetExecutionRole], "stackset_execution_role")
 }
 
 func TestCollectNilProperties(t *testing.T) {
@@ -526,6 +531,92 @@ func TestCollectBatchJobDefinition(t *testing.T) {
 	// Only JobRoleArn emits a fact; ExecutionRoleArn is ignored.
 	require.Len(t, batchFacts, 1)
 	assert.Equal(t, "arn:aws:iam::111:role/batch-job", batchFacts[0].RoleARN)
+}
+
+func TestCollectStackSetExecutionRole(t *testing.T) {
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("arn:aws:cloudformation:us-east-1:123456789012:stackset/my-stackset:guid", output.AWSResource{
+		ResourceType: "AWS::CloudFormation::StackSet",
+		ResourceID:   "my-stackset",
+		ARN:          "arn:aws:cloudformation:us-east-1:123456789012:stackset/my-stackset:guid",
+		AccountRef:   "123456789012",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"AdministrationRoleARN": "arn:aws:iam::123456789012:role/AWSCloudFormationStackSetAdministrationRole",
+			"ExecutionRoleName":     "AWSCloudFormationStackSetExecutionRole",
+		},
+	})
+
+	facts := Collect(resources, nil)
+
+	var stackSetFacts []output.StructuralFact
+	for _, f := range facts {
+		if f.FactType == FactStackSetExecutionRole {
+			stackSetFacts = append(stackSetFacts, f)
+		}
+	}
+
+	// Both AdministrationRoleARN and ExecutionRoleName produce facts.
+	require.Len(t, stackSetFacts, 2)
+	roleARNs := map[string]bool{}
+	for _, f := range stackSetFacts {
+		assert.Equal(t, "arn:aws:cloudformation:us-east-1:123456789012:stackset/my-stackset:guid", f.ResourceARN)
+		assert.Equal(t, "AWS::CloudFormation::StackSet", f.ResourceType)
+		assert.Equal(t, "123456789012", f.AccountID)
+		assert.Equal(t, "us-east-1", f.Region)
+		roleARNs[f.RoleARN] = true
+	}
+	assert.True(t, roleARNs["arn:aws:iam::123456789012:role/AWSCloudFormationStackSetAdministrationRole"])
+	assert.True(t, roleARNs["AWSCloudFormationStackSetExecutionRole"])
+}
+
+func TestCollectStackSetExecutionRoleOnly(t *testing.T) {
+	// A StackSet with only ExecutionRoleName (no AdministrationRoleARN) emits one fact.
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("ss", output.AWSResource{
+		ResourceType: "AWS::CloudFormation::StackSet",
+		ARN:          "arn:aws:cloudformation:us-east-1:111:stackset/ss:g",
+		AccountRef:   "111",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"ExecutionRoleName": "AWSCloudFormationStackSetExecutionRole",
+		},
+	})
+
+	facts := Collect(resources, nil)
+
+	var stackSetFacts []output.StructuralFact
+	for _, f := range facts {
+		if f.FactType == FactStackSetExecutionRole {
+			stackSetFacts = append(stackSetFacts, f)
+		}
+	}
+
+	require.Len(t, stackSetFacts, 1)
+	assert.Equal(t, "AWSCloudFormationStackSetExecutionRole", stackSetFacts[0].RoleARN)
+}
+
+func TestCollectStackSetNoRoles(t *testing.T) {
+	// A StackSet with empty role properties emits no facts.
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("ss", output.AWSResource{
+		ResourceType: "AWS::CloudFormation::StackSet",
+		ARN:          "arn:aws:cloudformation:us-east-1:111:stackset/ss:g",
+		AccountRef:   "111",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"AdministrationRoleARN": "",
+			"ExecutionRoleName":     "",
+		},
+	})
+
+	facts := Collect(resources, nil)
+
+	for _, f := range facts {
+		if f.FactType == FactStackSetExecutionRole {
+			t.Errorf("expected no stackset_execution_role fact for roleless stackset, got %+v", f)
+		}
+	}
 }
 
 func TestCollectCognitoMultipleRoles(t *testing.T) {
