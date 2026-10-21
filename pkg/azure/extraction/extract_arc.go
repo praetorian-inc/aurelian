@@ -24,7 +24,7 @@ func extractArcExtensions(ctx extractContext, r output.AzureResource, out *pipel
 		return fmt.Errorf("no machines segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armhybridcompute.NewMachineExtensionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armhybridcompute.NewMachineExtensionsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create Arc machine extensions client: %w", err)
 	}

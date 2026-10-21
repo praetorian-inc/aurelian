@@ -29,7 +29,7 @@ func extractDigitalTwinsProperties(ctx extractContext, r output.AzureResource, o
 		return fmt.Errorf("no digitalTwinsInstances segment in resource ID %s", r.ResourceID)
 	}
 
-	armClient, err := armdigitaltwins.NewClient(r.SubscriptionID, ctx.Cred, nil)
+	armClient, err := armdigitaltwins.NewClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create Digital Twins ARM client: %w", err)
 	}

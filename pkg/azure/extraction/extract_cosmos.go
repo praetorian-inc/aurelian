@@ -34,7 +34,7 @@ func init() {
 // newCosmosSQLClient creates a Cosmos ARM SQLResourcesClient for enumerating databases, containers,
 // stored procs, triggers, and UDFs via the management plane.
 func newCosmosSQLClient(ctx extractContext, subscriptionID string) (*armcosmos.SQLResourcesClient, error) {
-	return armcosmos.NewSQLResourcesClient(subscriptionID, ctx.Cred, nil)
+	return armcosmos.NewSQLResourcesClient(subscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 }
 
 // cosmosDBContainers enumerates all SQL databases and containers for a Cosmos DB account

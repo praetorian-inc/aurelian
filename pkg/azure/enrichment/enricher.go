@@ -8,6 +8,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -18,11 +19,12 @@ import (
 type AzureEnricher struct {
 	ctx     context.Context
 	cred    azcore.TokenCredential
+	env     azurecloud.Environment
 	timeout time.Duration
 }
 
 func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential, timeout time.Duration) *AzureEnricher {
-	return &AzureEnricher{ctx: ctx, cred: cred, timeout: timeout}
+	return &AzureEnricher{ctx: ctx, cred: cred, env: azurecloud.Resolve(""), timeout: timeout}
 }
 
 // Enrich is a pipeline-compatible method that looks up registered enrichers
@@ -45,6 +47,7 @@ func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[
 	cfg := plugin.AzureEnricherConfig{
 		Context:    enrichCtx,
 		Credential: e.cred,
+		Env:        e.env,
 	}
 	for _, enrich := range enrichers {
 		if err := enrich(cfg, &result); err != nil {

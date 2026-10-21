@@ -65,7 +65,7 @@ func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[m
 }
 
 func checkTrafficManagerDNSAvailability(ctx CheckContext, profileName string) (bool, error) {
-	client, err := armtrafficmanager.NewProfilesClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armtrafficmanager.NewProfilesClient(ctx.SubscriptionID, ctx.Credential, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return false, fmt.Errorf("create traffic manager client: %w", err)
 	}

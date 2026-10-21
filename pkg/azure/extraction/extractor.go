@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -13,6 +14,7 @@ import (
 // AzureExtractor extracts scannable content from Azure resources.
 type AzureExtractor struct {
 	cred             azcore.TokenCredential
+	env              azurecloud.Environment
 	MaxCosmosDocSize int // 0 uses defaultMaxCosmosDocSize (1 MB)
 	MaxCosmosDocScan int // 0 uses defaultMaxCosmosDocScan (50)
 }
@@ -21,6 +23,7 @@ type AzureExtractor struct {
 func NewAzureExtractor(cred azcore.TokenCredential) *AzureExtractor {
 	return &AzureExtractor{
 		cred: cred,
+		env:  azurecloud.Resolve(""),
 	}
 }
 
@@ -37,6 +40,7 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	ctx := extractContext{
 		Context:          context.Background(),
 		Cred:             e.cred,
+		Env:              e.env,
 		MaxCosmosDocSize: e.MaxCosmosDocSize,
 		MaxCosmosDocScan: e.MaxCosmosDocScan,
 	}

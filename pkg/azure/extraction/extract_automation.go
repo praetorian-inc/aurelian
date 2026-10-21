@@ -29,7 +29,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create automation variable client: %w", err)
 	}
@@ -71,7 +71,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create automation runbook client: %w", err)
 	}
