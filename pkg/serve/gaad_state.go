@@ -149,7 +149,7 @@ func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 		// evaluateTriple can use them as identity statements.
 		if r.AssumeRolePolicyDocument.Statement != nil {
 			for _, stmt := range *r.AssumeRolePolicyDocument.Statement {
-				if strings.ToLower(stmt.Effect) != "allow" || stmt.Principal == nil {
+				if !strings.EqualFold(stmt.Effect, "allow") || stmt.Principal == nil {
 					continue
 				}
 				for _, svcPrincipal := range stmt.ExtractPrincipals() {
