@@ -110,6 +110,7 @@ func TestCollectOrganizationHierarchy_Success(t *testing.T) {
 	}
 	if ou == nil {
 		t.Fatal("expected non-nil OrgUnit")
+		return
 	}
 	if ou.ID != "r-root" {
 		t.Errorf("expected root ID r-root, got %s", ou.ID)
@@ -723,6 +724,7 @@ func TestBuildOrgPoliciesFromHierarchy(t *testing.T) {
 
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if len(result.SCPs) != 2 {
 		t.Errorf("expected 2 SCPs, got %d", len(result.SCPs))
@@ -746,6 +748,7 @@ func TestBuildOrgPoliciesFromHierarchy(t *testing.T) {
 	}
 	if acctTarget == nil {
 		t.Fatal("expected to find account target")
+		return
 	}
 	if acctTarget.ID != "111111111111" {
 		t.Errorf("expected account ID 111111111111, got %s", acctTarget.ID)
@@ -765,6 +768,7 @@ func TestBuildOrgPoliciesFromHierarchy(t *testing.T) {
 	}
 	if rootTarget == nil {
 		t.Fatal("expected to find root target")
+		return
 	}
 	if len(rootTarget.SCPs.DirectPolicies) != 1 {
 		t.Errorf("expected 1 direct SCP on root, got %d", len(rootTarget.SCPs.DirectPolicies))
@@ -783,6 +787,7 @@ func TestBuildOrgPoliciesFromHierarchy(t *testing.T) {
 	}
 	if childTarget == nil {
 		t.Fatal("expected to find child OU target")
+		return
 	}
 	if len(childTarget.RCPs.DirectPolicies) != 1 {
 		t.Errorf("expected 1 direct RCP on child OU, got %d", len(childTarget.RCPs.DirectPolicies))
@@ -798,6 +803,7 @@ func TestBuildOrgPoliciesFromHierarchy_EmptyHierarchy(t *testing.T) {
 	result := BuildOrgPoliciesFromHierarchy(rootOU, []PolicyData{}, []PolicyData{})
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	// Should have 1 target: the root OU
 	if len(result.Targets) != 1 {
@@ -854,6 +860,7 @@ func TestPolicyTypeToString(t *testing.T) {
 	result := policyTypeToString(pt)
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if *result != string(awstypes.PolicyTypeServiceControlPolicy) {
 		t.Errorf("expected %s, got %s", string(awstypes.PolicyTypeServiceControlPolicy), *result)

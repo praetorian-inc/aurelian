@@ -116,7 +116,7 @@ func TestAzurePublicResources(t *testing.T) {
 		optional   bool // skip if fixture output is missing
 	}{
 		// Storage & Data
-		{"storage_accounts_public_access", "storage_account_id", output.RiskSeverityHigh, "sa", false},
+		{"storage_accounts_public_access", "storage_account_id", output.RiskSeverityExposure, "sa", false},
 		{"key_vault_public_access", "key_vault_id", output.RiskSeverityHigh, "-kv", false},
 		{"cosmos_db_public_access", "cosmos_db_id", output.RiskSeverityHigh, "-cosmos", false},
 		{"redis_cache_public_access", "redis_cache_id", output.RiskSeverityLow, "-redis", false},
@@ -215,7 +215,7 @@ func TestAzurePublicResources(t *testing.T) {
 
 	t.Run("all risks have valid severity", func(t *testing.T) {
 		validSeverities := map[output.RiskSeverity]bool{
-			output.RiskSeverityInfo: true, output.RiskSeverityLow: true,
+			output.RiskSeverityInfo: true, output.RiskSeverityExposure: true, output.RiskSeverityLow: true,
 			output.RiskSeverityMedium: true, output.RiskSeverityHigh: true,
 			output.RiskSeverityCritical: true,
 		}

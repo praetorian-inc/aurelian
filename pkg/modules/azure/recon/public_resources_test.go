@@ -152,7 +152,7 @@ func TestPublicResourcesTemplateLoader_SeveritiesMatchExpected(t *testing.T) {
 		"search_service_public_access":             output.RiskSeverityMedium,
 		"service_bus_public_access":                output.RiskSeverityLow,
 		"sql_servers_public_access":                output.RiskSeverityHigh,
-		"storage_accounts_public_access":           output.RiskSeverityHigh,
+		"storage_accounts_public_access":           output.RiskSeverityExposure,
 		"synapse_public_access":                    output.RiskSeverityMedium,
 		"virtual_machines_public_access":           output.RiskSeverityHigh,
 	}
@@ -238,7 +238,7 @@ func TestResultToRisk(t *testing.T) {
 }
 
 func TestResultToRisk_SeverityPreserved(t *testing.T) {
-	severities := []string{"low", "medium", "high", "critical"}
+	severities := []string{"exposure", "low", "medium", "high", "critical"}
 
 	for _, sev := range severities {
 		t.Run(sev, func(t *testing.T) {
