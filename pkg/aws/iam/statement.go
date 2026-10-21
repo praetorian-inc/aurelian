@@ -94,31 +94,9 @@ func matchesRegexPattern(pattern *regexp.Regexp, input string) bool {
 	return pattern.MatchString(input)
 }
 
-// MatchesPattern handles basic glob pattern matching (case insensitive)
-func MatchesPattern(pattern, input string) bool {
-	// Escape regex metacharacters, preserving * and ? for glob conversion
-	pattern = strings.ReplaceAll(pattern, ".", "\\.")
-	pattern = strings.ReplaceAll(pattern, "+", "\\+")
-	pattern = strings.ReplaceAll(pattern, "(", "\\(")
-	pattern = strings.ReplaceAll(pattern, ")", "\\)")
-	pattern = strings.ReplaceAll(pattern, "[", "\\[")
-	pattern = strings.ReplaceAll(pattern, "]", "\\]")
-	pattern = strings.ReplaceAll(pattern, "{", "\\{")
-	pattern = strings.ReplaceAll(pattern, "}", "\\}")
-	pattern = strings.ReplaceAll(pattern, "^", "\\^")
-	pattern = strings.ReplaceAll(pattern, "$", "\\$")
-	pattern = strings.ReplaceAll(pattern, "|", "\\|")
-	// Convert glob wildcards to regex
-	pattern = strings.ReplaceAll(pattern, "*", ".*")
-	pattern = strings.ReplaceAll(pattern, "?", ".")
-	pattern = "(?i)^" + pattern + "$"
-
-	p := regexp.MustCompile(pattern)
-	return matchesRegexPattern(p, input)
-}
-
-// CompilePattern compiles a glob pattern (as used by MatchesPattern) into a
-// regexp.Regexp so it can be reused across many inputs without recompiling.
+// CompilePattern converts a glob pattern (with * and ? wildcards) into a
+// compiled case-insensitive regexp. Callers that need to match a single pattern
+// against many inputs should compile once and reuse the *regexp.Regexp.
 func CompilePattern(pattern string) (*regexp.Regexp, error) {
 	// Escape regex metacharacters, preserving * and ? for glob conversion
 	pattern = strings.ReplaceAll(pattern, ".", "\\.")
@@ -138,6 +116,15 @@ func CompilePattern(pattern string) (*regexp.Regexp, error) {
 	pattern = "(?i)^" + pattern + "$"
 
 	return regexp.Compile(pattern)
+}
+
+// MatchesPattern handles basic glob pattern matching (case insensitive)
+func MatchesPattern(pattern, input string) bool {
+	re, err := CompilePattern(pattern)
+	if err != nil {
+		return false
+	}
+	return re.MatchString(input)
 }
 
 // matchesActions checks if an action matches any in the DynaString
