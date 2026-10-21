@@ -7,6 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -26,7 +28,7 @@ func extractVMSSUserData(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no virtualMachineScaleSets segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcompute.NewVirtualMachineScaleSetsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcompute.NewVirtualMachineScaleSetsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create VMSS client: %w", err)
 	}
@@ -77,7 +79,7 @@ func extractVMSSExtensions(ctx extractContext, r output.AzureResource, out *pipe
 		return fmt.Errorf("no virtualMachineScaleSets segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcompute.NewVirtualMachineScaleSetExtensionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcompute.NewVirtualMachineScaleSetExtensionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create VMSS extensions client: %w", err)
 	}

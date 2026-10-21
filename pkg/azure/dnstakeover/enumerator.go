@@ -8,28 +8,31 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 // DNSEnumerator lists all DNS records from Azure DNS zones across subscriptions.
 type DNSEnumerator struct {
 	credential azcore.TokenCredential
+	env        azurecloud.Environment
 }
 
 // NewDNSEnumerator creates a DNS record enumerator.
-func NewDNSEnumerator(credential azcore.TokenCredential) *DNSEnumerator {
-	return &DNSEnumerator{credential: credential}
+func NewDNSEnumerator(credential azcore.TokenCredential, env azurecloud.Environment) *DNSEnumerator {
+	return &DNSEnumerator{credential: credential, env: env}
 }
 
 // EnumerateSubscription lists all records from all DNS zones in the given subscription.
 // Pipeline signature: string (subscriptionID) -> AzureDNSRecord.
 func (e *DNSEnumerator) EnumerateSubscription(subscriptionID string, out *pipeline.P[AzureDNSRecord]) error {
-	client, err := armdns.NewZonesClient(subscriptionID, e.credential, nil)
+	client, err := armdns.NewZonesClient(subscriptionID, e.credential, azurecloud.ARMClientOptions(e.env))
 	if err != nil {
 		return fmt.Errorf("creating dns zones client: %w", err)
 	}
 
-	recordClient, err := armdns.NewRecordSetsClient(subscriptionID, e.credential, nil)
+	recordClient, err := armdns.NewRecordSetsClient(subscriptionID, e.credential, azurecloud.ARMClientOptions(e.env))
 	if err != nil {
 		return fmt.Errorf("creating dns record sets client: %w", err)
 	}

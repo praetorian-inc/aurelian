@@ -60,7 +60,7 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 }
 
 func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential, m.Environment)
 
 	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
@@ -81,7 +81,7 @@ func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, resources *pipeline
 	inputs := pipeline.New[resourcegraph.ListerInput]()
 	pipeline.Pipe(resolvedSubs, subscriptionToListerInput, inputs)
 
-	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, m.Environment, nil)
 	listed := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(inputs, lister.List, listed)
 

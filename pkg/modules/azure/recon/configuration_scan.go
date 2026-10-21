@@ -101,7 +101,7 @@ func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mo
 		return nil
 	}
 
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential, m.Environment)
 	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
@@ -120,11 +120,11 @@ func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mo
 	pipeline.Pipe(resolvedSubs, m.fanOutTemplates, inputStream)
 
 	candidates := pipeline.New[templates.ARGQueryResult]()
-	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, m.Environment, nil)
 	pipeline.Pipe(inputStream, lister.Query, candidates)
 
 	enricherTimeout := time.Duration(m.EnricherTimeout) * time.Second
-	enricher := enrichment.NewAzureEnricher(ctx, m.AzureCredential, enricherTimeout)
+	enricher := enrichment.NewAzureEnricher(ctx, m.AzureCredential, m.Environment, enricherTimeout)
 	enriched := pipeline.New[templates.ARGQueryResult]()
 	pipeline.Pipe(candidates, enricher.Enrich, enriched, &pipeline.PipeOpts{
 		Concurrency: m.Concurrency,

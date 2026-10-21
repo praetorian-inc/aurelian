@@ -93,7 +93,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 
-	extractor := extraction.NewAzureExtractor(c.AzureCredential)
+	extractor := extraction.NewAzureExtractor(c.AzureCredential, c.Environment)
 	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
 	extractor.MaxCosmosDocScan = m.MaxCosmosDocScan
 	extracted := pipeline.New[output.ScanInput]()
@@ -129,14 +129,14 @@ func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) (*pi
 
 	// Hydrate resources with metadata from ARG (location, name, tenantId).
 	// Resources not in ARG (e.g., policy definitions) retain parsed-only fields.
-	hydrateFromARG(c.AzureCredential, resources)
+	hydrateFromARG(c.AzureCredential, c.Environment, resources)
 
 	return pipeline.From(resources...), nil
 }
 
 // listBySubscription runs the full ARG + ARM enumeration across subscriptions.
 func (m *AzureFindSecretsModule) listBySubscription(c AzureFindSecretsConfig) (*pipeline.P[output.AzureResource], error) {
-	resolver := subscriptions.NewSubscriptionResolver(c.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(c.AzureCredential, c.Environment)
 	subscriptionIDs, err := resolveSubscriptionIDs(c.SubscriptionIDs, resolver)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve subscriptions: %w", err)
@@ -161,13 +161,13 @@ func (m *AzureFindSecretsModule) listBySubscription(c AzureFindSecretsConfig) (*
 	argInputs := pipeline.New[resourcegraph.ListerInput]()
 	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
 
-	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
+	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, c.Environment, nil)
 	argListed := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(argInputs, lister.List, argListed)
 
 	// ARM path: enumerate resource types not indexed by ARG.
 	armResolvedSubs := pipeline.From(subsList...)
-	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
+	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential, c.Environment)
 	armListed := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
 

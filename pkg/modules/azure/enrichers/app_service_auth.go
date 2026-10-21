@@ -5,6 +5,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v4"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -20,7 +21,7 @@ func enrichAppServiceAuth(cfg plugin.AzureEnricherConfig, result *templates.ARGQ
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, nil)
+	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return err
 	}

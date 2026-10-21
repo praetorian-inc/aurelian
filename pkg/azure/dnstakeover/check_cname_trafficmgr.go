@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/trafficmanager/armtrafficmanager"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -16,15 +18,14 @@ func init() {
 	mustRegister("CNAME", "trafficmgr-takeover", checkTrafficManager)
 }
 
-const trafficManagerSuffix = ".trafficmanager.net"
-
 func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	suffix := "." + ctx.Env.TrafficManagerSuffix
 	for _, val := range rec.Values {
-		if !strings.HasSuffix(strings.ToLower(val), trafficManagerSuffix) {
+		if !strings.HasSuffix(strings.ToLower(val), suffix) {
 			continue
 		}
 
-		profileName, _ := strings.CutSuffix(strings.ToLower(val), trafficManagerSuffix)
+		profileName, _ := strings.CutSuffix(strings.ToLower(val), suffix)
 		if profileName == "" {
 			continue
 		}
@@ -65,7 +66,7 @@ func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[m
 }
 
 func checkTrafficManagerDNSAvailability(ctx CheckContext, profileName string) (bool, error) {
-	client, err := armtrafficmanager.NewProfilesClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armtrafficmanager.NewProfilesClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return false, fmt.Errorf("create traffic manager client: %w", err)
 	}

@@ -95,7 +95,7 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		ctx = context.Background()
 	}
 
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential, m.Environment)
 	subIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
@@ -117,7 +117,7 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
 
-	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, m.Environment, nil)
 	apimResources := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(resolvedSubs, func(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
 		return lister.List(resourcegraph.ListerInput{

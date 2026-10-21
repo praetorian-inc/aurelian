@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -28,7 +30,7 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 		return fmt.Errorf("no virtualMachines segment in resource ID %s", r.ResourceID)
 	}
 
-	vmClient, err := armcompute.NewVirtualMachinesClient(r.SubscriptionID, ctx.Cred, nil)
+	vmClient, err := armcompute.NewVirtualMachinesClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create VM client: %w", err)
 	}
@@ -54,7 +56,8 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 
 	resp, err := httpClient.Get(*result.SerialConsoleLogBlobURI)
 	if err != nil {
-		slog.Warn("failed to download boot diagnostics log", "vm", vmName, "error", err)
+		// net/http errors include the request URL, which contains a SAS token.
+		slog.Warn("failed to download boot diagnostics log", "vm", vmName)
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()

@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	armhybridcompute "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/hybridcompute/armhybridcompute/v2"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -24,7 +26,7 @@ func extractArcExtensions(ctx extractContext, r output.AzureResource, out *pipel
 		return fmt.Errorf("no machines segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armhybridcompute.NewMachineExtensionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armhybridcompute.NewMachineExtensionsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create Arc machine extensions client: %w", err)
 	}

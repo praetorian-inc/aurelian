@@ -17,11 +17,15 @@ type DNSTakeoverChecker struct {
 // NewDNSTakeoverChecker creates a checker with shared Azure credentials and options.
 // subscriptionIDs should contain the resolved (not "all") subscription IDs for cross-subscription lookups.
 func NewDNSTakeoverChecker(ctx context.Context, opts plugin.AzureCommonRecon, subscriptionIDs []string) *DNSTakeoverChecker {
+	if skipped := unsupportedCheckers(opts.Environment); len(skipped) > 0 {
+		slog.Warn("checks unavailable in selected cloud; results are partial", "cloud", opts.Environment.Name, "checks", skipped)
+	}
 	return &DNSTakeoverChecker{
 		ctx: CheckContext{
 			Ctx:             ctx,
 			Opts:            opts,
 			Credential:      opts.AzureCredential,
+			Env:             opts.Environment,
 			SubscriptionIDs: subscriptionIDs,
 			PublicIPCache:   &publicIPCache{},
 		},
@@ -39,6 +43,10 @@ func (c *DNSTakeoverChecker) Check(rec AzureDNSRecord, out *pipeline.P[model.Aur
 	checkCtx.SubscriptionID = rec.SubscriptionID
 
 	for _, chk := range checkers {
+		if !checkCtx.Env.Supports(chk.Clouds) {
+			slog.Debug("check not supported in selected cloud, skipping", "check", chk.Name, "cloud", checkCtx.Env.Name)
+			continue
+		}
 		if err := chk.Fn(checkCtx, rec, out); err != nil {
 			slog.Warn("takeover checker failed",
 				"name", chk.Name,

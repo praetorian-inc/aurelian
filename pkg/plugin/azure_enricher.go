@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
@@ -12,6 +14,7 @@ import (
 type AzureEnricherConfig struct {
 	Context    context.Context
 	Credential azcore.TokenCredential
+	Env        azurecloud.Environment
 }
 
 // AzureEnricherFunc adds properties to an ARG query result via Azure SDK API calls.

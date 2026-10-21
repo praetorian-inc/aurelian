@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
@@ -24,9 +25,6 @@ const listAPIsRequestTimeout = 30 * time.Second
 // native MCP-type APIs. Older versions (2021-08-01, 2023-05-01-preview)
 // filter MCP APIs out of the list response entirely.
 const APIListAPIVersion = "2024-06-01-preview"
-
-// armScope is the Azure Resource Manager scope for bearer tokens.
-const armScope = "https://management.azure.com/.default"
 
 type apiListResponse struct {
 	Value    []apiListEntry `json:"value"`
@@ -66,9 +64,10 @@ func parseAPIListPage(body []byte) ([]APIInventoryItem, string, error) {
 // host matches the original ARM endpoint — never send the bearer token to a
 // foreign host. Transient 429/503 errors surface as *azcore.ResponseError so
 // the standard Azure paginator retries them.
-func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, resourceGroup, serviceName string) ([]APIInventoryItem, error) {
+func ListAPIs(ctx context.Context, cred azcore.TokenCredential, env azurecloud.Environment, subscriptionID, resourceGroup, serviceName string) ([]APIInventoryItem, error) {
 	base := fmt.Sprintf(
-		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ApiManagement/service/%s/apis?api-version=%s",
+		"%s/subscriptions/%s/resourceGroups/%s/providers/Microsoft.ApiManagement/service/%s/apis?api-version=%s",
+		env.ARMEndpoint(),
 		url.PathEscape(subscriptionID),
 		url.PathEscape(resourceGroup),
 		url.PathEscape(serviceName),
@@ -79,7 +78,7 @@ func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, 
 		return nil, fmt.Errorf("parse base URL: %w", err)
 	}
 
-	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{armScope}})
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{env.ARMScope()}})
 	if err != nil {
 		return nil, fmt.Errorf("acquire ARM token: %w", err)
 	}

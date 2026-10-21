@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -41,7 +42,7 @@ func enrichVMIdentity(cfg plugin.AzureEnricherConfig, result *templates.ARGQuery
 		return nil
 	}
 
-	client, err := armauthorization.NewRoleAssignmentsClient(subID, cfg.Credential, nil)
+	client, err := armauthorization.NewRoleAssignmentsClient(subID, cfg.Credential, azurecloud.ARMClientOptions(cfg.Env))
 	if err != nil {
 		return fmt.Errorf("creating role assignments client: %w", err)
 	}

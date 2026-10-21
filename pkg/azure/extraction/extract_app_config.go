@@ -1,14 +1,32 @@
 package extraction
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azappconfig "github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
+
+// azappconfig derives its scope from the store host and has no audience option.
+// Clouds that need a service audience instead set Environment.AppConfigAudience:
+// https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-enable-rbac#app-configuration-audience
+type scopedCredential struct {
+	azcore.TokenCredential
+	scope string
+}
+
+func (c scopedCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	options.Scopes = []string{c.scope}
+	return c.TokenCredential.GetToken(ctx, options)
+}
 
 func init() {
 	mustRegister("microsoft.appconfiguration/configurationstores", "app-config-keyvalues", extractAppConfigKeyValues)
@@ -25,8 +43,12 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no configurationStores segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.azconfig.io", storeName)
-	client, err := azappconfig.NewClient(endpoint, ctx.Cred, nil)
+	endpoint := fmt.Sprintf("https://%s.%s", storeName, ctx.Env.AppConfigSuffix)
+	cred := ctx.Cred
+	if ctx.Env.AppConfigAudience != "" {
+		cred = scopedCredential{TokenCredential: cred, scope: ctx.Env.AppConfigAudience + "/.default"}
+	}
+	client, err := azappconfig.NewClient(endpoint, cred, &azappconfig.ClientOptions{ClientOptions: azurecloud.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create App Configuration client: %w", err)
 	}

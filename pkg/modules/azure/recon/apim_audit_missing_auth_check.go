@@ -33,7 +33,7 @@ func (m *AzureAPIMAuditModule) checkMissingAuth(c *apimCheckContext, out *pipeli
 		return
 	}
 
-	apis, err := apim.ListAPIs(c.ctx, m.AzureCredential, t.SubscriptionID, t.ResourceGroup, t.ServiceName)
+	apis, err := apim.ListAPIs(c.ctx, m.AzureCredential, m.Environment, t.SubscriptionID, t.ResourceGroup, t.ServiceName)
 	if err != nil {
 		slog.Warn("skipping APIM service — could not list APIs",
 			"service", t.ResourceID, "error", err)

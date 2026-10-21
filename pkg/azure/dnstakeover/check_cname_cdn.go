@@ -7,13 +7,15 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cdn/armcdn"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 func init() {
-	mustRegister("CNAME", "cdn-takeover", checkCDN)
+	mustRegister("CNAME", "cdn-takeover", checkCDN, azurecloud.Public)
 }
 
 const cdnSuffix = ".azureedge.net"
@@ -64,7 +66,7 @@ func checkCDN(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.Aureli
 }
 
 func checkCDNNameAvailability(ctx CheckContext, endpointName string) (bool, error) {
-	client, err := armcdn.NewManagementClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armcdn.NewManagementClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return false, fmt.Errorf("create cdn client: %w", err)
 	}

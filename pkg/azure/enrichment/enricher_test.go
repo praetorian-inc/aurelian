@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
+	"github.com/praetorian-inc/aurelian/test/azuretest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +18,7 @@ import (
 func TestEnrich_UnregisteredType_PassesThrough(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Unknown/thing", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -38,7 +40,7 @@ func TestEnrich_MutatesProperties(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -55,23 +57,26 @@ func TestEnrich_MutatesProperties(t *testing.T) {
 
 func TestEnrich_ErrorStillForwards(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
-
 	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, _ *templates.ARGQueryResult) error {
 		return fmt.Errorf("sdk call failed")
 	})
-
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
-	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
-
-	out := pipeline.New[templates.ARGQueryResult]()
-	go func() {
-		defer out.Close()
-		require.NoError(t, e.Enrich(result, out))
-	}()
-
-	items, err := out.Collect()
-	require.NoError(t, err)
-	require.Len(t, items, 1, "result should be forwarded even on enricher error")
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, r *templates.ARGQueryResult) error {
+		r.Properties["continued"] = true
+		return nil
+	})
+	for _, cloudType := range []string{"public", "gcc-high"} {
+		t.Run(cloudType, func(t *testing.T) {
+			cred, env := azuretest.NewCredential(t, cloudType)
+			e := NewAzureEnricher(context.Background(), cred, env, 120*time.Second)
+			result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
+			items, err := azuretest.Collect(func(out *pipeline.P[templates.ARGQueryResult]) error {
+				return e.Enrich(result, out)
+			})
+			require.NoError(t, err)
+			require.Len(t, items, 1, "result should be forwarded even on enricher error")
+			assert.Equal(t, true, items[0].Properties["continued"])
+		})
+	}
 }
 
 func TestEnrich_MultipleEnrichersAllRun(t *testing.T) {
@@ -86,7 +91,7 @@ func TestEnrich_MultipleEnrichersAllRun(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -110,7 +115,7 @@ func TestEnrich_CaseInsensitiveResourceType(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/Sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
@@ -133,7 +138,7 @@ func TestEnrich_NilProperties_Initialized(t *testing.T) {
 		return nil
 	})
 
-	e := NewAzureEnricher(context.Background(), nil, 120*time.Second)
+	e := NewAzureEnricher(context.Background(), nil, azurecloud.Environment{}, 120*time.Second)
 	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()

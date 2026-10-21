@@ -10,6 +10,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -35,17 +37,18 @@ type Options struct {
 // ResourceGraphLister enumerates Azure resources via the Resource Graph API.
 type ResourceGraphLister struct {
 	cred    azcore.TokenCredential
+	env     azurecloud.Environment
 	options Options
 }
 
 // NewResourceGraphLister creates a lister. Pass nil for opts to use defaults.
-func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) *ResourceGraphLister {
+func NewResourceGraphLister(cred azcore.TokenCredential, env azurecloud.Environment, opts *Options) *ResourceGraphLister {
 	o := Options{PageSize: 1000}
 	if opts != nil && opts.PageSize > 0 {
 		o = *opts
 	}
 
-	lister := &ResourceGraphLister{cred: cred, options: o}
+	lister := &ResourceGraphLister{cred: cred, env: env, options: o}
 	return lister
 }
 
@@ -108,7 +111,7 @@ func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo,
 }
 
 func (l *ResourceGraphLister) queryResources(request armresourcegraph.QueryRequest) (armresourcegraph.ClientResourcesResponse, error) {
-	client, err := armresourcegraph.NewClient(l.cred, nil)
+	client, err := armresourcegraph.NewClient(l.cred, azurecloud.ARMClientOptions(l.env))
 	if err != nil {
 		return armresourcegraph.ClientResourcesResponse{}, fmt.Errorf("failed to create resource graph client: %w", err)
 	}

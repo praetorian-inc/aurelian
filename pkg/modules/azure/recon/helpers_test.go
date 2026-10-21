@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -161,14 +162,14 @@ func TestHydrateFromARG_NilCred(t *testing.T) {
 		{SubscriptionID: "sub-1", ResourceID: "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1"},
 	}
 	// Should not panic with nil credential.
-	hydrateFromARG(nil, resources)
+	hydrateFromARG(nil, azurecloud.Environment{}, resources)
 	assert.Empty(t, resources[0].Location, "should remain empty with nil cred")
 }
 
 func TestHydrateFromARG_EmptyResources(t *testing.T) {
 	// Should not panic with empty slice.
-	hydrateFromARG(nil, nil)
-	hydrateFromARG(nil, []output.AzureResource{})
+	hydrateFromARG(nil, azurecloud.Environment{}, nil)
+	hydrateFromARG(nil, azurecloud.Environment{}, []output.AzureResource{})
 }
 
 func TestStrVal(t *testing.T) {

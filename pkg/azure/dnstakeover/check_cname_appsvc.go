@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -16,15 +18,14 @@ func init() {
 	mustRegister("CNAME", "appsvc-takeover", checkAppService)
 }
 
-const appServiceSuffix = ".azurewebsites.net"
-
 func checkAppService(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	suffix := "." + ctx.Env.AppServiceSuffix
 	for _, val := range rec.Values {
-		if !strings.HasSuffix(strings.ToLower(val), appServiceSuffix) {
+		if !strings.HasSuffix(strings.ToLower(val), suffix) {
 			continue
 		}
 
-		appName, _ := strings.CutSuffix(strings.ToLower(val), appServiceSuffix)
+		appName, _ := strings.CutSuffix(strings.ToLower(val), suffix)
 		if appName == "" {
 			continue
 		}
@@ -65,7 +66,7 @@ func checkAppService(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model
 }
 
 func checkWebAppNameAvailability(ctx CheckContext, appName string) (bool, error) {
-	client, err := armappservice.NewWebSiteManagementClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armappservice.NewWebSiteManagementClient(ctx.SubscriptionID, ctx.Credential, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return false, fmt.Errorf("create app service client: %w", err)
 	}

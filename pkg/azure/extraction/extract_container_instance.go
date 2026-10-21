@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	armcontainerinstance "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -24,7 +26,7 @@ func extractContainerInstanceEnvVars(ctx extractContext, r output.AzureResource,
 		return fmt.Errorf("no containerGroups segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcontainerinstance.NewContainerGroupsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcontainerinstance.NewContainerGroupsClient(r.SubscriptionID, ctx.Cred, azurecloud.ARMClientOptions(ctx.Env))
 	if err != nil {
 		return fmt.Errorf("failed to create container groups client: %w", err)
 	}

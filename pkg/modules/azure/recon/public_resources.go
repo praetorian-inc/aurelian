@@ -94,7 +94,7 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 		return nil
 	}
 
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential, m.Environment)
 	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
@@ -113,7 +113,7 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 	pipeline.Pipe(resolvedSubs, m.fanOutTemplates, inputStream)
 
 	results := pipeline.New[templates.ARGQueryResult]()
-	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, m.Environment, nil)
 	pipeline.Pipe(inputStream, lister.Query, results)
 
 	pipeline.Pipe(results, resultToRisk, out)
