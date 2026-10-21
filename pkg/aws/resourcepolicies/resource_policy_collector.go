@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -28,6 +28,7 @@ type policyMethod func(ctx context.Context, cfg aws.Config, r *output.AWSResourc
 type ResourcePolicyCollector struct {
 	opts             plugin.AWSCommonRecon
 	crossRegionActor *ratelimit.CrossRegionActor
+	configProvider   *enumeration.AWSConfigProvider
 }
 
 // New creates a new ResourcePolicyCollector.
@@ -39,6 +40,7 @@ func New(opts plugin.AWSCommonRecon) *ResourcePolicyCollector {
 	return &ResourcePolicyCollector{
 		opts:             opts,
 		crossRegionActor: ratelimit.NewCrossRegionActor(concurrency),
+		configProvider:   enumeration.NewAWSConfigProvider(opts),
 	}
 }
 
@@ -80,18 +82,14 @@ func (c *ResourcePolicyCollector) Collect(resource output.AWSResource, out *pipe
 	}
 
 	return c.crossRegionActor.ActInRegion(resource.Region, func() error {
-		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     resource.Region,
-			Profile:    c.opts.Profile,
-			ProfileDir: c.opts.ProfileDir,
-		})
+		awsCfg, err := c.configProvider.GetAWSConfig(resource.Region)
 		if err != nil {
 			slog.Warn("creating AWS config for resource policies, skipping resource",
 				"resource", resource.ResourceID, "region", resource.Region, "error", err)
 			return nil
 		}
 
-		policy, err := method(context.Background(), awsCfg, &resource)
+		policy, err := method(context.Background(), *awsCfg, &resource)
 		if err != nil {
 			slog.Warn("fetching resource policy, skipping resource",
 				"resource", resource.ResourceID,

@@ -2,6 +2,7 @@ package recon
 
 import (
 	"fmt"
+	"slices"
 
 	"golang.org/x/sync/errgroup"
 
@@ -10,6 +11,7 @@ import (
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/structuralfacts"
+	"github.com/praetorian-inc/aurelian/pkg/escalation"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -26,6 +28,9 @@ type GraphConfig struct {
 	plugin.AWSCommonRecon
 	plugin.GraphOutputBase
 	plugin.OrgPoliciesParam
+	Format           string `param:"format" desc:"Output format: json (default) or escalation-solver-v1" default:"json"`
+	PermissionFormat string `param:"permission-format" desc:"Permission source format: policy_summary (default) or evaluated_triples" default:"policy_summary"`
+	Attacker         string `param:"attacker" desc:"Attacker principal ARN for escalation-solver goal, or * for all principals" default:"*"`
 }
 
 // AWSGraphModule is a refactored version of AWSGraphModule.
@@ -52,6 +57,7 @@ type AWSGraphModule struct {
 	launchTemplates       store.Map[output.AWSResource]
 	identityPools         store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
+	attemptedTypes        []string // resource types that were enumerated
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -88,6 +94,10 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianMo
 
 	if err := m.collectInputs(); err != nil {
 		return fmt.Errorf("collecting inputs: %w", err)
+	}
+
+	if m.Format == "escalation-solver-v1" {
+		return m.emitEscalationModel(out)
 	}
 
 	if err := m.analyzeIAMPermissions(); err != nil {
@@ -240,10 +250,26 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, 
 	})
 }
 
+// escalationExtraResourceTypes are resource types needed by the escalation-solver
+// format for structural facts (instance_profile, codebuild_service_role, ecs_task_role)
+// that are not covered by the resource policy collector.
+var escalationExtraResourceTypes = []string{
+	"AWS::EC2::Instance",
+	"AWS::CodeBuild::Project",
+	"AWS::ECS::TaskDefinition",
+	"AWS::Athena::WorkGroup",
+	"AWS::SageMaker::Space",
+}
+
 func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
 	eg.Go(func() error {
+		supportedTypes := collector.SupportedResourceTypes()
+		if c.Format == "escalation-solver-v1" {
+			supportedTypes = appendUnique(supportedTypes, escalationExtraResourceTypes...)
+		}
+
 		m.log.Info("enumerating cloud resources and collecting policies (%d types, %d regions)",
-			len(collector.SupportedResourceTypes()), len(resolvedRegions))
+			len(supportedTypes), len(resolvedRegions))
 
 		// Share the run-wide provider and SkipReport so the lister's skipped ops fold
 		// into the single aggregated summary collectInputs logs (the lister's Close
@@ -251,10 +277,11 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		// the detail file).
 		lister := enumeration.NewEnumeratorWithProvider(c.AWSCommonRecon, provider, skipReport)
 		defer func() { _ = lister.Close() }()
-		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
+		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, supportedTypes)
 		if err != nil {
 			return fmt.Errorf("resolving resource types: %w", err)
 		}
+		m.attemptedTypes = resourceTypes
 
 		resourceTypePipeline := pipeline.From(resourceTypes...)
 		listed := pipeline.New[output.AWSResource]()
@@ -262,8 +289,35 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			Progress: m.log.ProgressFunc("listing resources"),
 		})
 
+		// For escalation-solver format, keep ALL listed resources (not just
+		// ones with policies) because EC2/CodeBuild/ECS are needed for
+		// structural facts. Collection runs as streamed enrichment overlapping
+		// listing: each resource is emitted as a base copy and, when a policy
+		// exists, again as a policy-enriched copy that overwrites the base by
+		// key in the single-threaded consumer loop below.
+		if c.Format == "escalation-solver-v1" {
+			collected := pipeline.New[output.AWSResource]()
+			pipeline.Pipe(listed, keepAllAndCollect(collector), collected, &pipeline.PipeOpts{Concurrency: c.Concurrency})
+
+			results := store.NewMap[output.AWSResource]()
+			for r := range collected.Range() {
+				key := r.ARN
+				if key == "" {
+					key = r.ResourceID
+				}
+				results.Set(key, r) // enriched copy arrives after its base, overwriting it
+			}
+			if err := collected.Wait(); err != nil {
+				return fmt.Errorf("collecting resource policies: %w", err)
+			}
+
+			m.log.Success("resources collected (%d)", results.Len())
+			m.resourcesWithPolicies = results
+			return nil
+		}
+
 		collected := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(listed, collector.Collect, collected)
+		pipeline.Pipe(listed, collector.Collect, collected, &pipeline.PipeOpts{Concurrency: c.Concurrency})
 
 		results := store.NewMap[output.AWSResource]()
 		for r := range collected.Range() {
@@ -434,6 +488,44 @@ func (m *AWSGraphModule) analyzeIAMPermissions() error {
 	return nil
 }
 
+func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel]) error {
+	m.log.Info("assembling escalation-solver model (format: %s)", m.PermissionFormat)
+
+	// evaluated_triples requires the full IAM analysis to produce relationships.
+	if m.PermissionFormat == "evaluated_triples" {
+		if err := m.analyzeIAMPermissions(); err != nil {
+			return fmt.Errorf("analyzing IAM permissions for evaluated_triples: %w", err)
+		}
+	}
+
+	coverage := escalation.NewCoverageTracker()
+	coverage.MarkIAMGAAD()
+
+	// Mark all attempted resource types (even if zero results).
+	for _, rt := range m.attemptedTypes {
+		coverage.MarkAttempted(rt)
+	}
+
+	solverModel, err := escalation.Assemble(escalation.AssembleInput{
+		GAAD:             m.gaadData,
+		OrgPolicies:      m.OrgPolicies,
+		Resources:        m.resourcesWithPolicies,
+		Relationships:    m.relationships,
+		Coverage:         coverage,
+		PermissionFormat: m.PermissionFormat,
+		Attacker:         m.Attacker,
+	})
+	if err != nil {
+		return fmt.Errorf("assembling escalation model: %w", err)
+	}
+
+	m.log.Success("escalation-solver model assembled (principals: %d, resources: %d, structural_facts: %d)",
+		len(solverModel.Principals), len(solverModel.Resources), len(solverModel.StructuralFacts))
+
+	out.Send(solverModel)
+	return nil
+}
+
 func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 	gaadpkg.EmitGAADEntities(m.gaadData, m.gaadData.AccountID, func(i output.AWSIAMResource) {
 		out.Send(i)
@@ -468,4 +560,27 @@ func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 		out.Send(f)
 	}
 	m.log.Success("structural facts emitted (%d)", len(facts))
+}
+
+// keepAllAndCollect returns a pipeline stage that emits every listed resource
+// as a base copy (so resources without a resource policy — e.g. EC2/CodeBuild/ECS,
+// which the collector does not handle — still reach the result map), then runs
+// policy collection, which emits a policy-enriched copy when one exists. The
+// enriched copy is sent after its base by the same goroutine, so it overwrites
+// the base by key in the consumer loop.
+func keepAllAndCollect(collector *resourcepolicies.ResourcePolicyCollector) func(output.AWSResource, *pipeline.P[output.AWSResource]) error {
+	return func(r output.AWSResource, out *pipeline.P[output.AWSResource]) error {
+		out.Send(r)
+		return collector.Collect(r, out)
+	}
+}
+
+// appendUnique appends items to a slice, skipping duplicates.
+func appendUnique(base []string, items ...string) []string {
+	for _, s := range items {
+		if !slices.Contains(base, s) {
+			base = append(base, s)
+		}
+	}
+	return base
 }

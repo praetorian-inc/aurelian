@@ -9,7 +9,9 @@ aurelian aws recon graph [flags]
 ### Options
 
 ```
+      --attacker string            Attacker principal ARN for escalation-solver goal, or * for all principals (default "*")
       --concurrency int            Maximum concurrent API requests (default 5)
+      --format string              Output format: json (default) or escalation-solver-v1 (default "json")
   -h, --help                       help for graph
       --neo4j-password string      Neo4j password (default "neo4j")
       --neo4j-uri string           Neo4j connection URI (e.g., bolt://localhost:7687)
@@ -17,6 +19,7 @@ aurelian aws recon graph [flags]
       --opsec_level string         Operational security level for AWS operations (default "none")
       --org-policies-file string   Path to Org Policies JSON file
       --output-dir string          Base output directory (default "aurelian-output")
+      --permission-format string   Permission source format: policy_summary (default) or evaluated_triples (default "policy_summary")
   -p, --profile string             AWS profile to use
       --profile-dir string         Set to override the default AWS profile directory
   -r, --regions strings            AWS regions to scan (default [all])
