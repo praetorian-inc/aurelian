@@ -134,6 +134,13 @@ func globToRegex(pattern string) string {
 	return "(?i)^" + pattern + "$"
 }
 
+// CompilePattern converts a glob pattern (with * and ? wildcards) into a
+// compiled case-insensitive regexp. Callers that need to match a single pattern
+// against many inputs should compile once and reuse the *regexp.Regexp.
+func CompilePattern(pattern string) (*regexp.Regexp, error) {
+	return regexp.Compile(globToRegex(pattern))
+}
+
 // MatchesPattern handles basic glob pattern matching (case insensitive)
 func MatchesPattern(pattern, input string) bool {
 	return matchesRegexPattern(compileGlob(pattern), input)

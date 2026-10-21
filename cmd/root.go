@@ -28,6 +28,7 @@ potential security issues in cloud environments.`,
 func initCommands() {
 	runtime.GC()
 	rootCmd.AddCommand(listModulesCmd)
+	rootCmd.AddCommand(serveCmd)
 	generateCommands(rootCmd)
 }
 

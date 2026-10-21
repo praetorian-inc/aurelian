@@ -89,7 +89,7 @@ func processResourcePolicy(resource output.AWSResource, state *AnalyzerState, ev
 
 				// Lazy copy: only allocate when we find a match
 				if !stmtsCopied {
-					stmts = copyStatementsWithOrigin(policy.Statement, resourceArn)
+					stmts = CopyStatementsWithOrigin(policy.Statement, resourceArn)
 					stmtsCopied = true
 				}
 
@@ -178,7 +178,7 @@ func processAssumeRolePolicies(role types.RoleDetail, state *AnalyzerState, eval
 			if _, parseErr := arn.Parse(principal); parseErr != nil {
 				// Non-ARN principal (service principal like "lambda.amazonaws.com")
 				if role.AssumeRolePolicyDocument.Statement != nil {
-					stmts := copyStatementsWithOrigin(role.AssumeRolePolicyDocument.Statement, role.Arn)
+					stmts := CopyStatementsWithOrigin(role.AssumeRolePolicyDocument.Statement, role.Arn)
 					for i := range stmts {
 						stmts[i].Resource = &types.DynaString{role.Arn}
 					}
@@ -206,7 +206,12 @@ func generatePrincipalEvalRequests(
 	state *AnalyzerState,
 	evalChan chan<- *iam.EvaluationRequest,
 ) {
-	allActions := state.ExtractActions(&identityStatements)
+	allActions, err := state.ExtractActions(&identityStatements)
+	if err != nil {
+		slog.Error("SKIPPED principal evaluation due to action extraction failure — this principal will have no priv-esc results (potential false negative)",
+			"principal", principalArn, "error", err)
+		return
+	}
 
 	for _, action := range allActions {
 		if !iam.IsPrivEscAction(action) {
