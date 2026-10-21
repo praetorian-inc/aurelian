@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -14,6 +15,11 @@ import (
 type GaadState struct {
 	// principals maps principal ARN → pre-collected statements.
 	principals map[string]principalStatements
+
+	// servicePrincipals maps service principal name (e.g. "lambda.amazonaws.com")
+	// → trust-policy statements from roles that grant that service sts:AssumeRole.
+	// This matches the behaviour of processAssumeRolePolicies for service principals.
+	servicePrincipals map[string]*types.PolicyStatementList
 }
 
 type principalStatements struct {
@@ -28,7 +34,8 @@ type principalStatements struct {
 // but cached so each IPC lookup is O(1).
 func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies) *GaadState {
 	s := &GaadState{
-		principals: make(map[string]principalStatements),
+		principals:        make(map[string]principalStatements),
+		servicePrincipals: make(map[string]*types.PolicyStatementList),
 	}
 	if gaad == nil {
 		return s
@@ -39,7 +46,7 @@ func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 	gaad.Policies.Range(func(_ string, p types.ManagedPolicyDetail) bool {
 		doc := p.DefaultPolicyDocument()
 		if doc != nil && doc.Statement != nil {
-			stmts := copyStatementsWithOrigin(doc.Statement, p.Arn)
+			stmts := gaadpkg.CopyStatementsWithOrigin(doc.Statement, p.Arn)
 			policyDocs[p.Arn] = &stmts
 		}
 		return true
@@ -76,7 +83,7 @@ func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 		// Inline
 		for _, p := range g.GroupPolicyList {
 			if p.PolicyDocument.Statement != nil {
-				stmts = append(stmts, copyStatementsWithOrigin(p.PolicyDocument.Statement, g.Arn)...)
+				stmts = append(stmts, gaadpkg.CopyStatementsWithOrigin(p.PolicyDocument.Statement, g.Arn)...)
 			}
 		}
 		// Managed
@@ -91,7 +98,7 @@ func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 		// Inline
 		for _, p := range u.UserPolicyList {
 			if p.PolicyDocument.Statement != nil {
-				identity = append(identity, copyStatementsWithOrigin(p.PolicyDocument.Statement, u.Arn)...)
+				identity = append(identity, gaadpkg.CopyStatementsWithOrigin(p.PolicyDocument.Statement, u.Arn)...)
 			}
 		}
 		// Managed
@@ -120,7 +127,7 @@ func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 		// Inline
 		for _, p := range r.RolePolicyList {
 			if p.PolicyDocument.Statement != nil {
-				identity = append(identity, copyStatementsWithOrigin(p.PolicyDocument.Statement, r.Arn)...)
+				identity = append(identity, gaadpkg.CopyStatementsWithOrigin(p.PolicyDocument.Statement, r.Arn)...)
 			}
 		}
 		// Managed
@@ -134,6 +141,36 @@ func NewGaadState(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 			identity: idPtr,
 			boundary: collectBoundary(r.PermissionsBoundary),
 		}
+
+		// Index service principals from the role's trust policy.
+		// This mirrors processAssumeRolePolicies: when a service principal
+		// like "lambda.amazonaws.com" appears in the trust policy, we copy
+		// those trust statements (with Resource set to the role ARN) so
+		// evaluateTriple can use them as identity statements.
+		if r.AssumeRolePolicyDocument.Statement != nil {
+			for _, stmt := range *r.AssumeRolePolicyDocument.Statement {
+				if strings.ToLower(stmt.Effect) != "allow" || stmt.Principal == nil {
+					continue
+				}
+				for _, svcPrincipal := range stmt.ExtractPrincipals() {
+					if !strings.HasSuffix(svcPrincipal, ".amazonaws.com") {
+						continue
+					}
+					trustStmts := gaadpkg.CopyStatementsWithOrigin(r.AssumeRolePolicyDocument.Statement, r.Arn)
+					for j := range trustStmts {
+						trustStmts[j].Resource = &types.DynaString{r.Arn}
+					}
+					existing := s.servicePrincipals[svcPrincipal]
+					if existing == nil {
+						s.servicePrincipals[svcPrincipal] = &trustStmts
+					} else {
+						merged := append(*existing, trustStmts...)
+						s.servicePrincipals[svcPrincipal] = &merged
+					}
+				}
+			}
+		}
+
 		return true
 	})
 
@@ -148,6 +185,10 @@ func (s *GaadState) LookupPrincipalStatements(principalArn string) (identity, bo
 	return p.identity, p.boundary
 }
 
+func (s *GaadState) LookupServicePrincipalStatements(servicePrincipal string) *types.PolicyStatementList {
+	return s.servicePrincipals[servicePrincipal]
+}
+
 func (s *GaadState) GetResourceAccount(resourceArn string) string {
 	parsed, err := arn.Parse(resourceArn)
 	if err != nil {
@@ -155,25 +196,4 @@ func (s *GaadState) GetResourceAccount(resourceArn string) string {
 		return ""
 	}
 	return parsed.AccountID
-}
-
-// copyStatementsWithOrigin returns copies of statements with OriginArn set.
-// This is a local version of the same function in gaad/statements.go to avoid
-// a circular import.
-func copyStatementsWithOrigin(stmts *types.PolicyStatementList, originArn string) types.PolicyStatementList {
-	if stmts == nil || len(*stmts) == 0 {
-		return nil
-	}
-	out := make(types.PolicyStatementList, len(*stmts))
-	copy(out, *stmts)
-	for i := range out {
-		out[i].OriginArn = originArn
-	}
-	return out
-}
-
-// IsServicePrincipal reports whether a string is a service principal rather
-// than an ARN (e.g. "lambda.amazonaws.com").
-func IsServicePrincipal(s string) bool {
-	return strings.HasSuffix(s, ".amazonaws.com")
 }

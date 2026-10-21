@@ -39,6 +39,10 @@ func (s *stubState) LookupPrincipalStatements(principalArn string) (identity, bo
 	return p.identity, p.boundary
 }
 
+func (s *stubState) LookupServicePrincipalStatements(servicePrincipal string) *types.PolicyStatementList {
+	return nil
+}
+
 func (s *stubState) GetResourceAccount(resourceArn string) string {
 	return s.resourceAccounts[resourceArn]
 }

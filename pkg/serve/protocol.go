@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
+	"strings"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -77,6 +79,7 @@ type VerifyPairsResultEntry struct {
 	Action   string `json:"action"`
 	Resource string `json:"resource"`
 	Allowed  bool   `json:"allowed"`
+	Error    string `json:"error,omitempty"`
 }
 
 // VerifyPairsResult is the result of a "verify_pairs" call.
@@ -100,6 +103,11 @@ type EvaluatorState interface {
 	// LookupPrincipalStatements returns the identity and boundary policy
 	// statements for the given principal ARN. Returns nil slices if not found.
 	LookupPrincipalStatements(principalArn string) (identity, boundary *types.PolicyStatementList)
+
+	// LookupServicePrincipalStatements returns identity statements for a
+	// service principal (e.g. "lambda.amazonaws.com") derived from trust
+	// policies that grant that service sts:AssumeRole. Returns nil if none.
+	LookupServicePrincipalStatements(servicePrincipal string) *types.PolicyStatementList
 
 	// GetResourceAccount returns the account ID that owns the given resource ARN.
 	GetResourceAccount(resourceArn string) string
@@ -172,7 +180,10 @@ func (h *Handler) handleCheckSpecific(req *Request) error {
 		return h.writeError(req.ID, -32602, fmt.Sprintf("invalid params: %v", err))
 	}
 
-	allowed := h.evaluateTriple(params.Actor, params.Action, params.Resource)
+	allowed, evalErr := h.evaluateTriple(params.Actor, params.Action, params.Resource)
+	if evalErr != nil {
+		return h.writeError(req.ID, -32000, fmt.Sprintf("evaluation error: %v", evalErr))
+	}
 
 	return h.writeResult(req.ID, CheckSpecificResult{
 		Actor:    params.Actor,
@@ -190,26 +201,54 @@ func (h *Handler) handleVerifyPairs(req *Request) error {
 
 	results := make([]VerifyPairsResultEntry, len(params.Pairs))
 	for i, pair := range params.Pairs {
-		results[i] = VerifyPairsResultEntry{
+		allowed, evalErr := h.evaluateTriple(pair.Actor, pair.Action, pair.Resource)
+		entry := VerifyPairsResultEntry{
 			Actor:    pair.Actor,
 			Action:   pair.Action,
 			Resource: pair.Resource,
-			Allowed:  h.evaluateTriple(pair.Actor, pair.Action, pair.Resource),
+			Allowed:  allowed,
 		}
+		if evalErr != nil {
+			entry.Error = evalErr.Error()
+		}
+		results[i] = entry
 	}
 
 	return h.writeResult(req.ID, VerifyPairsResult{Results: results})
 }
 
 // evaluateTriple checks whether the given (actor, action, resource) triple is
-// allowed by IAM policy.
-func (h *Handler) evaluateTriple(actor, action, resource string) bool {
+// allowed by IAM policy. It returns the allow/deny decision and any evaluation
+// error so callers can distinguish IAM denies from evaluator failures.
+func (h *Handler) evaluateTriple(actor, action, resource string) (bool, error) {
 	identity, boundary := h.state.LookupPrincipalStatements(actor)
 	resourceAccount := h.state.GetResourceAccount(resource)
 
+	// For service principals (e.g. "lambda.amazonaws.com"), LookupPrincipalStatements
+	// returns nil because they're not indexed as users/roles. Match the established
+	// code path in processAssumeRolePolicies: use the trust-policy statements the
+	// state provides as identity statements.
+	if identity == nil && isServicePrincipal(actor) {
+		identity = h.state.LookupServicePrincipalStatements(actor)
+	}
+
+	// Derive the principal's account from the ARN when it parses.
+	var principalAccount string
+	if parsed, err := arn.Parse(actor); err == nil {
+		principalAccount = parsed.AccountID
+	}
+
 	ctx := &iam.RequestContext{
-		PrincipalArn:    actor,
-		ResourceAccount: resourceAccount,
+		PrincipalArn:     actor,
+		PrincipalAccount: principalAccount,
+		ResourceAccount:  resourceAccount,
+		CurrentTime:      time.Now(),
+	}
+
+	// Populate derivable condition keys (aws:PrincipalAccount, aws:PrincipalType,
+	// etc.) so policies that reference them evaluate correctly.
+	if err := ctx.PopulateDefaultRequestConditionKeys(resource); err != nil {
+		return false, fmt.Errorf("populating request context for actor=%s resource=%s: %w", actor, resource, err)
 	}
 
 	req := &iam.EvaluationRequest{
@@ -222,10 +261,15 @@ func (h *Handler) evaluateTriple(actor, action, resource string) bool {
 
 	result, err := h.evaluator.Evaluate(req)
 	if err != nil {
-		slog.Error("evaluation error", "actor", actor, "action", action, "resource", resource, "error", err)
-		return false
+		return false, fmt.Errorf("evaluating actor=%s action=%s resource=%s: %w", actor, action, resource, err)
 	}
-	return result.Allowed
+	return result.Allowed, nil
+}
+
+// isServicePrincipal reports whether a string is a service principal rather
+// than an ARN (e.g. "lambda.amazonaws.com").
+func isServicePrincipal(s string) bool {
+	return strings.HasSuffix(s, ".amazonaws.com")
 }
 
 func (h *Handler) writeResult(id json.RawMessage, result any) error {

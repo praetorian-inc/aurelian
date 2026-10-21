@@ -12,17 +12,17 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// copyStatementsWithOrigin
+// CopyStatementsWithOrigin
 // ---------------------------------------------------------------------------
 
 func TestCopyStatementsWithOrigin_NilInput(t *testing.T) {
-	result := copyStatementsWithOrigin(nil, "arn:aws:iam::111122223333:user/alice")
+	result := CopyStatementsWithOrigin(nil, "arn:aws:iam::111122223333:user/alice")
 	assert.Nil(t, result)
 }
 
 func TestCopyStatementsWithOrigin_EmptyInput(t *testing.T) {
 	empty := &types.PolicyStatementList{}
-	result := copyStatementsWithOrigin(empty, "arn:aws:iam::111122223333:user/alice")
+	result := CopyStatementsWithOrigin(empty, "arn:aws:iam::111122223333:user/alice")
 	assert.Nil(t, result)
 }
 
@@ -43,7 +43,7 @@ func TestCopyStatementsWithOrigin_SetsOriginArn(t *testing.T) {
 	}
 
 	origin := "arn:aws:iam::111122223333:policy/MyPolicy"
-	result := copyStatementsWithOrigin(stmts, origin)
+	result := CopyStatementsWithOrigin(stmts, origin)
 
 	require.Len(t, result, 2)
 	assert.Equal(t, origin, result[0].OriginArn)
@@ -66,7 +66,7 @@ func TestCopyStatementsWithOrigin_PreservesStatementFields(t *testing.T) {
 		},
 	}
 
-	result := copyStatementsWithOrigin(stmts, "some-origin")
+	result := CopyStatementsWithOrigin(stmts, "some-origin")
 
 	require.Len(t, result, 1)
 	assert.Equal(t, "AllowPassRole", result[0].Sid)
