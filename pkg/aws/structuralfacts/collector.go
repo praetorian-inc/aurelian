@@ -31,7 +31,8 @@ const (
 	FactBatchJobRole                 = "batch_job_role"
 	FactBedrockInterpreterRole       = "bedrock_interpreter_role"
 	FactInstanceProfile              = "instance_profile"
-	FactCognitoPoolRole              = "cognito_pool_role"
+	FactCognitoAuthenticatedRole     = "cognito_authenticated_role"
+	FactCognitoUnauthenticatedRole   = "cognito_unauthenticated_role"
 )
 
 // extractor defines one resource-type → fact-type extraction: which property
@@ -69,7 +70,8 @@ var extractors = []extractor{
 	{"AWS::Batch::JobDefinition", FactBatchJobRole, []string{"JobRoleArn"}},
 	{"AWS::BedrockAgentCore::CodeInterpreter", FactBedrockInterpreterRole, []string{"ExecutionRoleArn"}},
 	{"AWS::EC2::Instance", FactInstanceProfile, []string{"IamInstanceProfile"}},
-	{"AWS::Cognito::IdentityPool", FactCognitoPoolRole, []string{"authenticatedRole", "unauthenticatedRole"}},
+	{"AWS::Cognito::IdentityPool", FactCognitoAuthenticatedRole, []string{"authenticatedRole"}},
+	{"AWS::Cognito::IdentityPool", FactCognitoUnauthenticatedRole, []string{"unauthenticatedRole"}},
 }
 
 // extractorIndex maps resource type to the extractor(s) that apply.

@@ -304,7 +304,7 @@ func TestCollectAllFactTypes(t *testing.T) {
 	assert.Equal(t, 1, typeCount[FactBatchJobRole], "batch_job_role")
 	assert.Equal(t, 1, typeCount[FactBedrockInterpreterRole], "bedrock_interpreter_role")
 	assert.Equal(t, 1, typeCount[FactInstanceProfile], "instance_profile")
-	assert.Equal(t, 1, typeCount[FactCognitoPoolRole], "cognito_pool_role")
+	assert.Equal(t, 1, typeCount[FactCognitoAuthenticatedRole], "cognito_authenticated_role")
 }
 
 func TestCollectNilProperties(t *testing.T) {
@@ -361,7 +361,8 @@ func TestCollectBatchJobDefinition(t *testing.T) {
 }
 
 func TestCollectCognitoMultipleRoles(t *testing.T) {
-	// A Cognito identity pool with both auth and unauth roles emits two facts.
+	// A Cognito identity pool with both auth and unauth roles emits two facts
+	// with distinct fact types so the solver can distinguish attacker reachability.
 	resources := store.NewMap[output.AWSResource]()
 	resources.Set("cognito", output.AWSResource{
 		ResourceType: "AWS::Cognito::IdentityPool",
@@ -376,18 +377,14 @@ func TestCollectCognitoMultipleRoles(t *testing.T) {
 
 	facts := Collect(resources)
 
-	var cognitoFacts []output.StructuralFact
+	factsByType := map[string]output.StructuralFact{}
 	for _, f := range facts {
-		if f.FactType == FactCognitoPoolRole {
-			cognitoFacts = append(cognitoFacts, f)
+		if f.FactType == FactCognitoAuthenticatedRole || f.FactType == FactCognitoUnauthenticatedRole {
+			factsByType[f.FactType] = f
 		}
 	}
 
-	require.Len(t, cognitoFacts, 2)
-	roles := map[string]bool{}
-	for _, f := range cognitoFacts {
-		roles[f.RoleARN] = true
-	}
-	assert.True(t, roles["arn:aws:iam::111:role/cognito-auth"])
-	assert.True(t, roles["arn:aws:iam::111:role/cognito-unauth"])
+	require.Len(t, factsByType, 2)
+	assert.Equal(t, "arn:aws:iam::111:role/cognito-auth", factsByType[FactCognitoAuthenticatedRole].RoleARN)
+	assert.Equal(t, "arn:aws:iam::111:role/cognito-unauth", factsByType[FactCognitoUnauthenticatedRole].RoleARN)
 }
