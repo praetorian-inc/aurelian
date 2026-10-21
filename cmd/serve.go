@@ -24,7 +24,15 @@ Supported methods:
   verify_pairs   - batch-evaluates multiple (actor, action, resource) triples
 
 Requires a GAAD JSON file (--gaad-file) containing the IAM authorization
-account details to evaluate against.`,
+account details to evaluate against.
+
+NOTE: This mode evaluates identity-based reachability only. Resource-based
+policies (S3 bucket policies, KMS key policies, etc.) and SCPs are not
+loaded — pass nil for both in the PolicyData constructor. Verdicts reflect
+whether the principal's identity policies and permission boundaries allow
+the action, not whether cross-account or resource-policy grants apply.
+Solver callers should treat results as identity-layer reachability, not
+full IAM authorization decisions.`,
 	RunE: runServe,
 }
 

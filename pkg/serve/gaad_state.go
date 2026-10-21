@@ -192,7 +192,6 @@ func (s *GaadState) LookupServicePrincipalStatements(servicePrincipal string) *t
 func (s *GaadState) GetResourceAccount(resourceArn string) string {
 	parsed, err := arn.Parse(resourceArn)
 	if err != nil {
-		// For S3-style ARNs without account, try to extract from common patterns
 		return ""
 	}
 	return parsed.AccountID
