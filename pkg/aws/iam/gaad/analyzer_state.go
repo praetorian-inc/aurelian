@@ -236,9 +236,11 @@ func (s *AnalyzerState) GetGroupByName(name string) *types.GroupDetail {
 }
 
 // ExtractActions expands wildcard actions from policy statements using the ActionExpander.
-// For NotAction statements (both Allow and Deny), it expands to the complement: all known
-// actions except those matching the NotAction patterns. Deny+NotAction needs expansion so
-// the evaluator can see which actions the deny applies to.
+// For Allow+NotAction statements, it expands to the complement: all known actions except
+// those matching the NotAction patterns. Deny+NotAction statements are skipped because
+// the evaluator already handles Deny matching natively and expanding them would add ~15k
+// actions unnecessarily. If the live policy-generator fetch fails, the error would cause
+// the entire principal to be skipped, losing valid concrete allows.
 func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) ([]string, error) {
 	actions := []string{}
 	for _, statement := range *psl {
@@ -247,11 +249,17 @@ func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) ([]string
 			actions = append(actions, expanded...)
 		}
 		if statement.NotAction != nil {
-			expanded, err := s.expandNotActions(*statement.NotAction)
-			if err != nil {
-				return nil, fmt.Errorf("expanding NotAction for statement %q: %w", statement.Sid, err)
+			// Only expand NotAction for Allow statements. Deny+NotAction is handled
+			// natively by the evaluator and does not need expansion here. Expanding
+			// deny statements would introduce an external dependency on Expand("*")
+			// that, on failure, skips the entire principal — losing valid allows.
+			if statement.Effect == "Allow" {
+				expanded, err := s.expandNotActions(*statement.NotAction)
+				if err != nil {
+					return nil, fmt.Errorf("expanding NotAction for statement %q: %w", statement.Sid, err)
+				}
+				actions = append(actions, expanded...)
 			}
-			actions = append(actions, expanded...)
 		}
 	}
 	return actions, nil

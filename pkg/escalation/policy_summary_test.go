@@ -78,9 +78,10 @@ func TestFlattenStatements_NotAction(t *testing.T) {
 	assert.Equal(t, "Deny", result[0].Effect)
 }
 
-func TestFlattenStatements_NotResource(t *testing.T) {
-	// NotResource is conservatively treated as "*" (applies to everything)
-	// because the solver cannot natively evaluate inverse resource matching.
+func TestFlattenStatements_NotResource_DenyDropped(t *testing.T) {
+	// Deny+NotResource is dropped entirely because the solver cannot model
+	// inverse resource matching. Replacing with "*" would over-deny and create
+	// false negatives. Dropping the deny under-denies, which is conservative-safe.
 	stmts := types.PolicyStatementList{
 		{
 			Effect:      "Deny",
@@ -90,10 +91,7 @@ func TestFlattenStatements_NotResource(t *testing.T) {
 	}
 
 	result := flattenStatements(&stmts, "test")
-	require.Len(t, result, 1)
-	assert.Equal(t, "*", result[0].Resource, "NotResource should be treated as wildcard")
-	assert.Equal(t, "Deny", result[0].Effect)
-	assert.Equal(t, "s3:*", result[0].Action)
+	require.Len(t, result, 0, "Deny+NotResource should be dropped entirely")
 }
 
 func TestFlattenStatements_NotResource_Allow(t *testing.T) {
@@ -112,8 +110,8 @@ func TestFlattenStatements_NotResource_Allow(t *testing.T) {
 	assert.Equal(t, "Allow", result[0].Effect)
 }
 
-func TestFlattenStatements_NotResource_MultipleResources(t *testing.T) {
-	// Multiple NotResource entries should still collapse to a single "*".
+func TestFlattenStatements_NotResource_DenyMultipleDropped(t *testing.T) {
+	// Deny with multiple NotResource entries should also be dropped.
 	stmts := types.PolicyStatementList{
 		{
 			Effect:      "Deny",
@@ -123,9 +121,7 @@ func TestFlattenStatements_NotResource_MultipleResources(t *testing.T) {
 	}
 
 	result := flattenStatements(&stmts, "test")
-	// Should produce 1 action × 1 resource ("*") = 1 statement
-	require.Len(t, result, 1)
-	assert.Equal(t, "*", result[0].Resource)
+	require.Len(t, result, 0, "Deny+NotResource should be dropped entirely")
 }
 
 func TestFlattenStatements_MultipleActionsAndResources(t *testing.T) {
