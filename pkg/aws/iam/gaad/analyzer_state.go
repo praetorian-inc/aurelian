@@ -1,6 +1,7 @@
 package gaad
 
 import (
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -45,6 +46,12 @@ func NewAnalyzerState(
 	state.initializeCaches()
 	state.addServicesToResourceCache()
 	return state
+}
+
+// SetActionExpander replaces the action expander used by ExtractActions.
+// This is intended for testing, where a pre-populated expander avoids live AWS fetches.
+func (s *AnalyzerState) SetActionExpander(ae *iam.ActionExpander) {
+	s.actionExpander = ae
 }
 
 func (s *AnalyzerState) initializeCaches() {
@@ -238,9 +245,11 @@ func (s *AnalyzerState) GetGroupByName(name string) *types.GroupDetail {
 }
 
 // ExtractActions expands wildcard actions from policy statements using the ActionExpander.
-// For NotAction statements, it expands to the complement: all known actions except
-// those matching the NotAction patterns.
-func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) []string {
+// For Allow+NotAction statements, it expands to the complement: all known actions except
+// those matching the NotAction patterns. Deny+NotAction statements are skipped because
+// the evaluator already handles Deny matching natively and expanding them would add ~15k
+// actions unnecessarily.
+func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) ([]string, error) {
 	actions := []string{}
 	for _, statement := range *psl {
 		if statement.Action != nil {
@@ -248,11 +257,18 @@ func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) []string 
 			actions = append(actions, expanded...)
 		}
 		if statement.NotAction != nil {
-			expanded := s.expandNotActions(*statement.NotAction)
-			actions = append(actions, expanded...)
+			// Only expand NotAction for Allow statements. Deny+NotAction is handled
+			// natively by the evaluator and does not need expansion.
+			if statement.Effect == "Allow" {
+				expanded, err := s.expandNotActions(*statement.NotAction)
+				if err != nil {
+					return nil, fmt.Errorf("expanding NotAction for statement %q: %w", statement.Sid, err)
+				}
+				actions = append(actions, expanded...)
+			}
 		}
 	}
-	return actions
+	return actions, nil
 }
 
 func (s *AnalyzerState) expandActions(actions types.DynaString) []string {
@@ -277,18 +293,27 @@ func (s *AnalyzerState) expandActions(actions types.DynaString) []string {
 // This handles policies like PowerUserAccess which use
 // NotAction: ["iam:*", "organizations:*", "account:*"] to grant everything
 // except specific services.
-func (s *AnalyzerState) expandNotActions(excludedPatterns types.DynaString) []string {
+func (s *AnalyzerState) expandNotActions(excludedPatterns types.DynaString) ([]string, error) {
 	allActions, err := s.actionExpander.Expand("*")
 	if err != nil {
-		slog.Error("Error expanding all actions for NotAction complement", "error", err)
-		return nil
+		return nil, fmt.Errorf("expanding all actions for NotAction complement: %w", err)
+	}
+
+	// Precompile regex patterns once instead of recompiling per action.
+	compiledPatterns := make([]*regexp.Regexp, 0, len(excludedPatterns))
+	for _, pattern := range excludedPatterns {
+		re, err := iam.CompilePattern(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("compiling NotAction pattern %q: %w", pattern, err)
+		}
+		compiledPatterns = append(compiledPatterns, re)
 	}
 
 	var result []string
 	for _, action := range allActions {
 		excluded := false
-		for _, pattern := range excludedPatterns {
-			if iam.MatchesPattern(pattern, action) {
+		for _, re := range compiledPatterns {
+			if re.MatchString(action) {
 				excluded = true
 				break
 			}
@@ -303,5 +328,5 @@ func (s *AnalyzerState) expandNotActions(excludedPatterns types.DynaString) []st
 		"totalActions", len(allActions),
 		"includedActions", len(result),
 	)
-	return result
+	return result, nil
 }

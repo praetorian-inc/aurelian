@@ -206,7 +206,12 @@ func generatePrincipalEvalRequests(
 	state *AnalyzerState,
 	evalChan chan<- *iam.EvaluationRequest,
 ) {
-	allActions := state.ExtractActions(&identityStatements)
+	allActions, err := state.ExtractActions(&identityStatements)
+	if err != nil {
+		slog.Error("Error extracting actions for principal, skipping evaluation",
+			"principal", principalArn, "error", err)
+		return
+	}
 
 	for _, action := range allActions {
 		if !iam.IsPrivEscAction(action) {

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/store"
@@ -11,6 +12,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// stubActions is a fixed list of AWS actions used by NotAction tests to avoid
+// fetching from the live AWS policy generator endpoint.
+var stubActions = []string{
+	"iam:PassRole", "iam:CreateRole", "iam:DeleteRole", "iam:AttachRolePolicy",
+	"iam:CreateUser", "iam:DeleteUser", "iam:PutUserPolicy",
+	"organizations:CreateAccount", "organizations:ListAccounts",
+	"account:GetAlternateContact", "account:PutAlternateContact",
+	"s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
+	"lambda:CreateFunction", "lambda:InvokeFunction", "lambda:DeleteFunction",
+	"ec2:RunInstances", "ec2:DescribeInstances", "ec2:TerminateInstances",
+	"sts:AssumeRole", "sts:GetCallerIdentity",
+	"kms:Encrypt", "kms:Decrypt",
+}
+
+// newStubState creates an AnalyzerState with a pre-populated action expander
+// that does not fetch from AWS.
+func newStubState() *AnalyzerState {
+	state := NewAnalyzerMemoryState(
+		types.NewAuthorizationAccountDetails("", nil, nil, nil, nil),
+		orgpolicies.NewDefaultOrgPolicies(),
+		store.Map[output.AWSResource]{},
+	)
+	state.SetActionExpander(iam.NewActionExpanderWithActions(stubActions))
+	return state
+}
 
 // newResourceMap converts a slice of AWSResource to a store.Map keyed by ARN (or ResourceID).
 func newResourceMap(resources []output.AWSResource) store.Map[output.AWSResource] {
@@ -387,7 +414,8 @@ func TestExtractActions_SpecificAction(t *testing.T) {
 	}
 
 	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	actions := state.ExtractActions(&stmts)
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
 	require.Len(t, actions, 1)
 	assert.Equal(t, "iam:PassRole", actions[0])
 }
@@ -402,7 +430,8 @@ func TestExtractActions_MultipleStatements(t *testing.T) {
 	}
 
 	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	actions := state.ExtractActions(&stmts)
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
 	require.Len(t, actions, 3)
 	assert.Contains(t, actions, "iam:PassRole")
 	assert.Contains(t, actions, "s3:GetObject")
@@ -418,11 +447,12 @@ func TestExtractActions_NotAction_ExpandsComplement(t *testing.T) {
 		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	actions := state.ExtractActions(&stmts)
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
 
-	// Should return many actions (the complement of iam:*, organizations:*, account:*)
-	assert.Greater(t, len(actions), 100, "NotAction should expand to many allowed actions")
+	// Should return the complement: stubActions minus iam:*, organizations:*, account:*
+	assert.Greater(t, len(actions), 0, "NotAction should expand to allowed actions")
 
 	// Must NOT contain any iam:*, organizations:*, or account:* actions
 	for _, a := range actions {
@@ -434,8 +464,7 @@ func TestExtractActions_NotAction_ExpandsComplement(t *testing.T) {
 			"NotAction should exclude account: actions, but found %q", a)
 	}
 
-	// Should contain priv-esc actions from non-excluded services
-	// e.g. lambda:CreateFunction, ec2:RunInstances, etc.
+	// Should contain actions from non-excluded services
 	assert.Contains(t, actions, "lambda:CreateFunction",
 		"NotAction should include lambda:CreateFunction since lambda:* is not excluded")
 	assert.Contains(t, actions, "ec2:RunInstances",
@@ -450,10 +479,11 @@ func TestExtractActions_NotAction_SingleService(t *testing.T) {
 		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	actions := state.ExtractActions(&stmts)
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
 
-	assert.Greater(t, len(actions), 100, "NotAction with single exclusion should expand to many actions")
+	assert.Greater(t, len(actions), 0, "NotAction with single exclusion should expand to actions")
 	assert.NotContains(t, actions, "s3:GetObject", "s3:GetObject should be excluded")
 	// Other s3 actions should be present
 	assert.Contains(t, actions, "s3:PutObject", "s3:PutObject should be included")
@@ -470,8 +500,9 @@ func TestExtractActions_NotAction_MixedWithAction(t *testing.T) {
 		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	actions := state.ExtractActions(&stmts)
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
 
 	// Should contain iam:PassRole from the explicit Action statement
 	assert.Contains(t, actions, "iam:PassRole")
@@ -479,21 +510,38 @@ func TestExtractActions_NotAction_MixedWithAction(t *testing.T) {
 	assert.Contains(t, actions, "lambda:CreateFunction")
 }
 
+func TestExtractActions_NotAction_DenyNotExpanded(t *testing.T) {
+	// Deny+NotAction should NOT be expanded — the evaluator handles it natively.
+	resource := types.DynaString{"*"}
+	notAction := types.DynaString{"s3:GetObject"}
+	stmts := types.PolicyStatementList{
+		{Effect: "Deny", NotAction: &notAction, Resource: &resource},
+	}
+
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
+	assert.Empty(t, actions, "Deny+NotAction should not expand to any actions")
+}
+
 func TestExtractActions_WildcardAction(t *testing.T) {
-	// Wildcard actions like "iam:*" are expanded by the ActionExpander
-	// which fetches from the embedded action list. We test that it returns
-	// expanded actions.
+	// Wildcard actions like "iam:*" are expanded by the ActionExpander.
+	// Uses the stub action list to avoid live AWS fetch.
 	action := types.DynaString{"iam:*"}
 	resource := types.DynaString{"*"}
 	stmts := types.PolicyStatementList{
 		{Effect: "Allow", Action: &action, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	actions := state.ExtractActions(&stmts)
-	// The action expander for "iam:*" should return many iam:* actions
-	// At minimum it should contain PassRole
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
+	// The action expander for "iam:*" should return iam:* actions from our stub list
 	assert.Greater(t, len(actions), 0, "Expected wildcard action to be expanded")
+	for _, a := range actions {
+		assert.True(t, strings.HasPrefix(strings.ToLower(a), "iam:"),
+			"Wildcard iam:* should only return iam: actions, got %q", a)
+	}
 }
 
 // ---------------------------------------------------------------------------
