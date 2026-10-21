@@ -21,6 +21,11 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+// maxScannerTokenSize is the maximum line length the NDJSON scanner will
+// accept. Large verify_pairs batches (GAAD responses) can exceed the default
+// 64KB bufio.Scanner limit, so we raise it to 10MB.
+const maxScannerTokenSize = 10 * 1024 * 1024
+
 // Request is the envelope for all incoming NDJSON messages.
 type Request struct {
 	Method string          `json:"method"`
@@ -127,8 +132,10 @@ func (h *Handler) Serve(r io.Reader, w io.Writer) error {
 	h.encoder = json.NewEncoder(w)
 	scanner := bufio.NewScanner(r)
 
-	// Allow up to 10MB per line to handle large verify_pairs batches.
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	// Allow up to maxScannerTokenSize per line to handle large verify_pairs
+	// batches. The default 64KB bufio.Scanner limit is too small for GAAD
+	// responses that encode hundreds of (actor, action, resource) triples.
+	scanner.Buffer(make([]byte, 0, 64*1024), maxScannerTokenSize)
 
 	for scanner.Scan() {
 		line := scanner.Bytes()

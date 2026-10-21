@@ -367,6 +367,54 @@ func TestIDEchoed(t *testing.T) {
 	assert.Nil(t, resp.ID)
 }
 
+// --- large payload (scanner buffer) ---
+
+func TestVerifyPairs_LargePayload(t *testing.T) {
+	h, _ := buildTestHandler()
+
+	// Build a verify_pairs request whose JSON line exceeds the default 64KB
+	// bufio.Scanner limit. This validates the scanner.Buffer() call in Serve.
+	const pairCount = 600
+	pairs := make([]VerifyPair, pairCount)
+	for i := range pairs {
+		pairs[i] = VerifyPair{
+			Actor:    "arn:aws:iam::111111111111:user/admin",
+			Action:   "s3:GetObject",
+			Resource: "arn:aws:s3::111111111111:my-bucket/file.txt",
+		}
+	}
+
+	params, err := json.Marshal(VerifyPairsParams{Pairs: pairs})
+	require.NoError(t, err)
+
+	req := Request{
+		Method: "verify_pairs",
+		ID:     json.RawMessage(`"large"`),
+		Params: params,
+	}
+	line, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	// Confirm the payload exceeds the default 64KB scanner limit.
+	require.Greater(t, len(line), 64*1024,
+		"test payload must exceed the default 64KB scanner limit to be meaningful")
+
+	line = append(line, '\n')
+
+	var out bytes.Buffer
+	err = h.Serve(bytes.NewReader(line), &out)
+	require.NoError(t, err, "Serve should handle lines larger than 64KB")
+
+	var resp Response
+	require.NoError(t, json.Unmarshal(out.Bytes(), &resp))
+	assert.Nil(t, resp.Error)
+
+	resultBytes, _ := json.Marshal(resp.Result)
+	var result VerifyPairsResult
+	require.NoError(t, json.Unmarshal(resultBytes, &result))
+	assert.Len(t, result.Results, pairCount)
+}
+
 // --- verify_pairs is advertised in capabilities ---
 
 func TestCapabilities_AdvertisesVerifyPairs(t *testing.T) {
