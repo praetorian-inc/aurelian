@@ -51,7 +51,7 @@ func toAurelianModel(r output.AzureResource, out *pipeline.P[model.AurelianModel
 // hydrateFromARG enriches a slice of AzureResource in-place with metadata
 // (Location, DisplayName, TenantID) from Azure Resource Graph. Resources not
 // indexed by ARG (e.g., policy definitions, deployments) are left unchanged.
-func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResource) {
+func hydrateFromARG(cred azcore.TokenCredential, env azurecloud.Environment, resources []output.AzureResource) {
 	if len(resources) == 0 || cred == nil {
 		return
 	}
@@ -62,7 +62,7 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 		bySub[r.SubscriptionID] = append(bySub[r.SubscriptionID], i)
 	}
 
-	client, err := armresourcegraph.NewClient(cred, azurecloud.Resolve("").ARMClientOptions())
+	client, err := armresourcegraph.NewClient(cred, env.ARMClientOptions())
 	if err != nil {
 		slog.Warn("could not create ARG client for resource hydration", "error", err)
 		return

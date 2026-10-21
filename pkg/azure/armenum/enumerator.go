@@ -36,8 +36,8 @@ type ARMEnumerator struct {
 }
 
 // NewARMEnumerator creates an enumerator with the given credential.
-func NewARMEnumerator(cred azcore.TokenCredential) *ARMEnumerator {
-	return &ARMEnumerator{cred: cred, env: azurecloud.Resolve("")}
+func NewARMEnumerator(cred azcore.TokenCredential, env azurecloud.Environment) *ARMEnumerator {
+	return &ARMEnumerator{cred: cred, env: env}
 }
 
 // newPaginator returns a Paginator configured for Azure API throttling errors.

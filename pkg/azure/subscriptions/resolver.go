@@ -16,8 +16,8 @@ type SubscriptionResolver struct {
 	env  azurecloud.Environment
 }
 
-func NewSubscriptionResolver(cred azcore.TokenCredential) *SubscriptionResolver {
-	resolver := &SubscriptionResolver{cred: cred, env: azurecloud.Resolve("")}
+func NewSubscriptionResolver(cred azcore.TokenCredential, env azurecloud.Environment) *SubscriptionResolver {
+	resolver := &SubscriptionResolver{cred: cred, env: env}
 	return resolver
 }
 

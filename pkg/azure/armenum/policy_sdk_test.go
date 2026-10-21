@@ -71,6 +71,42 @@ func TestPolicySDKPagerRejectsForeignNextLink(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+func TestPolicySDKPagerRetriesServiceUnavailable(t *testing.T) {
+	options := azurecloud.Resolve("").ARMClientOptions()
+	calls := 0
+	options.Transport = azuretest.TransportFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return azuretest.JSONResponse(req, http.StatusServiceUnavailable, `{"error":{"code":"ServiceUnavailable"}}`), nil
+		}
+		return azuretest.JSONResponse(req, http.StatusOK, `{"value":[{"id":"custom"}]}`), nil
+	})
+	pager, err := newPolicyDefinitionsPager("sub", &azuretest.Credential{}, options)
+	require.NoError(t, err)
+
+	paginator := newPaginator()
+	retries := 0
+	paginator.Backoff = func(attempt int) {
+		assert.Equal(t, 0, attempt)
+		retries++
+	}
+	var ids []string
+	err = paginator.Paginate(func() (bool, error) {
+		page, err := pager.NextPage(context.Background())
+		if err != nil {
+			return false, handleListError(err, "policyDefinitions", "sub")
+		}
+		for _, definition := range page.Value {
+			ids = append(ids, *definition.ID)
+		}
+		return pager.More(), nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, 1, retries)
+	assert.Equal(t, []string{"custom"}, ids)
+}
+
 func TestPolicySDKPagerErrors(t *testing.T) {
 	for _, status := range []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

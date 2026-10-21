@@ -19,8 +19,8 @@ type DNSEnumerator struct {
 }
 
 // NewDNSEnumerator creates a DNS record enumerator.
-func NewDNSEnumerator(credential azcore.TokenCredential) *DNSEnumerator {
-	return &DNSEnumerator{credential: credential, env: azurecloud.Resolve("")}
+func NewDNSEnumerator(credential azcore.TokenCredential, env azurecloud.Environment) *DNSEnumerator {
+	return &DNSEnumerator{credential: credential, env: env}
 }
 
 // EnumerateSubscription lists all records from all DNS zones in the given subscription.

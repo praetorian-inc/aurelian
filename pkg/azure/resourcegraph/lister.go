@@ -41,13 +41,13 @@ type ResourceGraphLister struct {
 }
 
 // NewResourceGraphLister creates a lister. Pass nil for opts to use defaults.
-func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) *ResourceGraphLister {
+func NewResourceGraphLister(cred azcore.TokenCredential, env azurecloud.Environment, opts *Options) *ResourceGraphLister {
 	o := Options{PageSize: 1000}
 	if opts != nil && opts.PageSize > 0 {
 		o = *opts
 	}
 
-	lister := &ResourceGraphLister{cred: cred, env: azurecloud.Resolve(""), options: o}
+	lister := &ResourceGraphLister{cred: cred, env: env, options: o}
 	return lister
 }
 

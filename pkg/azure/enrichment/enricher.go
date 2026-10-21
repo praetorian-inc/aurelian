@@ -23,8 +23,8 @@ type AzureEnricher struct {
 	timeout time.Duration
 }
 
-func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential, timeout time.Duration) *AzureEnricher {
-	return &AzureEnricher{ctx: ctx, cred: cred, env: azurecloud.Resolve(""), timeout: timeout}
+func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential, env azurecloud.Environment, timeout time.Duration) *AzureEnricher {
+	return &AzureEnricher{ctx: ctx, cred: cred, env: env, timeout: timeout}
 }
 
 // Enrich is a pipeline-compatible method that looks up registered enrichers

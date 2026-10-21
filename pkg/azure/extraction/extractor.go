@@ -20,10 +20,10 @@ type AzureExtractor struct {
 }
 
 // NewAzureExtractor creates an extractor with shared Azure credentials.
-func NewAzureExtractor(cred azcore.TokenCredential) *AzureExtractor {
+func NewAzureExtractor(cred azcore.TokenCredential, env azurecloud.Environment) *AzureExtractor {
 	return &AzureExtractor{
 		cred: cred,
-		env:  azurecloud.Resolve(""),
+		env:  env,
 	}
 }
 

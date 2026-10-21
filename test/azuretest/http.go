@@ -13,10 +13,14 @@ import (
 
 type Credential struct {
 	Scopes []string
+	Err    error
 }
 
 func (c *Credential) GetToken(_ context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	c.Scopes = append(c.Scopes, options.Scopes...)
+	if c.Err != nil {
+		return azcore.AccessToken{}, c.Err
+	}
 	return azcore.AccessToken{Token: "offline-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
