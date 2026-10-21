@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 )
 
 type azureModuleID struct {
@@ -53,10 +55,10 @@ func TestAzureGovernmentOnlyEnablesFiveVerifiedModulePaths(t *testing.T) {
 	}
 	for _, value := range []string{"unexpected", "usgovernment"} {
 		unknown := AzureCommonRecon{AzureReconBase: AzureReconBase{CloudType: value}}
-		require.ErrorContains(t, unknown.PostBind(Config{}, nil), "unsupported Azure cloud type")
-		assert.Nil(t, unknown.AzureCredential)
+		require.NoError(t, unknown.PostBind(Config{}, nil))
+		assert.Equal(t, azurecloud.Public, unknown.Environment.Name)
 		unknownEntra := AzureEntraRecon{AzureReconBase: AzureReconBase{CloudType: value}}
-		require.ErrorContains(t, unknownEntra.PostBind(Config{}, nil), "unsupported Azure cloud type")
-		assert.Nil(t, unknownEntra.AzureCredential)
+		require.NoError(t, unknownEntra.PostBind(Config{}, nil))
+		assert.Equal(t, azurecloud.Public, unknownEntra.Environment.Name)
 	}
 }

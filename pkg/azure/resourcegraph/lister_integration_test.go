@@ -22,8 +22,7 @@ func TestResourceGraphListerListAll(t *testing.T) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	require.NoError(t, err)
 
-	env, err := azurecloud.Resolve(azurecloud.Public)
-	require.NoError(t, err)
+	env := azurecloud.Resolve(azurecloud.Public)
 	lister := NewResourceGraphLister(cred, env, nil)
 
 	subscriptionID := fixture.Output("subscription_id")
@@ -78,8 +77,7 @@ func TestResourceGraphListerListByTypes(t *testing.T) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	require.NoError(t, err)
 
-	env, err := azurecloud.Resolve(azurecloud.Public)
-	require.NoError(t, err)
+	env := azurecloud.Resolve(azurecloud.Public)
 	lister := NewResourceGraphLister(cred, env, nil)
 
 	subscriptionID := fixture.Output("subscription_id")

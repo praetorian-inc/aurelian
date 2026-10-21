@@ -23,8 +23,7 @@ func TestAzureExtractor(t *testing.T) {
 	require.NoError(t, err, "failed to create Azure credential")
 
 	subscriptionID := fixture.Output("subscription_id")
-	env, err := azurecloud.Resolve(azurecloud.Public)
-	require.NoError(t, err)
+	env := azurecloud.Resolve(azurecloud.Public)
 	extractor := NewAzureExtractor(cred, env)
 
 	t.Run("extracts VM user data", func(t *testing.T) {

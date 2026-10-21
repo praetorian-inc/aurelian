@@ -3,7 +3,6 @@
 package azurecloud
 
 import (
-	"fmt"
 	"slices"
 
 	_ "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime" // register official ARM endpoints and audiences
@@ -26,16 +25,13 @@ type Environment struct {
 	TrafficManagerSuffix string
 }
 
-// Resolve treats missing/empty legacy configuration as public.
-func Resolve(value string) (Environment, error) {
-	switch value {
-	case "", Public:
-		return Environment{Name: Public, Cloud: cloud.AzurePublic, BlobSuffix: "blob.core.windows.net", CosmosSuffix: "documents.azure.com", AppConfigSuffix: "azconfig.io", AppServiceSuffix: "azurewebsites.net", TrafficManagerSuffix: "trafficmanager.net"}, nil
-	case Government:
-		return Environment{Name: Government, Cloud: cloud.AzureGovernment, AppConfigAudience: "https://appconfig.azure.us", BlobSuffix: "blob.core.usgovcloudapi.net", CosmosSuffix: "documents.azure.us", AppConfigSuffix: "azconfig.azure.us", AppServiceSuffix: "azurewebsites.us", TrafficManagerSuffix: "usgovtrafficmanager.net"}, nil
-	default:
-		return Environment{}, fmt.Errorf("unsupported Azure cloud type %q: choose public or gcc-high", value)
+// Resolve maps a cloud-type flag to its Environment; anything other than
+// Government (including empty/legacy values) is Public.
+func Resolve(value string) Environment {
+	if value == Government {
+		return Environment{Name: Government, Cloud: cloud.AzureGovernment, AppConfigAudience: "https://appconfig.azure.us", BlobSuffix: "blob.core.usgovcloudapi.net", CosmosSuffix: "documents.azure.us", AppConfigSuffix: "azconfig.azure.us", AppServiceSuffix: "azurewebsites.us", TrafficManagerSuffix: "usgovtrafficmanager.net"}
 	}
+	return Environment{Name: Public, Cloud: cloud.AzurePublic, BlobSuffix: "blob.core.windows.net", CosmosSuffix: "documents.azure.com", AppConfigSuffix: "azconfig.io", AppServiceSuffix: "azurewebsites.net", TrafficManagerSuffix: "trafficmanager.net"}
 }
 
 func (e Environment) ARMEndpoint() string {

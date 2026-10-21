@@ -12,7 +12,7 @@ import (
 // AzureReconBase contains base parameters shared by all Azure recon modules.
 type AzureReconBase struct {
 	OutputDir string `param:"output-dir" desc:"Base output directory" default:"aurelian-output"`
-	CloudType string `param:"cloud-type" desc:"Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); empty defaults to public" default:"public"`
+	CloudType string `param:"cloud-type" desc:"Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); anything else defaults to public" default:"public"`
 
 	Environment azurecloud.Environment `param:"-"`
 }
@@ -26,10 +26,7 @@ type AzureCommonRecon struct {
 }
 
 func (c *AzureCommonRecon) PostBind(_ Config, module Module) error {
-	environment, err := azurecloud.Resolve(c.CloudType)
-	if err != nil {
-		return err
-	}
+	environment := azurecloud.Resolve(c.CloudType)
 	if environment.Name == azurecloud.Government && module != nil {
 		switch module.ID() {
 		case "list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover":
@@ -57,10 +54,7 @@ type AzureEntraRecon struct {
 }
 
 func (c *AzureEntraRecon) PostBind(_ Config, _ Module) error {
-	environment, err := azurecloud.Resolve(c.CloudType)
-	if err != nil {
-		return err
-	}
+	environment := azurecloud.Resolve(c.CloudType)
 	if environment.Name == azurecloud.Government {
 		return fmt.Errorf("azure government is not supported for Aurelian Entra modules")
 	}

@@ -21,8 +21,7 @@ func TestSubscriptionResolverResolve(t *testing.T) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	require.NoError(t, err)
 
-	env, err := azurecloud.Resolve(azurecloud.Public)
-	require.NoError(t, err)
+	env := azurecloud.Resolve(azurecloud.Public)
 	resolver := NewSubscriptionResolver(cred, env)
 	subscriptionID := fixture.Output("subscription_id")
 

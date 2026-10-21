@@ -9,7 +9,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/test/azuretest"
@@ -17,8 +16,7 @@ import (
 
 func TestResolveDefaultsAndSDKMetadata(t *testing.T) {
 	for _, value := range []string{"", "public", "gcc-high"} {
-		e, err := azurecloud.Resolve(value)
-		require.NoError(t, err)
+		e := azurecloud.Resolve(value)
 		expected := cloud.AzurePublic
 		expectedName := "public"
 		expectedScope := "https://management.core.windows.net//.default"
@@ -35,18 +33,15 @@ func TestResolveDefaultsAndSDKMetadata(t *testing.T) {
 		assert.Equal(t, expectedScope, e.ARMScope())
 		assert.Equal(t, expectedAppConfigAudience, e.AppConfigAudience)
 	}
-	for _, invalid := range []string{"gcc", "GCCHigh", "GCC-High", "usgovernment", "USGovernment", "china", "usgovernmentdod", " public", "gcc-high ", "unknown"} {
-		_, err := azurecloud.Resolve(invalid)
-		require.ErrorContains(t, err, "unsupported Azure cloud type")
-		assert.Contains(t, err.Error(), "choose public or gcc-high")
+	// Only the exact Government selector leaves Public.
+	for _, other := range []string{"gcc", "GCCHigh", "GCC-High", "usgovernment", "USGovernment", "china", "usgovernmentdod", " public", "gcc-high ", "unknown"} {
+		assert.Equal(t, azurecloud.Public, azurecloud.Resolve(other).Name, other)
 	}
 }
 
 func TestSupports(t *testing.T) {
-	public, err := azurecloud.Resolve(azurecloud.Public)
-	require.NoError(t, err)
-	gov, err := azurecloud.Resolve(azurecloud.Government)
-	require.NoError(t, err)
+	public := azurecloud.Resolve(azurecloud.Public)
+	gov := azurecloud.Resolve(azurecloud.Government)
 	assert.True(t, public.Supports(nil))
 	assert.True(t, gov.Supports(nil))
 	assert.True(t, public.Supports([]string{azurecloud.Public}))

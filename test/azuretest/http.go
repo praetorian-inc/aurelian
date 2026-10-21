@@ -62,9 +62,5 @@ func (c *Credential) Scopes() []string {
 
 func NewCredential(t *testing.T, cloudType string) (*Credential, azurecloud.Environment) {
 	t.Helper()
-	env, err := azurecloud.Resolve(cloudType)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &Credential{Token: "offline-" + cloudType}, env
+	return &Credential{Token: "offline-" + cloudType}, azurecloud.Resolve(cloudType)
 }

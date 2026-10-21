@@ -24,8 +24,7 @@ func TestCredentialAuthenticatesAgainstSelectedAuthority(t *testing.T) {
 	t.Setenv("AZURE_AUTHORITY_HOST", "https://attacker.invalid") // explicit module cloud wins
 	for _, value := range []string{"", "public", "gcc-high"} {
 		t.Run(value, func(t *testing.T) {
-			e, err := azurecloud.Resolve(value)
-			require.NoError(t, err)
+			e := azurecloud.Resolve(value)
 			authority := strings.TrimSuffix(e.Cloud.ActiveDirectoryAuthorityHost, "/")
 			tokenRequests := 0
 			azuretest.Install(t, func(r *http.Request) (*http.Response, error) {
