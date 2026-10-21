@@ -53,6 +53,9 @@ func Assemble(in AssembleInput) (*Model, error) {
 
 	if in.Coverage != nil {
 		m.CollectionCoverage = in.Coverage.Build()
+		if errs := in.Coverage.Errors(); len(errs) > 0 {
+			m.CollectionErrors = errs
+		}
 	}
 
 	switch in.PermissionFormat {

@@ -40,3 +40,6 @@ docker-images
 .claude/.serena-warmup-status.json
 .claude/agent-memory/
 aurelian-binary
+
+# Terraform plan binaries (may contain sensitive state)
+**/tfplan

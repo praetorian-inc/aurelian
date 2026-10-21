@@ -26,9 +26,10 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 
 	// Build an index of resource policies that grant access to specific principals.
 	resourcePolicyGrants := indexResourcePolicyGrants(in.Resources)
+	groupsByName := BuildGroupsByName(in.GAAD)
 
 	in.GAAD.Users.Range(func(_ string, u types.UserDetail) bool {
-		stmts := collectUserEffectiveStatements(u, in.GAAD)
+		stmts := collectUserEffectiveStatements(u, in.GAAD, groupsByName)
 		stmts = append(stmts, scpStatements(u.Arn, in.OrgPolicies)...)
 		stmts = append(stmts, resourcePolicyGrants[u.Arn]...)
 		entries = append(entries, PolicySummaryEntry{
@@ -139,7 +140,7 @@ func indexResourcePolicyGrants(resources store.Map[output.AWSResource]) map[stri
 
 // collectUserEffectiveStatements gathers all identity statements for a user
 // (inline, managed, group) plus permission boundary statements.
-func collectUserEffectiveStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails) []PolicyStatement {
+func collectUserEffectiveStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails, groupsByName map[string]types.GroupDetail) []PolicyStatement {
 	var stmts []PolicyStatement
 
 	// Inline policies
@@ -155,19 +156,17 @@ func collectUserEffectiveStatements(user types.UserDetail, gaad *types.Authoriza
 
 	// Group policies
 	for _, groupName := range user.GroupList {
-		gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
-			if g.GroupName != groupName {
-				return true
-			}
-			for _, p := range g.GroupPolicyList {
-				source := fmt.Sprintf("group:%s/inline:%s", g.GroupName, p.PolicyName)
-				stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
-			}
-			for _, mp := range g.AttachedManagedPolicies {
-				stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
-			}
-			return false
-		})
+		g, ok := groupsByName[groupName]
+		if !ok {
+			continue
+		}
+		for _, p := range g.GroupPolicyList {
+			source := fmt.Sprintf("group:%s/inline:%s", g.GroupName, p.PolicyName)
+			stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
+		}
+		for _, mp := range g.AttachedManagedPolicies {
+			stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
+		}
 	}
 
 	// Permission boundary

@@ -23,10 +23,11 @@ import (
 // Evaluator implements the subprocess Handler interface using Aurelian's
 // PolicyEvaluator. It loads GAAD data and answers permission queries.
 type Evaluator struct {
-	gaad        *types.AuthorizationAccountDetails
-	orgPolicies *orgpolicies.OrgPolicies
-	policyData  *iam.PolicyData
-	evaluator   *iam.PolicyEvaluator
+	gaad         *types.AuthorizationAccountDetails
+	orgPolicies  *orgpolicies.OrgPolicies
+	policyData   *iam.PolicyData
+	evaluator    *iam.PolicyEvaluator
+	groupsByName map[string]types.GroupDetail
 }
 
 // checkWithStatementsCalls counts Evaluate invocations through
@@ -37,11 +38,17 @@ var checkWithStatementsCalls atomic.Int64
 // NewEvaluator creates a new subprocess evaluator from loaded IAM data.
 func NewEvaluator(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy) *Evaluator {
 	pd := iam.NewPolicyData(gaad, orgPolicies, resourcePolicies, nil)
+	groupsByName := make(map[string]types.GroupDetail)
+	gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		groupsByName[g.GroupName] = g
+		return true
+	})
 	return &Evaluator{
-		gaad:        gaad,
-		orgPolicies: orgPolicies,
-		policyData:  pd,
-		evaluator:   iam.NewPolicyEvaluator(pd),
+		gaad:         gaad,
+		orgPolicies:  orgPolicies,
+		policyData:   pd,
+		evaluator:    iam.NewPolicyEvaluator(pd),
+		groupsByName: groupsByName,
 	}
 }
 
@@ -626,20 +633,18 @@ func (e *Evaluator) collectUserStatements(user *types.UserDetail) types.PolicySt
 		stmts = append(stmts, e.resolveManagedPolicy(mp)...)
 	}
 	for _, groupName := range user.GroupList {
-		e.gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
-			if g.GroupName != groupName {
-				return true
+		g, ok := e.groupsByName[groupName]
+		if !ok {
+			continue
+		}
+		for _, p := range g.GroupPolicyList {
+			if p.PolicyDocument.Statement != nil {
+				stmts = append(stmts, *p.PolicyDocument.Statement...)
 			}
-			for _, p := range g.GroupPolicyList {
-				if p.PolicyDocument.Statement != nil {
-					stmts = append(stmts, *p.PolicyDocument.Statement...)
-				}
-			}
-			for _, mp := range g.AttachedManagedPolicies {
-				stmts = append(stmts, e.resolveManagedPolicy(mp)...)
-			}
-			return false
-		})
+		}
+		for _, mp := range g.AttachedManagedPolicies {
+			stmts = append(stmts, e.resolveManagedPolicy(mp)...)
+		}
 	}
 	return stmts
 }

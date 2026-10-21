@@ -9,6 +9,19 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+// BuildGroupsByName creates an index of GAAD groups keyed by GroupName for O(1)
+// lookup. The GAAD Groups store.Map is keyed by ARN, so looking up by name
+// requires a linear scan; callers that resolve user.GroupList entries should
+// build this index once and reuse it.
+func BuildGroupsByName(gaad *types.AuthorizationAccountDetails) map[string]types.GroupDetail {
+	groups := make(map[string]types.GroupDetail)
+	gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		groups[g.GroupName] = g
+		return true
+	})
+	return groups
+}
+
 // awsResourceTypeToSolver maps Aurelian CloudControl resource types to the
 // solver's resource type enum.
 var awsResourceTypeToSolver = map[string]ResourceType{
@@ -29,6 +42,7 @@ var awsResourceTypeToSolver = map[string]ResourceType{
 // CollectPrincipals transforms GAAD principals into model-v1 Principal structs.
 func CollectPrincipals(gaad *types.AuthorizationAccountDetails) []Principal {
 	var principals []Principal
+	groupsByName := BuildGroupsByName(gaad)
 
 	gaad.Users.Range(func(_ string, u types.UserDetail) bool {
 		a, _ := arn.Parse(u.Arn)
@@ -36,7 +50,7 @@ func CollectPrincipals(gaad *types.AuthorizationAccountDetails) []Principal {
 			ARN:     u.Arn,
 			Account: a.AccountID,
 			Type:    PrincipalTypeUser,
-			IsAdmin: isAdminUser(u, gaad),
+			IsAdmin: isAdminUser(u, gaad, groupsByName),
 		})
 		return true
 	})
@@ -75,8 +89,8 @@ func isAdminRole(role types.RoleDetail, gaad *types.AuthorizationAccountDetails)
 
 // isAdminUser returns true if the user (including group policies) has
 // admin-level access.
-func isAdminUser(user types.UserDetail, gaad *types.AuthorizationAccountDetails) bool {
-	stmts := collectAllUserStatements(user, gaad)
+func isAdminUser(user types.UserDetail, gaad *types.AuthorizationAccountDetails, groupsByName map[string]types.GroupDetail) bool {
+	stmts := collectAllUserStatements(user, gaad, groupsByName)
 	return isAdmin(stmts)
 }
 
@@ -172,6 +186,14 @@ func resourceMatchesStar(resource *types.DynaString) bool {
 	return false
 }
 
+// TODO: collectAllUserStatements, collectAllRoleStatements, collectAllGroupStatements
+// duplicate the principal→identity-statements walk found in policy_summary.go
+// (collectUserEffectiveStatements, etc.) and subprocess/evaluator.go
+// (collectUserStatements, etc.). Extracting a shared walker would require
+// reconciling different return types ([]types.PolicyStatement vs
+// []PolicyStatement vs types.PolicyStatementList) and source-attribution
+// needs. Deferred to a follow-up refactor.
+
 // collectAllRoleStatements gathers all identity policy statements for a role.
 func collectAllRoleStatements(role types.RoleDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
 	var stmts []types.PolicyStatement
@@ -217,7 +239,7 @@ func collectAllGroupStatements(group types.GroupDetail, gaad *types.Authorizatio
 
 // collectAllUserStatements gathers all identity policy statements for a user,
 // including group policies.
-func collectAllUserStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
+func collectAllUserStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails, groupsByName map[string]types.GroupDetail) []types.PolicyStatement {
 	var stmts []types.PolicyStatement
 	for _, p := range user.UserPolicyList {
 		if p.PolicyDocument.Statement != nil {
@@ -236,27 +258,25 @@ func collectAllUserStatements(user types.UserDetail, gaad *types.AuthorizationAc
 	}
 	// Include group policies
 	for _, groupName := range user.GroupList {
-		gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
-			if g.GroupName != groupName {
-				return true
+		g, ok := groupsByName[groupName]
+		if !ok {
+			continue
+		}
+		for _, p := range g.GroupPolicyList {
+			if p.PolicyDocument.Statement != nil {
+				stmts = append(stmts, *p.PolicyDocument.Statement...)
 			}
-			for _, p := range g.GroupPolicyList {
-				if p.PolicyDocument.Statement != nil {
-					stmts = append(stmts, *p.PolicyDocument.Statement...)
-				}
+		}
+		for _, mp := range g.AttachedManagedPolicies {
+			policy, ok := gaad.Policies.Get(mp.PolicyArn)
+			if !ok {
+				continue
 			}
-			for _, mp := range g.AttachedManagedPolicies {
-				policy, ok := gaad.Policies.Get(mp.PolicyArn)
-				if !ok {
-					return true
-				}
-				doc := policy.DefaultPolicyDocument()
-				if doc != nil && doc.Statement != nil {
-					stmts = append(stmts, *doc.Statement...)
-				}
+			doc := policy.DefaultPolicyDocument()
+			if doc != nil && doc.Statement != nil {
+				stmts = append(stmts, *doc.Statement...)
 			}
-			return false // found the group, stop
-		})
+		}
 	}
 	return stmts
 }
@@ -292,22 +312,19 @@ func CollectResources(resources store.Map[output.AWSResource]) []Resource {
 // and resources.
 func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources store.Map[output.AWSResource]) []StructuralFact {
 	var facts []StructuralFact
+	groupsByName := BuildGroupsByName(gaad)
 
 	// Group memberships: user → group
 	gaad.Users.Range(func(_ string, u types.UserDetail) bool {
 		for _, groupName := range u.GroupList {
-			gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
-				if g.GroupName == groupName {
-					facts = append(facts, StructuralFact{
-						Type:       FactGroupMembership,
-						From:       u.Arn,
-						To:         g.Arn,
-						Confidence: 1.0,
-					})
-					return false
-				}
-				return true
-			})
+			if g, ok := groupsByName[groupName]; ok {
+				facts = append(facts, StructuralFact{
+					Type:       FactGroupMembership,
+					From:       u.Arn,
+					To:         g.Arn,
+					Confidence: 1.0,
+				})
+			}
 		}
 		return true
 	})
