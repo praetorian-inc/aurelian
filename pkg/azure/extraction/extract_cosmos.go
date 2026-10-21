@@ -1,6 +1,7 @@
 package extraction
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -199,7 +200,7 @@ func emitUDFs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resou
 }
 
 func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}
@@ -209,8 +210,16 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("no databaseAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.documents.azure.com:443/", accountName)
-	client, err := azcosmos.NewClient(endpoint, ctx.Cred, nil)
+	accountsClient, err := armcosmos.NewDatabaseAccountsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
+	if err != nil {
+		return fmt.Errorf("failed to create Cosmos accounts client: %w", err)
+	}
+
+	endpoint, err := cosmosDocumentEndpoint(ctx.Context, accountsClient, resourceGroup, accountName, r.Properties)
+	if err != nil {
+		return handleExtractError(err, "cosmos-config-docs", r.ResourceID)
+	}
+	client, err := azcosmos.NewClient(endpoint, ctx.Cred, &azcosmos.ClientOptions{ClientOptions: ctx.Env.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create Cosmos data-plane client: %w", err)
 	}
@@ -318,4 +327,19 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 			out.Send(output.ScanInputFromAzureResource(r, label, content))
 		}
 	}
+}
+
+func cosmosDocumentEndpoint(ctx context.Context, client *armcosmos.DatabaseAccountsClient, resourceGroup, accountName string, properties map[string]any) (string, error) {
+	if endpoint := resourcePropertyString(properties, "documentEndpoint"); endpoint != "" {
+		return endpoint, nil
+	}
+
+	account, err := client.Get(ctx, resourceGroup, accountName, nil)
+	if err != nil {
+		return "", fmt.Errorf("get Cosmos document endpoint: %w", err)
+	}
+	if account.Properties == nil || account.Properties.DocumentEndpoint == nil || *account.Properties.DocumentEndpoint == "" {
+		return "", fmt.Errorf("no document endpoint for Cosmos account %s", accountName)
+	}
+	return *account.Properties.DocumentEndpoint, nil
 }

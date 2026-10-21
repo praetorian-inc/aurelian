@@ -2,6 +2,7 @@ package extraction
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,7 +36,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no storageAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := newBlobClientWithAccountKey(ctx, r.SubscriptionID, resourceGroup, accountName)
+	client, err := newBlobClientWithAccountKey(ctx, r, resourceGroup, accountName)
 	if err != nil {
 		return fmt.Errorf("failed to create blob client for %s: %w", accountName, err)
 	}
@@ -64,8 +65,8 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 // newBlobClientWithAccountKey fetches storage account keys via the management plane
 // and returns a blob client authenticated with a shared key. This avoids requiring
 // the "Storage Blob Data Reader" data-plane RBAC role.
-func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGroup, accountName string) (*azblob.Client, error) {
-	accountsClient, err := armstorage.NewAccountsClient(subscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
+func newBlobClientWithAccountKey(ctx extractContext, r output.AzureResource, resourceGroup, accountName string) (*azblob.Client, error) {
+	accountsClient, err := armstorage.NewAccountsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage accounts client: %w", err)
 	}
@@ -95,8 +96,11 @@ func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGro
 		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
 	}
 
-	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net", accountName)
-	return azblob.NewClientWithSharedKeyCredential(serviceURL, sharedKeyCred, nil)
+	serviceURL, err := storageBlobEndpoint(ctx.Context, accountsClient, resourceGroup, accountName, r.Properties)
+	if err != nil {
+		return nil, err
+	}
+	return azblob.NewClientWithSharedKeyCredential(serviceURL, sharedKeyCred, &azblob.ClientOptions{ClientOptions: ctx.Env.ClientOptions()})
 }
 
 func extractBlobsFromContainer(ctx extractContext, client *azblob.Client, r output.AzureResource, containerName string, out *pipeline.P[output.ScanInput]) error {
@@ -154,4 +158,19 @@ func downloadBlob(ctx extractContext, client *azblob.Client, containerName, blob
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func storageBlobEndpoint(ctx context.Context, client *armstorage.AccountsClient, resourceGroup, accountName string, properties map[string]any) (string, error) {
+	if endpoint := resourcePropertyString(properties, "primaryEndpoints", "blob"); endpoint != "" {
+		return endpoint, nil
+	}
+
+	account, err := client.GetProperties(ctx, resourceGroup, accountName, nil)
+	if err != nil {
+		return "", fmt.Errorf("get storage account endpoint: %w", err)
+	}
+	if account.Properties == nil || account.Properties.PrimaryEndpoints == nil || account.Properties.PrimaryEndpoints.Blob == nil || *account.Properties.PrimaryEndpoints.Blob == "" {
+		return "", fmt.Errorf("no blob endpoint for storage account %s", accountName)
+	}
+	return *account.Properties.PrimaryEndpoints.Blob, nil
 }
