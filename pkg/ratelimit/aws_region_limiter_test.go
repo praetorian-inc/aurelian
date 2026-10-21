@@ -214,3 +214,72 @@ func TestAWSRegionLimiter_Global(t *testing.T) {
 	// Default limit should be 5
 	assert.Equal(t, 5, limiter1.Limit())
 }
+
+func TestCrossRegionActor_PerServiceIndependence(t *testing.T) {
+	// Reset global state for test isolation
+	crossRegionLimitersMu.Lock()
+	crossRegionLimiters = make(map[string]*AWSRegionLimiter)
+	crossRegionLimitersMu.Unlock()
+
+	lambdaActor := NewCrossRegionActorForService(2, "lambda")
+	s3Actor := NewCrossRegionActorForService(10, "s3")
+
+	ctx := context.Background()
+	region := "us-east-1"
+
+	// Fill Lambda's slots
+	lambdaLimiter := lambdaActor.getLimiter(region)
+	rel1, err := lambdaLimiter.Acquire(ctx, region)
+	require.NoError(t, err)
+	rel2, err := lambdaLimiter.Acquire(ctx, region)
+	require.NoError(t, err)
+
+	// Lambda is full
+	_, ok := lambdaLimiter.TryAcquire(region)
+	assert.False(t, ok, "lambda limiter should be full at concurrency 2")
+
+	// S3 should still be fully available — independent semaphore
+	s3Limiter := s3Actor.getLimiter(region)
+	rel3, ok := s3Limiter.TryAcquire(region)
+	require.True(t, ok, "s3 must acquire independently of lambda")
+	assert.Equal(t, 1, s3Limiter.ActiveCount(region))
+
+	rel1()
+	rel2()
+	rel3()
+}
+
+func TestCrossRegionActor_DeterministicLimits(t *testing.T) {
+	crossRegionLimitersMu.Lock()
+	crossRegionLimiters = make(map[string]*AWSRegionLimiter)
+	crossRegionLimitersMu.Unlock()
+
+	region := "eu-west-1"
+
+	// First actor creates limiter with concurrency 2
+	actor1 := NewCrossRegionActorForService(2, "svc-a")
+	limiter1 := actor1.getLimiter(region)
+	assert.Equal(t, 2, limiter1.Limit())
+
+	// Second actor for a DIFFERENT service gets its own limiter with concurrency 10
+	actor2 := NewCrossRegionActorForService(10, "svc-b")
+	limiter2 := actor2.getLimiter(region)
+	assert.Equal(t, 10, limiter2.Limit())
+
+	// The two limiters are distinct objects
+	assert.NotSame(t, limiter1, limiter2)
+}
+
+func TestCrossRegionActor_BackwardCompat(t *testing.T) {
+	crossRegionLimitersMu.Lock()
+	crossRegionLimiters = make(map[string]*AWSRegionLimiter)
+	crossRegionLimitersMu.Unlock()
+
+	// NewCrossRegionActor (no service) still works — uses empty service string
+	actor := NewCrossRegionActor(5)
+	assert.Equal(t, "", actor.Service)
+
+	region := "ap-southeast-1"
+	limiter := actor.getLimiter(region)
+	assert.Equal(t, 5, limiter.Limit())
+}
