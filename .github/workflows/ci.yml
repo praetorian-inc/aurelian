@@ -11,6 +11,7 @@ on:
       - 'go.sum'
       - '.golangci*'
       - 'Makefile'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 concurrency:
@@ -22,7 +23,7 @@ permissions:
 
 jobs:
   ci:
-    uses: praetorian-inc/public-workflows/.github/workflows/go-ci.yml@0c602372f3d0d038912dd08e159ecc83954a4995  # v2.9.3
+    uses: praetorian-inc/public-workflows/.github/workflows/go-ci.yml@c58a529c6ee9ccdab3b37c7837bc631744202e3c  # LAB-7308 lint cache + new-from-merge-base
     permissions:
       contents: read
     with:
