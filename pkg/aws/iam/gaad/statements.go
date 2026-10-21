@@ -2,11 +2,11 @@ package gaad
 
 import "github.com/praetorian-inc/aurelian/pkg/types"
 
-// copyStatementsWithOrigin returns copies of statements with OriginArn set on
+// CopyStatementsWithOrigin returns copies of statements with OriginArn set on
 // each copy. The original GAAD statements are never mutated, eliminating the
 // data-race that occurred when multiple goroutines decorated the same shared
 // policy statements concurrently.
-func copyStatementsWithOrigin(stmts *types.PolicyStatementList, originArn string) types.PolicyStatementList {
+func CopyStatementsWithOrigin(stmts *types.PolicyStatementList, originArn string) types.PolicyStatementList {
 	if stmts == nil || len(*stmts) == 0 {
 		return nil
 	}
@@ -25,7 +25,7 @@ func collectInlineStatements(policies []types.InlinePolicy, originArn string) ty
 	var stmts types.PolicyStatementList
 	for _, p := range policies {
 		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, copyStatementsWithOrigin(p.PolicyDocument.Statement, originArn)...)
+			stmts = append(stmts, CopyStatementsWithOrigin(p.PolicyDocument.Statement, originArn)...)
 		}
 	}
 	return stmts
@@ -45,7 +45,7 @@ func collectManagedPolicyStatements(state *AnalyzerState, policies []types.Manag
 		if doc == nil || doc.Statement == nil {
 			continue
 		}
-		stmts = append(stmts, copyStatementsWithOrigin(doc.Statement, attached.PolicyArn)...)
+		stmts = append(stmts, CopyStatementsWithOrigin(doc.Statement, attached.PolicyArn)...)
 	}
 	return stmts
 }
@@ -63,5 +63,5 @@ func collectBoundaryStatements(state *AnalyzerState, boundary types.ManagedPolic
 	if doc == nil || doc.Statement == nil {
 		return nil
 	}
-	return copyStatementsWithOrigin(doc.Statement, boundary.PolicyArn)
+	return CopyStatementsWithOrigin(doc.Statement, boundary.PolicyArn)
 }

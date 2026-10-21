@@ -89,7 +89,7 @@ func processResourcePolicy(resource output.AWSResource, state *AnalyzerState, ev
 
 				// Lazy copy: only allocate when we find a match
 				if !stmtsCopied {
-					stmts = copyStatementsWithOrigin(policy.Statement, resourceArn)
+					stmts = CopyStatementsWithOrigin(policy.Statement, resourceArn)
 					stmtsCopied = true
 				}
 
@@ -178,7 +178,7 @@ func processAssumeRolePolicies(role types.RoleDetail, state *AnalyzerState, eval
 			if _, parseErr := arn.Parse(principal); parseErr != nil {
 				// Non-ARN principal (service principal like "lambda.amazonaws.com")
 				if role.AssumeRolePolicyDocument.Statement != nil {
-					stmts := copyStatementsWithOrigin(role.AssumeRolePolicyDocument.Statement, role.Arn)
+					stmts := CopyStatementsWithOrigin(role.AssumeRolePolicyDocument.Statement, role.Arn)
 					for i := range stmts {
 						stmts[i].Resource = &types.DynaString{role.Arn}
 					}
