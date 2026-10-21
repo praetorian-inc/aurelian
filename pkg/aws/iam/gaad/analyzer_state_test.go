@@ -493,8 +493,9 @@ func TestExtractActions_NotAction_MixedWithAction(t *testing.T) {
 	assert.Contains(t, actions, "lambda:CreateFunction")
 }
 
-func TestExtractActions_NotAction_DenyNotExpanded(t *testing.T) {
-	// Deny+NotAction should NOT be expanded — the evaluator handles it natively.
+func TestExtractActions_NotAction_DenyExpanded(t *testing.T) {
+	// Deny+NotAction must be expanded so the evaluator can see which actions
+	// the deny applies to (the complement of the excluded patterns).
 	resource := types.DynaString{"*"}
 	notAction := types.DynaString{"s3:GetObject"}
 	stmts := types.PolicyStatementList{
@@ -504,7 +505,38 @@ func TestExtractActions_NotAction_DenyNotExpanded(t *testing.T) {
 	state := newStubState()
 	actions, err := state.ExtractActions(&stmts)
 	require.NoError(t, err)
-	assert.Empty(t, actions, "Deny+NotAction should not expand to any actions")
+	assert.Greater(t, len(actions), 0, "Deny+NotAction should expand to the complement actions")
+	assert.NotContains(t, actions, "s3:GetObject", "s3:GetObject should be excluded from complement")
+	// Should contain other actions that are NOT s3:GetObject
+	assert.Contains(t, actions, "s3:PutObject", "s3:PutObject should be in complement")
+	assert.Contains(t, actions, "iam:PassRole", "iam:PassRole should be in complement")
+}
+
+func TestExtractActions_NotAction_DenyServiceWildcard(t *testing.T) {
+	// Deny+NotAction with service wildcards (e.g. a policy that denies everything
+	// except IAM and Organizations actions).
+	resource := types.DynaString{"*"}
+	notAction := types.DynaString{"iam:*", "organizations:*"}
+	stmts := types.PolicyStatementList{
+		{Effect: "Deny", NotAction: &notAction, Resource: &resource},
+	}
+
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
+	assert.Greater(t, len(actions), 0, "Deny+NotAction should expand to complement")
+
+	// Must NOT contain excluded service actions
+	for _, a := range actions {
+		assert.False(t, strings.HasPrefix(strings.ToLower(a), "iam:"),
+			"Deny+NotAction should exclude iam: actions, but found %q", a)
+		assert.False(t, strings.HasPrefix(strings.ToLower(a), "organizations:"),
+			"Deny+NotAction should exclude organizations: actions, but found %q", a)
+	}
+
+	// Should contain actions from non-excluded services
+	assert.Contains(t, actions, "s3:GetObject")
+	assert.Contains(t, actions, "lambda:CreateFunction")
 }
 
 func TestExtractActions_WildcardAction(t *testing.T) {

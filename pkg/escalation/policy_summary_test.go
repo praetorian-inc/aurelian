@@ -79,6 +79,8 @@ func TestFlattenStatements_NotAction(t *testing.T) {
 }
 
 func TestFlattenStatements_NotResource(t *testing.T) {
+	// NotResource is conservatively treated as "*" (applies to everything)
+	// because the solver cannot natively evaluate inverse resource matching.
 	stmts := types.PolicyStatementList{
 		{
 			Effect:      "Deny",
@@ -89,7 +91,41 @@ func TestFlattenStatements_NotResource(t *testing.T) {
 
 	result := flattenStatements(&stmts, "test")
 	require.Len(t, result, 1)
-	assert.Equal(t, "NotResource:arn:aws:s3:::my-bucket", result[0].Resource)
+	assert.Equal(t, "*", result[0].Resource, "NotResource should be treated as wildcard")
+	assert.Equal(t, "Deny", result[0].Effect)
+	assert.Equal(t, "s3:*", result[0].Action)
+}
+
+func TestFlattenStatements_NotResource_Allow(t *testing.T) {
+	// Allow+NotResource should also be treated as wildcard resource.
+	stmts := types.PolicyStatementList{
+		{
+			Effect:      "Allow",
+			Action:      &types.DynaString{"iam:PassRole"},
+			NotResource: &types.DynaString{"arn:aws:iam::111111111111:role/restricted"},
+		},
+	}
+
+	result := flattenStatements(&stmts, "test")
+	require.Len(t, result, 1)
+	assert.Equal(t, "*", result[0].Resource, "Allow+NotResource should be treated as wildcard")
+	assert.Equal(t, "Allow", result[0].Effect)
+}
+
+func TestFlattenStatements_NotResource_MultipleResources(t *testing.T) {
+	// Multiple NotResource entries should still collapse to a single "*".
+	stmts := types.PolicyStatementList{
+		{
+			Effect:      "Deny",
+			Action:      &types.DynaString{"s3:DeleteObject"},
+			NotResource: &types.DynaString{"arn:aws:s3:::bucket-a/*", "arn:aws:s3:::bucket-b/*"},
+		},
+	}
+
+	result := flattenStatements(&stmts, "test")
+	// Should produce 1 action × 1 resource ("*") = 1 statement
+	require.Len(t, result, 1)
+	assert.Equal(t, "*", result[0].Resource)
 }
 
 func TestFlattenStatements_MultipleActionsAndResources(t *testing.T) {

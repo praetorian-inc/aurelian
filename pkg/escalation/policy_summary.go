@@ -267,16 +267,15 @@ func expandStmtActions(stmt *types.PolicyStatement) []string {
 }
 
 // expandStmtResources returns all resource patterns from a statement.
+// NotResource is treated conservatively as "*" (applies to everything) because
+// the solver cannot natively evaluate inverse resource matching and the
+// conservative interpretation avoids false negatives.
 func expandStmtResources(stmt *types.PolicyStatement) []string {
 	if stmt.Resource != nil {
 		return []string(*stmt.Resource)
 	}
 	if stmt.NotResource != nil {
-		resources := make([]string, len(*stmt.NotResource))
-		for i, r := range *stmt.NotResource {
-			resources[i] = "NotResource:" + r
-		}
-		return resources
+		return []string{"*"}
 	}
 	return []string{"*"}
 }
