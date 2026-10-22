@@ -14,8 +14,8 @@ import (
 	"github.com/praetorian-inc/aurelian/test/azuretest"
 )
 
-func TestResolveAlwaysPublic(t *testing.T) {
-	for _, value := range []string{"", "public", "unknown", " PUBLIC "} {
+func TestResolveDefaultsToPublic(t *testing.T) {
+	for _, value := range []string{"", "public", "unknown", " PUBLIC ", "GCC-HIGH", " gcc-high ", "usgovernment", "AzureUSGovernment", "gcc"} {
 		t.Run(value, func(t *testing.T) {
 			env := azurecloud.Resolve(value)
 			assert.Equal(t, "public", env.Name)
@@ -34,6 +34,7 @@ func TestARMClientUsesEnvironmentEndpointAndAudience(t *testing.T) {
 		audience string
 	}{
 		{"public", azurecloud.Resolve(""), "management.azure.com", "https://management.core.windows.net/"},
+		{"government", azurecloud.Resolve("gcc-high"), "management.usgovcloudapi.net", "https://management.core.usgovcloudapi.net/"},
 		{"zero defaults to public", azurecloud.Environment{}, "management.azure.com", "https://management.core.windows.net/"},
 		{"custom", azurecloud.Environment{Cloud: cloud.Configuration{Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
 			cloud.ResourceManager: {Endpoint: "https://arm.example.test", Audience: "https://arm.example.test"},

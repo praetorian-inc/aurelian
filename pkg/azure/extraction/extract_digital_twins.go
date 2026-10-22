@@ -5,12 +5,14 @@ import (
 	"fmt"
 
 	armdigitaltwins "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwins"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 func init() {
-	mustRegister("microsoft.digitaltwins/digitaltwinsinstances", "digitaltwins-properties", extractDigitalTwinsProperties)
+	// Digital Twins extraction is not supported in Government.
+	mustRegister("microsoft.digitaltwins/digitaltwinsinstances", "digitaltwins-properties", extractDigitalTwinsProperties, azurecloud.Public)
 }
 
 // extractDigitalTwinsProperties retrieves the ARM-level properties of a Digital Twins instance.

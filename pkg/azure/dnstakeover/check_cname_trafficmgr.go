@@ -16,9 +16,8 @@ func init() {
 	mustRegister("CNAME", "trafficmgr-takeover", checkTrafficManager)
 }
 
-const trafficManagerSuffix = ".trafficmanager.net"
-
 func checkTrafficManager(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	trafficManagerSuffix := ctx.Env.TrafficManagerSuffix
 	for _, val := range rec.Values {
 		if !strings.HasSuffix(strings.ToLower(val), trafficManagerSuffix) {
 			continue

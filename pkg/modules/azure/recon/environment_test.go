@@ -71,7 +71,7 @@ func TestAzureConsumersUseSuppliedEnvironment(t *testing.T) {
 		{"resource ID hydration", func(t *testing.T, cred azcore.TokenCredential) {
 			module := &AzureFindSecretsModule{}
 			listed, err := module.listByResourceID(AzureFindSecretsConfig{
-				AzureCommonRecon: plugin.AzureCommonRecon{AzureCredential: cred, Env: env},
+				AzureCommonRecon: plugin.AzureCommonRecon{AzureCredential: cred, AzureReconBase: plugin.AzureReconBase{Env: env}},
 				ResourceID:       []string{resource.ResourceID},
 			})
 			require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestAzureConsumersUseSuppliedEnvironment(t *testing.T) {
 		{"subscription scan setup", func(t *testing.T, cred azcore.TokenCredential) {
 			module := &AzureFindSecretsModule{}
 			_, err := module.listBySubscription(AzureFindSecretsConfig{
-				AzureCommonRecon: plugin.AzureCommonRecon{AzureCredential: cred, Env: env, SubscriptionIDs: []string{"all"}},
+				AzureCommonRecon: plugin.AzureCommonRecon{AzureCredential: cred, AzureReconBase: plugin.AzureReconBase{Env: env}, SubscriptionIDs: []string{"all"}},
 			})
 			require.Error(t, err)
 		}},

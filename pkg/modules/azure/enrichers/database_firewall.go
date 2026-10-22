@@ -7,7 +7,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/mysql/armmysqlflexibleservers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresqlflexibleservers"
 	armsql "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/synapse/armsynapse"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
@@ -37,6 +39,10 @@ func enrichDatabaseFirewall(cfg plugin.AzureEnricherConfig, result *templates.AR
 
 func checkFirewallRules(cfg plugin.AzureEnricherConfig, subID, rg, name, resourceType string) (bool, error) {
 	lower := strings.ToLower(resourceType)
+	// Government workspaces require the Synapse provider, not the legacy SQL path.
+	if cfg.Env.Name == azurecloud.Government && strings.Contains(lower, "microsoft.synapse") {
+		return checkSynapseFirewall(cfg, subID, rg, name)
+	}
 	switch {
 	case strings.Contains(lower, "microsoft.sql/servers"),
 		strings.Contains(lower, "microsoft.synapse"):
@@ -67,6 +73,26 @@ func checkSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName stri
 				continue
 			}
 			if isAllowAzureServicesRule(derefStr(rule.Properties.StartIPAddress), derefStr(rule.Properties.EndIPAddress)) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func checkSynapseFirewall(cfg plugin.AzureEnricherConfig, subID, rg, workspaceName string) (bool, error) {
+	client, err := armsynapse.NewIPFirewallRulesClient(subID, cfg.Credential, cfg.Env.ARMClientOptions())
+	if err != nil {
+		return false, fmt.Errorf("creating Synapse firewall client: %w", err)
+	}
+	pager := client.NewListByWorkspacePager(rg, workspaceName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(cfg.Context)
+		if err != nil {
+			return false, fmt.Errorf("listing Synapse firewall rules: %w", err)
+		}
+		for _, rule := range page.Value {
+			if rule.Properties != nil && isAllowAzureServicesRule(derefStr(rule.Properties.StartIPAddress), derefStr(rule.Properties.EndIPAddress)) {
 				return true, nil
 			}
 		}
