@@ -7,13 +7,15 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cdn/armcdn"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 func init() {
-	mustRegister("CNAME", "cdn-takeover", checkCDN)
+	// CDN takeover verification is only supported in Public.
+	mustRegister("CNAME", "cdn-takeover", checkCDN, azurecloud.Public)
 }
 
 const cdnSuffix = ".azureedge.net"

@@ -11,7 +11,9 @@ import (
 
 // AzureReconBase contains base parameters shared by all Azure recon modules.
 type AzureReconBase struct {
-	OutputDir string `param:"output-dir" desc:"Base output directory" default:"aurelian-output"`
+	OutputDir string                 `param:"output-dir" desc:"Base output directory" default:"aurelian-output"`
+	CloudType string                 `param:"cloud-type" desc:"Azure deployment: public (Commercial/GCC) or gcc-high (GCC High); anything else defaults to public" default:"public"`
+	Env       azurecloud.Environment `param:"-"`
 }
 
 // AzureCommonRecon contains common parameters for Azure reconnaissance modules.
@@ -20,16 +22,24 @@ type AzureCommonRecon struct {
 	Concurrency     int                    `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
 	SubscriptionIDs []string               `param:"subscription-ids" desc:"Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions" default:"all" shortcode:"s"`
 	AzureCredential azcore.TokenCredential `param:"-"`
-	Env             azurecloud.Environment `param:"-"`
 }
 
-func (c *AzureCommonRecon) PostBind(_ Config, _ Module) error {
-	cred, err := azureauth.NewAzureCredential()
+func (c *AzureCommonRecon) PostBind(_ Config, module Module) error {
+	c.Env = azurecloud.Resolve(c.CloudType)
+	// Only these module paths have Government support; fail closed for new modules.
+	if c.Env.Name == azurecloud.Government && module != nil {
+		switch module.ID() {
+		case "list-all", "configuration-scan", "public-resources", "find-secrets", "subdomain-takeover":
+		default:
+			return fmt.Errorf("azure government is not supported for module %q", module.ID())
+		}
+	}
+	// A reused module must not retain the previous cloud's credential chain/cache.
+	cred, err := azureauth.NewAzureCredential(c.Env)
 	if err != nil {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}
 	c.AzureCredential = cred
-	c.Env = azurecloud.Resolve("")
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }
@@ -42,7 +52,12 @@ type AzureEntraRecon struct {
 }
 
 func (c *AzureEntraRecon) PostBind(_ Config, _ Module) error {
-	cred, err := azureauth.NewAzureCredential()
+	c.Env = azurecloud.Resolve(c.CloudType)
+	// Entra modules still use the Public Graph endpoints and scopes.
+	if c.Env.Name == azurecloud.Government {
+		return fmt.Errorf("azure government is not supported for Aurelian Entra modules")
+	}
+	cred, err := azureauth.NewAzureCredential(c.Env)
 	if err != nil {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}

@@ -16,9 +16,8 @@ func init() {
 	mustRegister("CNAME", "storage-takeover", checkBlobStorage)
 }
 
-const blobStorageSuffix = ".blob.core.windows.net"
-
 func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	blobStorageSuffix := ctx.Env.BlobSuffix
 	for _, val := range rec.Values {
 		if !strings.HasSuffix(strings.ToLower(val), blobStorageSuffix) {
 			continue

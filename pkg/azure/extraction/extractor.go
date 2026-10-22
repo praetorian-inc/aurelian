@@ -21,6 +21,9 @@ type AzureExtractor struct {
 
 // NewAzureExtractor creates an extractor with shared Azure credentials.
 func NewAzureExtractor(cred azcore.TokenCredential, env azurecloud.Environment) *AzureExtractor {
+	if skipped := unsupportedExtractors(env); len(skipped) > 0 {
+		slog.Warn("extractors unavailable in selected cloud; results are partial", "cloud", env.Name, "extractors", skipped)
+	}
 	return &AzureExtractor{
 		cred: cred,
 		env:  env,
@@ -46,6 +49,9 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	}
 
 	for _, ext := range extractors {
+		if !e.env.Supports(ext.Clouds) {
+			continue
+		}
 		if err := ext.Fn(ctx, r, out); err != nil {
 			slog.Warn("azure extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)
 		}

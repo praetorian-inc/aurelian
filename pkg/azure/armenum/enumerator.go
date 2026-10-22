@@ -176,6 +176,10 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 }
 
 func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
+	// Blueprint availability in Government is unverified; avoid unsupported calls.
+	if e.env.Name == azurecloud.Government {
+		return nil
+	}
 	client, err := armblueprint.NewBlueprintsClient(e.cred, e.env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("create blueprints client: %w", err)

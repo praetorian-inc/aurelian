@@ -10,13 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 func init() {
-	mustRegister("NS", "ns-delegation", checkNSDelegation)
+	// The delegation check recognizes only Public Azure DNS nameservers.
+	mustRegister("NS", "ns-delegation", checkNSDelegation, azurecloud.Public)
 }
 
 // Azure DNS nameservers: ns1-01.azure-dns.com, ns2-01.azure-dns.net, ns3-01.azure-dns.org, ns4-01.azure-dns.info
