@@ -96,7 +96,7 @@ func newBlobClientWithAccountKey(ctx extractContext, r output.AzureResource, res
 		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
 	}
 
-	serviceURL, err := storageBlobEndpoint(ctx.Context, accountsClient, resourceGroup, accountName, r.Properties)
+	serviceURL, err := resolveStorageBlobEndpoint(ctx.Context, accountsClient, resourceGroup, accountName, r.Properties)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +160,8 @@ func downloadBlob(ctx extractContext, client *azblob.Client, containerName, blob
 	return buf.Bytes(), nil
 }
 
-func storageBlobEndpoint(ctx context.Context, client *armstorage.AccountsClient, resourceGroup, accountName string, properties map[string]any) (string, error) {
-	if endpoint := resourcePropertyString(properties, "primaryEndpoints", "blob"); endpoint != "" {
+func resolveStorageBlobEndpoint(ctx context.Context, client *armstorage.AccountsClient, resourceGroup, accountName string, properties map[string]any) (string, error) {
+	if endpoint := endpointFromResourceProperties(properties, "primaryEndpoints", "blob"); endpoint != "" {
 		return endpoint, nil
 	}
 

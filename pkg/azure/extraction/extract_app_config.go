@@ -32,7 +32,7 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("failed to create configuration stores client: %w", err)
 	}
 
-	endpoint, err := appConfigEndpoint(ctx.Context, storesClient, resourceGroup, storeName, r.Properties)
+	endpoint, err := resolveAppConfigEndpoint(ctx.Context, storesClient, resourceGroup, storeName, r.Properties)
 	if err != nil {
 		return handleExtractError(err, "app-config-keyvalues", r.ResourceID)
 	}
@@ -80,8 +80,8 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 	return nil
 }
 
-func appConfigEndpoint(ctx context.Context, client *armappconfiguration.ConfigurationStoresClient, resourceGroup, storeName string, properties map[string]any) (string, error) {
-	if endpoint := resourcePropertyString(properties, "endpoint"); endpoint != "" {
+func resolveAppConfigEndpoint(ctx context.Context, client *armappconfiguration.ConfigurationStoresClient, resourceGroup, storeName string, properties map[string]any) (string, error) {
+	if endpoint := endpointFromResourceProperties(properties, "endpoint"); endpoint != "" {
 		return endpoint, nil
 	}
 

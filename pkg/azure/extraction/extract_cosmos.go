@@ -215,7 +215,7 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("failed to create Cosmos accounts client: %w", err)
 	}
 
-	endpoint, err := cosmosDocumentEndpoint(ctx.Context, accountsClient, resourceGroup, accountName, r.Properties)
+	endpoint, err := resolveCosmosDocumentEndpoint(ctx.Context, accountsClient, resourceGroup, accountName, r.Properties)
 	if err != nil {
 		return handleExtractError(err, "cosmos-config-docs", r.ResourceID)
 	}
@@ -329,8 +329,8 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 	}
 }
 
-func cosmosDocumentEndpoint(ctx context.Context, client *armcosmos.DatabaseAccountsClient, resourceGroup, accountName string, properties map[string]any) (string, error) {
-	if endpoint := resourcePropertyString(properties, "documentEndpoint"); endpoint != "" {
+func resolveCosmosDocumentEndpoint(ctx context.Context, client *armcosmos.DatabaseAccountsClient, resourceGroup, accountName string, properties map[string]any) (string, error) {
+	if endpoint := endpointFromResourceProperties(properties, "documentEndpoint"); endpoint != "" {
 		return endpoint, nil
 	}
 

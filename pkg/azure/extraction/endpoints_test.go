@@ -36,7 +36,7 @@ func TestDataPlaneEndpoints(t *testing.T) {
 			resolve: func(t *testing.T, options *arm.ClientOptions, cred *azuretest.Credential, properties map[string]any) (string, error) {
 				client, err := armstorage.NewAccountsClient("sub", cred, options)
 				require.NoError(t, err)
-				return storageBlobEndpoint(context.Background(), client, "rg", "account", properties)
+				return resolveStorageBlobEndpoint(context.Background(), client, "rg", "account", properties)
 			},
 		},
 		{
@@ -47,7 +47,7 @@ func TestDataPlaneEndpoints(t *testing.T) {
 			resolve: func(t *testing.T, options *arm.ClientOptions, cred *azuretest.Credential, properties map[string]any) (string, error) {
 				client, err := armcosmos.NewDatabaseAccountsClient("sub", cred, options)
 				require.NoError(t, err)
-				return cosmosDocumentEndpoint(context.Background(), client, "rg", "account", properties)
+				return resolveCosmosDocumentEndpoint(context.Background(), client, "rg", "account", properties)
 			},
 		},
 		{
@@ -58,7 +58,7 @@ func TestDataPlaneEndpoints(t *testing.T) {
 			resolve: func(t *testing.T, options *arm.ClientOptions, cred *azuretest.Credential, properties map[string]any) (string, error) {
 				client, err := armappconfiguration.NewConfigurationStoresClient("sub", cred, options)
 				require.NoError(t, err)
-				return appConfigEndpoint(context.Background(), client, "rg", "store", properties)
+				return resolveAppConfigEndpoint(context.Background(), client, "rg", "store", properties)
 			},
 		},
 	} {
