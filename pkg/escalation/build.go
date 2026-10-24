@@ -186,32 +186,34 @@ func resourceMatchesStar(resource *types.DynaString) bool {
 	return false
 }
 
-// TODO: collectAllUserStatements, collectAllRoleStatements, collectAllGroupStatements
-// duplicate the principal→identity-statements walk found in policy_summary.go
-// (collectUserEffectiveStatements, etc.) and subprocess/evaluator.go
-// (collectUserStatements, etc.). Extracting a shared walker would require
-// reconciling different return types ([]types.PolicyStatement vs
-// []PolicyStatement vs types.PolicyStatementList) and source-attribution
-// needs. Deferred to a follow-up refactor.
+// appendManagedPolicyStatements resolves each attached managed policy via the
+// GAAD and appends the default-version statements to dst. Shared helper used
+// by collectAllRoleStatements, collectAllGroupStatements, and
+// collectAllUserStatements to avoid duplicating the lookup pattern.
+func appendManagedPolicyStatements(dst []types.PolicyStatement, gaad *types.AuthorizationAccountDetails, policies []types.ManagedPolicy) []types.PolicyStatement {
+	for _, mp := range policies {
+		if stmts := gaad.ResolveManagedPolicyStatements(mp.PolicyArn); stmts != nil {
+			dst = append(dst, *stmts...)
+		}
+	}
+	return dst
+}
+
+// appendInlinePolicyStatements appends statements from inline policies to dst.
+func appendInlinePolicyStatements(dst []types.PolicyStatement, policies []types.InlinePolicy) []types.PolicyStatement {
+	for _, p := range policies {
+		if p.PolicyDocument.Statement != nil {
+			dst = append(dst, *p.PolicyDocument.Statement...)
+		}
+	}
+	return dst
+}
 
 // collectAllRoleStatements gathers all identity policy statements for a role.
 func collectAllRoleStatements(role types.RoleDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
 	var stmts []types.PolicyStatement
-	for _, p := range role.RolePolicyList {
-		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, *p.PolicyDocument.Statement...)
-		}
-	}
-	for _, mp := range role.AttachedManagedPolicies {
-		policy, ok := gaad.Policies.Get(mp.PolicyArn)
-		if !ok {
-			continue
-		}
-		doc := policy.DefaultPolicyDocument()
-		if doc != nil && doc.Statement != nil {
-			stmts = append(stmts, *doc.Statement...)
-		}
-	}
+	stmts = appendInlinePolicyStatements(stmts, role.RolePolicyList)
+	stmts = appendManagedPolicyStatements(stmts, gaad, role.AttachedManagedPolicies)
 	return stmts
 }
 
@@ -219,21 +221,8 @@ func collectAllRoleStatements(role types.RoleDetail, gaad *types.AuthorizationAc
 // (inline + attached-managed).
 func collectAllGroupStatements(group types.GroupDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
 	var stmts []types.PolicyStatement
-	for _, p := range group.GroupPolicyList {
-		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, *p.PolicyDocument.Statement...)
-		}
-	}
-	for _, mp := range group.AttachedManagedPolicies {
-		policy, ok := gaad.Policies.Get(mp.PolicyArn)
-		if !ok {
-			continue
-		}
-		doc := policy.DefaultPolicyDocument()
-		if doc != nil && doc.Statement != nil {
-			stmts = append(stmts, *doc.Statement...)
-		}
-	}
+	stmts = appendInlinePolicyStatements(stmts, group.GroupPolicyList)
+	stmts = appendManagedPolicyStatements(stmts, gaad, group.AttachedManagedPolicies)
 	return stmts
 }
 
@@ -241,42 +230,15 @@ func collectAllGroupStatements(group types.GroupDetail, gaad *types.Authorizatio
 // including group policies.
 func collectAllUserStatements(user types.UserDetail, gaad *types.AuthorizationAccountDetails, groupsByName map[string]types.GroupDetail) []types.PolicyStatement {
 	var stmts []types.PolicyStatement
-	for _, p := range user.UserPolicyList {
-		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, *p.PolicyDocument.Statement...)
-		}
-	}
-	for _, mp := range user.AttachedManagedPolicies {
-		policy, ok := gaad.Policies.Get(mp.PolicyArn)
-		if !ok {
-			continue
-		}
-		doc := policy.DefaultPolicyDocument()
-		if doc != nil && doc.Statement != nil {
-			stmts = append(stmts, *doc.Statement...)
-		}
-	}
-	// Include group policies
+	stmts = appendInlinePolicyStatements(stmts, user.UserPolicyList)
+	stmts = appendManagedPolicyStatements(stmts, gaad, user.AttachedManagedPolicies)
 	for _, groupName := range user.GroupList {
 		g, ok := groupsByName[groupName]
 		if !ok {
 			continue
 		}
-		for _, p := range g.GroupPolicyList {
-			if p.PolicyDocument.Statement != nil {
-				stmts = append(stmts, *p.PolicyDocument.Statement...)
-			}
-		}
-		for _, mp := range g.AttachedManagedPolicies {
-			policy, ok := gaad.Policies.Get(mp.PolicyArn)
-			if !ok {
-				continue
-			}
-			doc := policy.DefaultPolicyDocument()
-			if doc != nil && doc.Statement != nil {
-				stmts = append(stmts, *doc.Statement...)
-			}
-		}
+		stmts = appendInlinePolicyStatements(stmts, g.GroupPolicyList)
+		stmts = appendManagedPolicyStatements(stmts, gaad, g.AttachedManagedPolicies)
 	}
 	return stmts
 }

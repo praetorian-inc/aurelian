@@ -171,23 +171,6 @@ func TestNewAnalyzerMemoryState(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// GetPolicyByArn
-// ---------------------------------------------------------------------------
-
-func TestGetPolicyByArn_Found(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	policy := state.GetPolicyByArn("arn:aws:iam::111122223333:policy/PassRolePolicy")
-	require.NotNil(t, policy)
-	assert.Equal(t, "PassRolePolicy", policy.PolicyName)
-}
-
-func TestGetPolicyByArn_NotFound(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
-	policy := state.GetPolicyByArn("arn:aws:iam::111122223333:policy/DoesNotExist")
-	assert.Nil(t, policy)
-}
-
-// ---------------------------------------------------------------------------
 // GetRole
 // ---------------------------------------------------------------------------
 

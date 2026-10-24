@@ -156,15 +156,6 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 	}
 }
 
-// GetPolicyByArn retrieves a managed policy by its ARN.
-func (s *AnalyzerState) GetPolicyByArn(policyArn string) *types.ManagedPolicyDetail {
-	policy, ok := s.Gaad.Policies.Get(policyArn)
-	if !ok {
-		return nil
-	}
-	return &policy
-}
-
 func (s *AnalyzerState) getResources(pattern *regexp.Regexp) []*output.AWSResource {
 	seen := make(map[string]bool)
 	var resources []*output.AWSResource

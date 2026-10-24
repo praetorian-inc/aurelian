@@ -173,10 +173,8 @@ func getStmtResources(principalArn, action string, state *AnalyzerState) []strin
 
 	collectFromManagedPolicies := func(attachedPolicies []types.ManagedPolicy) {
 		for _, attached := range attachedPolicies {
-			if pol := state.GetPolicyByArn(attached.PolicyArn); pol != nil {
-				if doc := pol.DefaultPolicyDocument(); doc != nil {
-					collectFromStatements(doc.Statement)
-				}
+			if stmts := state.Gaad.ResolveManagedPolicyStatements(attached.PolicyArn); stmts != nil {
+				collectFromStatements(stmts)
 			}
 		}
 	}

@@ -37,15 +37,11 @@ func collectInlineStatements(policies []types.InlinePolicy, originArn string) ty
 func collectManagedPolicyStatements(state *AnalyzerState, policies []types.ManagedPolicy) types.PolicyStatementList {
 	var stmts types.PolicyStatementList
 	for _, attached := range policies {
-		policy := state.GetPolicyByArn(attached.PolicyArn)
-		if policy == nil {
+		resolved := state.Gaad.ResolveManagedPolicyStatements(attached.PolicyArn)
+		if resolved == nil {
 			continue
 		}
-		doc := policy.DefaultPolicyDocument()
-		if doc == nil || doc.Statement == nil {
-			continue
-		}
-		stmts = append(stmts, CopyStatementsWithOrigin(doc.Statement, attached.PolicyArn)...)
+		stmts = append(stmts, CopyStatementsWithOrigin(resolved, attached.PolicyArn)...)
 	}
 	return stmts
 }
@@ -55,13 +51,9 @@ func collectBoundaryStatements(state *AnalyzerState, boundary types.ManagedPolic
 	if boundary == (types.ManagedPolicy{}) {
 		return nil
 	}
-	policy := state.GetPolicyByArn(boundary.PolicyArn)
-	if policy == nil {
+	resolved := state.Gaad.ResolveManagedPolicyStatements(boundary.PolicyArn)
+	if resolved == nil {
 		return nil
 	}
-	doc := policy.DefaultPolicyDocument()
-	if doc == nil || doc.Statement == nil {
-		return nil
-	}
-	return CopyStatementsWithOrigin(doc.Statement, boundary.PolicyArn)
+	return CopyStatementsWithOrigin(resolved, boundary.PolicyArn)
 }
