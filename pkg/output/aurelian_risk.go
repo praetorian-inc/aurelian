@@ -11,6 +11,7 @@ type RiskSeverity string
 
 const (
 	RiskSeverityInfo     RiskSeverity = "info"
+	RiskSeverityExposure RiskSeverity = "exposure"
 	RiskSeverityLow      RiskSeverity = "low"
 	RiskSeverityMedium   RiskSeverity = "medium"
 	RiskSeverityHigh     RiskSeverity = "high"
@@ -28,6 +29,8 @@ func NormalizeSeverity(s RiskSeverity) RiskSeverity {
 		return RiskSeverityMedium
 	case RiskSeverityLow:
 		return RiskSeverityLow
+	case RiskSeverityExposure:
+		return RiskSeverityExposure
 	default:
 		return RiskSeverityInfo
 	}
