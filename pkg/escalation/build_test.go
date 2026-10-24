@@ -676,3 +676,123 @@ func TestCollectStructuralFacts_CrossAccountTrust(t *testing.T) {
 	}
 	assert.True(t, found, "should create cross-account trust relationship fact")
 }
+
+func TestCollectStructuralFacts_GlueDevEndpointRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	endpointARN := "arn:aws:glue:us-east-1:111111111111:devEndpoint/my-endpoint"
+	roleARN := "arn:aws:iam::111111111111:role/GlueDevRole"
+	resources.Set(endpointARN, output.AWSResource{
+		ResourceType: "AWS::Glue::DevEndpoint",
+		ARN:          endpointARN,
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"RoleArn": roleARN},
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == StructuralFactType("glue_endpoint_role") &&
+			f.From == endpointARN &&
+			f.To == roleARN {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find glue_endpoint_role from dev endpoint ARN to role ARN")
+}
+
+func TestCollectStructuralFacts_SageMakerNotebookRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	notebookARN := "arn:aws:sagemaker:us-east-1:111111111111:notebook-instance/my-notebook"
+	roleARN := "arn:aws:iam::111111111111:role/SageMakerNotebookRole"
+	resources.Set(notebookARN, output.AWSResource{
+		ResourceType: "AWS::SageMaker::NotebookInstance",
+		ARN:          notebookARN,
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"RoleArn": roleARN},
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == StructuralFactType("sagemaker_notebook_role") &&
+			f.From == notebookARN &&
+			f.To == roleARN {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find sagemaker_notebook_role from notebook ARN to role ARN")
+}
+
+func TestCollectStructuralFacts_BedrockInterpreterRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	interpreterARN := "arn:aws:bedrock-agentcore:us-east-1:111111111111:code-interpreter/my-interpreter"
+	roleARN := "arn:aws:iam::111111111111:role/BedrockInterpreterRole"
+	resources.Set(interpreterARN, output.AWSResource{
+		ResourceType: "AWS::BedrockAgentCore::CodeInterpreter",
+		ARN:          interpreterARN,
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"ExecutionRoleArn": roleARN},
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == StructuralFactType("bedrock_interpreter_role") &&
+			f.From == interpreterARN &&
+			f.To == roleARN {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find bedrock_interpreter_role from interpreter ARN to role ARN")
+}
+
+func TestCollectStructuralFacts_GlueNotebookBedrockWithoutRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("arn:aws:glue:us-east-1:111111111111:devEndpoint/empty", output.AWSResource{
+		ResourceType: "AWS::Glue::DevEndpoint",
+		ARN:          "arn:aws:glue:us-east-1:111111111111:devEndpoint/empty",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"RoleArn": ""},
+	})
+	resources.Set("arn:aws:glue:us-east-1:111111111111:devEndpoint/missing", output.AWSResource{
+		ResourceType: "AWS::Glue::DevEndpoint",
+		ARN:          "arn:aws:glue:us-east-1:111111111111:devEndpoint/missing",
+		AccountRef:   "111111111111",
+	})
+	resources.Set("arn:aws:sagemaker:us-east-1:111111111111:notebook-instance/empty", output.AWSResource{
+		ResourceType: "AWS::SageMaker::NotebookInstance",
+		ARN:          "arn:aws:sagemaker:us-east-1:111111111111:notebook-instance/empty",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"RoleArn": ""},
+	})
+	resources.Set("arn:aws:sagemaker:us-east-1:111111111111:notebook-instance/missing", output.AWSResource{
+		ResourceType: "AWS::SageMaker::NotebookInstance",
+		ARN:          "arn:aws:sagemaker:us-east-1:111111111111:notebook-instance/missing",
+		AccountRef:   "111111111111",
+	})
+	resources.Set("arn:aws:bedrock-agentcore:us-east-1:111111111111:code-interpreter/empty", output.AWSResource{
+		ResourceType: "AWS::BedrockAgentCore::CodeInterpreter",
+		ARN:          "arn:aws:bedrock-agentcore:us-east-1:111111111111:code-interpreter/empty",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"ExecutionRoleArn": ""},
+	})
+	resources.Set("arn:aws:bedrock-agentcore:us-east-1:111111111111:code-interpreter/missing", output.AWSResource{
+		ResourceType: "AWS::BedrockAgentCore::CodeInterpreter",
+		ARN:          "arn:aws:bedrock-agentcore:us-east-1:111111111111:code-interpreter/missing",
+		AccountRef:   "111111111111",
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		assert.NotEqual(t, StructuralFactType("glue_endpoint_role"), f.Type,
+			"should not create glue_endpoint_role for DevEndpoint with empty/missing RoleArn")
+		assert.NotEqual(t, StructuralFactType("sagemaker_notebook_role"), f.Type,
+			"should not create sagemaker_notebook_role for NotebookInstance with empty/missing RoleArn")
+		assert.NotEqual(t, StructuralFactType("bedrock_interpreter_role"), f.Type,
+			"should not create bedrock_interpreter_role for CodeInterpreter with empty/missing ExecutionRoleArn")
+	}
+}
