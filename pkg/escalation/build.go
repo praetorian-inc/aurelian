@@ -373,6 +373,33 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 					Confidence: 1.0,
 				})
 			}
+		case "AWS::Glue::DevEndpoint":
+			if roleARN, ok := extractProperty(r, "RoleArn"); ok && roleARN != "" {
+				facts = append(facts, StructuralFact{
+					Type:       FactGlueEndpointRole,
+					From:       r.ARN,
+					To:         roleARN,
+					Confidence: 1.0,
+				})
+			}
+		case "AWS::SageMaker::NotebookInstance":
+			if roleARN, ok := extractProperty(r, "RoleArn"); ok && roleARN != "" {
+				facts = append(facts, StructuralFact{
+					Type:       FactSageMakerNotebookRole,
+					From:       r.ARN,
+					To:         roleARN,
+					Confidence: 1.0,
+				})
+			}
+		case "AWS::BedrockAgentCore::CodeInterpreter":
+			if roleARN, ok := extractProperty(r, "ExecutionRoleArn"); ok && roleARN != "" {
+				facts = append(facts, StructuralFact{
+					Type:       FactBedrockInterpreterRole,
+					From:       r.ARN,
+					To:         roleARN,
+					Confidence: 1.0,
+				})
+			}
 		}
 		return true
 	})

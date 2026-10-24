@@ -176,15 +176,18 @@ type Condition struct {
 type StructuralFactType string
 
 const (
-	FactLambdaExecutionRole  StructuralFactType = "lambda_execution_role"
-	FactInstanceProfile      StructuralFactType = "instance_profile"
-	FactTrustRelationship    StructuralFactType = "trust_relationship"
-	FactCodeBuildServiceRole StructuralFactType = "codebuild_service_role"
-	FactECSTaskRole          StructuralFactType = "ecs_task_role"
-	FactAthenaWorkgroupRole  StructuralFactType = "athena_workgroup_role"
-	FactSageMakerSpaceRole   StructuralFactType = "sagemaker_space_role"
-	FactGroupMembership      StructuralFactType = "group_membership"
-	FactPolicyAttachment     StructuralFactType = "policy_attachment"
+	FactLambdaExecutionRole    StructuralFactType = "lambda_execution_role"
+	FactInstanceProfile        StructuralFactType = "instance_profile"
+	FactTrustRelationship      StructuralFactType = "trust_relationship"
+	FactCodeBuildServiceRole   StructuralFactType = "codebuild_service_role"
+	FactECSTaskRole            StructuralFactType = "ecs_task_role"
+	FactAthenaWorkgroupRole    StructuralFactType = "athena_workgroup_role"
+	FactSageMakerSpaceRole     StructuralFactType = "sagemaker_space_role"
+	FactGlueEndpointRole       StructuralFactType = "glue_endpoint_role"
+	FactSageMakerNotebookRole  StructuralFactType = "sagemaker_notebook_role"
+	FactBedrockInterpreterRole StructuralFactType = "bedrock_interpreter_role"
+	FactGroupMembership        StructuralFactType = "group_membership"
+	FactPolicyAttachment       StructuralFactType = "policy_attachment"
 )
 
 // StructuralFact is a non-permission relationship between entities.
