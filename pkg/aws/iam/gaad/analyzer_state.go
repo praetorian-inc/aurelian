@@ -239,7 +239,8 @@ func (s *AnalyzerState) GetGroupByName(name string) *types.GroupDetail {
 // For Allow+NotAction statements, it expands to the complement: all known actions except
 // those matching the NotAction patterns. Deny+NotAction statements are skipped because
 // the evaluator already handles Deny matching natively and expanding them would add ~15k
-// actions unnecessarily.
+// actions unnecessarily. If the live policy-generator fetch fails, the error would cause
+// the entire principal to be skipped, losing valid concrete allows.
 func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) ([]string, error) {
 	actions := []string{}
 	for _, statement := range *psl {
@@ -249,7 +250,9 @@ func (s *AnalyzerState) ExtractActions(psl *types.PolicyStatementList) ([]string
 		}
 		if statement.NotAction != nil {
 			// Only expand NotAction for Allow statements. Deny+NotAction is handled
-			// natively by the evaluator and does not need expansion.
+			// natively by the evaluator and does not need expansion here. Expanding
+			// deny statements would introduce an external dependency on Expand("*")
+			// that, on failure, skips the entire principal — losing valid allows.
 			if statement.Effect == "Allow" {
 				expanded, err := s.expandNotActions(*statement.NotAction)
 				if err != nil {

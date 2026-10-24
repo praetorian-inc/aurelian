@@ -495,8 +495,24 @@ func TestExtractActions_NotAction_MixedWithAction(t *testing.T) {
 
 func TestExtractActions_NotAction_DenyNotExpanded(t *testing.T) {
 	// Deny+NotAction should NOT be expanded — the evaluator handles it natively.
+	// Expanding deny statements would call Expand("*") which, on failure, would
+	// skip the entire principal and lose valid concrete allows.
 	resource := types.DynaString{"*"}
 	notAction := types.DynaString{"s3:GetObject"}
+	stmts := types.PolicyStatementList{
+		{Effect: "Deny", NotAction: &notAction, Resource: &resource},
+	}
+
+	state := newStubState()
+	actions, err := state.ExtractActions(&stmts)
+	require.NoError(t, err)
+	assert.Empty(t, actions, "Deny+NotAction should not expand to any actions")
+}
+
+func TestExtractActions_NotAction_DenyServiceWildcard_NotExpanded(t *testing.T) {
+	// Deny+NotAction with service wildcards should also NOT be expanded.
+	resource := types.DynaString{"*"}
+	notAction := types.DynaString{"iam:*", "organizations:*"}
 	stmts := types.PolicyStatementList{
 		{Effect: "Deny", NotAction: &notAction, Resource: &resource},
 	}

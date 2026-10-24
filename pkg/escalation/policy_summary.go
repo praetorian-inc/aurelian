@@ -219,12 +219,26 @@ func boundaryStatements(gaad *types.AuthorizationAccountDetails, boundary types.
 // flattenStatements converts AWS PolicyStatements into the solver's flat format.
 // Each (action, resource) pair in a statement becomes a separate PolicyStatement
 // so the solver can evaluate them individually.
+//
+// Deny statements with NotResource are dropped because the solver cannot
+// represent inverse resource matching. Replacing NotResource with "*" would
+// over-deny and create false negatives (e.g. Allow PassRole to * + Deny
+// PassRole with NotResource "approved-role" should leave the approved role
+// usable, but a wildcard deny blocks it). Dropping the deny under-denies,
+// which is conservative-safe: it may surface more escalation paths, avoiding
+// false negatives.
 func flattenStatements(stmts *types.PolicyStatementList, source string) []PolicyStatement {
 	if stmts == nil {
 		return nil
 	}
 	var result []PolicyStatement
 	for _, stmt := range *stmts {
+		// Drop Deny+NotResource: we cannot model the inverse, and replacing
+		// with "*" would over-deny (false negatives). Under-denying is safer.
+		if strings.EqualFold(stmt.Effect, "Deny") && stmt.NotResource != nil {
+			continue
+		}
+
 		actions := expandStmtActions(&stmt)
 		resources := expandStmtResources(&stmt)
 		conditions := convertConditions(stmt.Condition)
@@ -262,16 +276,17 @@ func expandStmtActions(stmt *types.PolicyStatement) []string {
 }
 
 // expandStmtResources returns all resource patterns from a statement.
+// For Allow+NotResource, the resource is conservatively treated as "*" (applies
+// to everything) because the solver cannot natively evaluate inverse resource
+// matching and the over-allow interpretation avoids false negatives.
+// Deny+NotResource is handled upstream in flattenStatements (the statement is
+// dropped entirely), so this function only sees Allow+NotResource.
 func expandStmtResources(stmt *types.PolicyStatement) []string {
 	if stmt.Resource != nil {
 		return []string(*stmt.Resource)
 	}
 	if stmt.NotResource != nil {
-		resources := make([]string, len(*stmt.NotResource))
-		for i, r := range *stmt.NotResource {
-			resources[i] = "NotResource:" + r
-		}
-		return resources
+		return []string{"*"}
 	}
 	return []string{"*"}
 }

@@ -78,7 +78,10 @@ func TestFlattenStatements_NotAction(t *testing.T) {
 	assert.Equal(t, "Deny", result[0].Effect)
 }
 
-func TestFlattenStatements_NotResource(t *testing.T) {
+func TestFlattenStatements_NotResource_DenyDropped(t *testing.T) {
+	// Deny+NotResource is dropped entirely because the solver cannot model
+	// inverse resource matching. Replacing with "*" would over-deny and create
+	// false negatives. Dropping the deny under-denies, which is conservative-safe.
 	stmts := types.PolicyStatementList{
 		{
 			Effect:      "Deny",
@@ -88,8 +91,37 @@ func TestFlattenStatements_NotResource(t *testing.T) {
 	}
 
 	result := flattenStatements(&stmts, "test")
+	require.Len(t, result, 0, "Deny+NotResource should be dropped entirely")
+}
+
+func TestFlattenStatements_NotResource_Allow(t *testing.T) {
+	// Allow+NotResource should also be treated as wildcard resource.
+	stmts := types.PolicyStatementList{
+		{
+			Effect:      "Allow",
+			Action:      &types.DynaString{"iam:PassRole"},
+			NotResource: &types.DynaString{"arn:aws:iam::111111111111:role/restricted"},
+		},
+	}
+
+	result := flattenStatements(&stmts, "test")
 	require.Len(t, result, 1)
-	assert.Equal(t, "NotResource:arn:aws:s3:::my-bucket", result[0].Resource)
+	assert.Equal(t, "*", result[0].Resource, "Allow+NotResource should be treated as wildcard")
+	assert.Equal(t, "Allow", result[0].Effect)
+}
+
+func TestFlattenStatements_NotResource_DenyMultipleDropped(t *testing.T) {
+	// Deny with multiple NotResource entries should also be dropped.
+	stmts := types.PolicyStatementList{
+		{
+			Effect:      "Deny",
+			Action:      &types.DynaString{"s3:DeleteObject"},
+			NotResource: &types.DynaString{"arn:aws:s3:::bucket-a/*", "arn:aws:s3:::bucket-b/*"},
+		},
+	}
+
+	result := flattenStatements(&stmts, "test")
+	require.Len(t, result, 0, "Deny+NotResource should be dropped entirely")
 }
 
 func TestFlattenStatements_MultipleActionsAndResources(t *testing.T) {
