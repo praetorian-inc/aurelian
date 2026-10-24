@@ -190,28 +190,19 @@ func mergeReadmeModules(existing, live []readmeGroup) []readmeGroup {
 }
 
 func mergeReadmeMods(existing, live []readmeMod) []readmeMod {
-	liveByID := make(map[string]readmeMod, len(live))
-	for _, m := range live {
-		liveByID[m.ID] = m
+	existingOrder := make(map[string]int, len(existing))
+	for i, m := range existing {
+		existingOrder[m.ID] = i
 	}
-	seen := make(map[string]bool)
-	var out []readmeMod
-	for _, m := range existing {
-		if _, ok := liveByID[m.ID]; !ok {
-			continue
-		}
-		out = append(out, m)
-		seen[m.ID] = true
-	}
+	out := make([]readmeMod, 0, len(live))
 	var added []readmeMod
 	for _, m := range live {
-		if seen[m.ID] {
-			continue
+		rm := readmeMod{ID: m.ID, Description: shortReadmeDescription(m.Description)}
+		if _, ok := existingOrder[m.ID]; ok {
+			out = append(out, rm)
+		} else {
+			added = append(added, rm)
 		}
-		added = append(added, readmeMod{
-			ID:          m.ID,
-			Description: shortReadmeDescription(m.Description),
-		})
 	}
 	sort.Slice(added, func(i, j int) bool { return added[i].ID < added[j].ID })
 	return append(out, added...)
@@ -238,15 +229,14 @@ func renderReadmeModuleTables(groups []readmeGroup) string {
 
 func shortReadmeDescription(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	s = strings.ReplaceAll(s, "|", "\\|")
-	if utf8.RuneCountInString(s) <= 120 {
-		return s
+	if utf8.RuneCountInString(s) > 120 {
+		truncated := string([]rune(s)[:120])
+		if i := strings.LastIndex(truncated, " "); i > 0 {
+			truncated = strings.TrimRightFunc(truncated[:i], unicode.IsSpace)
+		}
+		s = truncated + "..."
 	}
-	truncated := string([]rune(s)[:120])
-	if i := strings.LastIndex(truncated, " "); i > 0 {
-		truncated = strings.TrimRightFunc(truncated[:i], unicode.IsSpace)
-	}
-	return truncated + "..."
+	return strings.ReplaceAll(s, "|", "\\|")
 }
 
 func replaceReadmeMarked(content, name, body string) (string, error) {

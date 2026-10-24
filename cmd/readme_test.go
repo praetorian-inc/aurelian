@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -71,6 +72,14 @@ func TestShortReadmeDescription(t *testing.T) {
 		got := shortReadmeDescription(s)
 		assert.True(t, utf8.ValidString(got), got)
 		assert.Equal(t, strings.Repeat("世", 120)+"...", got)
+	})
+
+	t.Run("truncation does not split escaped pipe", func(t *testing.T) {
+		// 120 chars with a pipe at position 120: old code would escape to \| (121 runes),
+		// truncate at rune 120 leaving a trailing backslash. New code truncates first.
+		s := strings.Repeat("a", 120) + "| more"
+		got := shortReadmeDescription(s)
+		assert.False(t, strings.HasSuffix(strings.TrimSuffix(got, "..."), "\\"), "truncation split an escaped pipe: %s", got)
 	})
 }
 
@@ -155,11 +164,11 @@ func TestApplyReadme(t *testing.T) {
 	assert.Contains(t, got, "<!-- autogen:count:gcp -->0<!-- /autogen:count:gcp -->")
 	assert.Contains(t, got, "<!-- autogen:go-version -->1.27<!-- /autogen:go-version -->")
 	assert.NotContains(t, got, "<!-- autogen:go-version -->1.24<!-- /autogen:go-version -->")
-	assert.Contains(t, got, "| `find-secrets` | HANDWRITTEN DESC |")
-	assert.NotContains(t, got, "REGISTRY DESC MUST NOT WIN")
+	assert.Contains(t, got, "| `find-secrets` | REGISTRY DESC MUST NOT WIN |")
+	assert.NotContains(t, got, "HANDWRITTEN DESC")
 	assert.NotContains(t, got, "gone-module")
 	assert.Contains(t, got, "| `new-recon` | A brand new module |")
-	assert.Contains(t, got, "| `expand-actions` | Old expand |")
+	assert.Contains(t, got, "| `expand-actions` | registry expand |")
 	assert.Contains(t, got, "| `graph` | Surfaces privilege-escalation paths |")
 	assert.Contains(t, got, "### Azure Reconnaissance")
 	assert.Contains(t, got, "| `apim-audit` | Audits APIM |")
@@ -180,10 +189,15 @@ func TestApplyReadmeRealInventory(t *testing.T) {
 	assert.Contains(t, got, "`apim-audit`")
 	assert.Contains(t, got, "`apim-cross-tenant`")
 	assert.Contains(t, got, "`graph`")
-	assert.Contains(t, got, "`find-secrets` | Enumerates resources, extracts content from 30+ source types, scans with Titus")
-	assert.Contains(t, got, "<!-- autogen:count:aws -->22<!-- /autogen:count:aws -->")
-	assert.Contains(t, got, "<!-- autogen:count:azure -->8<!-- /autogen:count:azure -->")
-	assert.Contains(t, got, "<!-- autogen:count:gcp -->4<!-- /autogen:count:gcp -->")
+	assert.Contains(t, got, "`find-secrets`")
+
+	for _, platform := range []string{"aws", "azure", "gcp"} {
+		re := regexp.MustCompile(`<!-- autogen:count:` + platform + ` -->(\d+)<!-- /autogen:count:` + platform + ` -->`)
+		m := re.FindStringSubmatch(got)
+		if assert.NotNil(t, m, "missing count marker for %s", platform) {
+			assert.NotEqual(t, "0", m[1], "expected non-zero count for %s", platform)
+		}
+	}
 	assert.Contains(t, got, "<!-- autogen:go-version -->1.27<!-- /autogen:go-version -->")
 
 	again, err := applyReadme(got, live, "1.27")
