@@ -78,9 +78,9 @@ Covert techniques that avoid CloudTrail logging. The `whoami` module identifies 
 
 | Platform | Alias | Modules | Capabilities |
 |----------|-------|---------|--------------|
-| **Amazon Web Services (AWS)** | `aws`, `amazon` | 16 | Secrets, public resources, IAM graph, subdomain takeover, OPSEC whoami, cost analysis, CDK/CloudFront takeover, enabled-region discovery |
-| **Microsoft Azure** | `azure`, `az` | 6 | Secrets, public resources, configuration scan, subdomain takeover, conditional access policies |
-| **Google Cloud Platform (GCP)** | `gcp`, `google` | 4 | Secrets, public resources, subdomain takeover, resource enumeration |
+| **Amazon Web Services (AWS)** | `aws`, `amazon` | <!-- autogen:count:aws -->22<!-- /autogen:count:aws --> | Secrets, public resources, IAM graph, subdomain takeover, OPSEC whoami, cost analysis, CDK/CloudFront takeover, enabled-region discovery |
+| **Microsoft Azure** | `azure`, `az` | <!-- autogen:count:azure -->8<!-- /autogen:count:azure --> | Secrets, public resources, configuration scan, subdomain takeover, conditional access policies, APIM audit |
+| **Google Cloud Platform (GCP)** | `gcp`, `google` | <!-- autogen:count:gcp -->4<!-- /autogen:count:gcp --> | Secrets, public resources, subdomain takeover, resource enumeration |
 
 ---
 
@@ -94,7 +94,7 @@ cd aurelian
 go build -o aurelian main.go
 ```
 
-Requires **Go 1.24+**.
+Requires **Go <!-- autogen:go-version -->1.27<!-- /autogen:go-version -->+**.
 
 ### Docker
 
@@ -133,7 +133,7 @@ aurelian aws recon whoami
 aurelian aws recon find-secrets
 
 # Scan Azure subscriptions
-aurelian azure recon find-secrets --subscription-id <id>
+aurelian azure recon find-secrets --subscription-ids <id>
 
 # Scan GCP projects
 aurelian gcp recon find-secrets --project-id <id>
@@ -146,7 +146,7 @@ aurelian gcp recon find-secrets --project-id <id>
 aurelian aws recon public-resources
 
 # Azure public resources
-aurelian azure recon public-resources --subscription-id <id>
+aurelian azure recon public-resources --subscription-ids <id>
 
 # GCP public resources
 aurelian gcp recon public-resources --project-id <id>
@@ -166,7 +166,7 @@ aurelian aws analyze analyze-iam-permissions --gaad-file gaad.json
 
 ```sh
 aurelian aws   recon subdomain-takeover
-aurelian azure recon subdomain-takeover --subscription-id <id>
+aurelian azure recon subdomain-takeover --subscription-ids <id>
 aurelian gcp   recon subdomain-takeover --project-id <id>
 ```
 
@@ -180,56 +180,61 @@ aurelian list-modules
 
 ## Modules
 
+<!-- autogen:modules -->
 ### AWS Reconnaissance
 
 | Module | Description |
 |--------|-------------|
-| `find-secrets` | Enumerates resources, extracts content from 30+ source types, scans with Titus |
-| `public-resources` | Detects publicly accessible resources through policy and property evaluation |
-| `graph` | Collects IAM data, evaluates permissions, detects privilege escalation paths |
-| `subdomain-takeover` | Checks Route53 DNS for dangling CNAME cloud takeover patterns |
-| `whoami` | OPSEC-safe identity check via CloudTrail-silent API techniques |
-| `list-all` | Enumerates all Cloud Control resources across regions |
-| `account-auth-details` | Exports IAM Get Account Authorization Details (GAAD) |
-| `resource-policies` | Extracts resource-based policies for analysis |
-| `org-policies` | Fetches AWS Organizations SCPs and policies |
-| `cost-summary` | Summarizes AWS cost and usage data |
-| `cdk-bucket-takeover` | Detects orphaned CDK bootstrap buckets |
-| `cloudfront-s3-takeover` | Detects CloudFront distributions pointing to unclaimed S3 origins |
-| `regions` | Lists the regions enabled for the account, reporting whether the list came from the Account API, the EC2 API, or the compiled-in fallback |
-| `configuration-scan` | Evaluates resource configuration posture and emits risks from typed checks |
-| `get-console` | Generates a federated AWS Console sign-in URL from STS credentials |
-| `iam-quick-analyze` | Scans GAAD for privilege escalation and trust issues without Neo4j |
+| `account-auth-details` | Retrieves IAM account authorization details including users, roles, groups, and policies. Supports multiple profiles... |
+| `cdk-bucket-takeover` | Detects AWS CDK S3 bucket takeover vulnerabilities by identifying missing CDK staging buckets and insecure IAM... |
+| `cloudfront-s3-takeover` | Detects CloudFront distributions with S3 origins pointing to non-existent buckets, which could allow attackers to take... |
+| `configuration-scan` | Evaluates AWS resource configuration posture and emits risks. Enumerates supported resource types once, enriches them,... |
+| `cost-summary` | Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table. |
+| `find-secrets` | Enumerates AWS resources via Cloud Control, extracts content likely to contain hardcoded secrets (EC2 user data, Lambda... |
+| `get-console` | Generates a federated AWS Console sign-in URL using STS credentials. Supports three credential paths: existing... |
+| `graph` | Collects AWS IAM data (GAAD, resources, policies), evaluates permissions, and detects privilege escalation paths.... |
+| `iam-quick-analyze` | Quick IAM analysis: collects GAAD from one or more AWS profiles, scans for privilege escalation paths and trust... |
+| `list-all` | List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for... |
+| `org-policies` | Collects AWS Organizations service control policies (SCPs) and resource control policies (RCPs), including the... |
+| `public-resources` | Finds publicly accessible AWS resources through policy evaluation, property inspection, and enrichment. Combines... |
+| `regions` | Lists the AWS regions enabled for the account, reporting whether the list came from the Account API, the EC2 API, or... |
+| `resource-policies` | Retrieves resource-based policies for AWS resources that support them (S3 buckets, Lambda functions, SNS topics, SQS... |
+| `subdomain-takeover` | Detects dangling DNS records in Route53 that are vulnerable to subdomain takeover. Enumerates all records from public... |
+| `whoami` | Covert whoami using AWS APIs that leak the caller ARN in error messages without logging to CloudTrail. Supports... |
 
 ### AWS Analysis
 
 | Module | Description |
 |--------|-------------|
-| `analyze-iam-permissions` | Offline IAM analysis — privilege escalation, cross-account access, create-then-use patterns |
-| `expand-actions` | Expands IAM wildcard actions to concrete permissions |
-| `access-key-to-account-id` | Resolves AWS access key to account ID |
-| `ip-lookup` | Identifies AWS IP ranges for a given IP address |
-| `known-account` | Checks if an account ID belongs to known AWS service accounts |
+| `access-key-to-account-id` | Derives the AWS account ID from an access key ID using base32 decoding without making any API calls. |
+| `analyze-iam-permissions` | Analyzes IAM permissions from GAAD data to detect privilege escalation paths, cross-account access, and create-then-use... |
+| `expand-actions` | Expands wildcard IAM action patterns (e.g. s3:Get* or *) into the full list of matching AWS actions by fetching the AWS... |
+| `graph` | Analyzes a Neo4j graph populated by `aws recon graph --neo4j-uri` and surfaces privilege-escalation paths (non-admin... |
+| `ip-lookup` | Looks up an IP address against the AWS published IP ranges to determine whether it belongs to AWS, and if so, which... |
+| `known-account` | Looks up an AWS account ID against known public account databases to identify the owning organization. |
 
 ### Azure Reconnaissance
 
 | Module | Description |
 |--------|-------------|
-| `find-secrets` | Discovers secrets across Azure services — Key Vaults, App Settings, Cosmos DB, and more |
-| `public-resources` | Detects publicly exposed Azure resources |
-| `configuration-scan` | Resource Graph template-based misconfiguration detection |
-| `subdomain-takeover` | Checks Azure DNS zones for dangling CNAMEs |
-| `conditional-access-policies` | Enumerates Conditional Access policies for weaknesses |
-| `list-all` | Enumerates all resources across subscriptions |
+| `apim-audit` | Audits Azure API Management services for security weaknesses across two checks: (1) APIs (including MCP servers) with... |
+| `apim-cross-tenant` | Enumerates Azure APIM developer portal resources (APIs, products, delegation settings) without authentication, then... |
+| `conditional-access-policies` | Enumerates Azure AD Conditional Access Policies via the Microsoft Graph API |
+| `configuration-scan` | Detects Azure configuration issues including weak authentication, disabled RBAC, privilege escalation paths, and overly... |
+| `find-secrets` | Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web... |
+| `list-all` | List all Azure resources across subscriptions using Azure Resource Graph. Supports scanning specific subscriptions or... |
+| `public-resources` | Identifies publicly accessible Azure resources by executing Azure Resource Graph query templates against target... |
+| `subdomain-takeover` | Scan for dangling DNS records in Azure DNS zones that could enable subdomain takeover. Checks CNAME records for... |
 
 ### GCP Reconnaissance
 
 | Module | Description |
 |--------|-------------|
-| `find-secrets` | Discovers secrets in GCP services — metadata, environment variables, storage objects |
-| `public-resources` | Identifies publicly accessible GCP resources |
-| `subdomain-takeover` | Checks Cloud DNS for dangling CNAME records |
-| `list-all` | Enumerates all resources across projects |
+| `find-secrets` | Enumerates GCP resources via project hierarchy, extracts content likely to contain hardcoded secrets (Compute... |
+| `list-all` | List GCP resources across organization, folder, or project scope. Supports filtering by resource type and evaluates... |
+| `public-resources` | List GCP resources with public network exposure or anonymous access. Focuses on resource types with meaningful public... |
+| `subdomain-takeover` | Scan for dangling DNS records in Cloud DNS that could enable subdomain takeover. Checks CNAME records for non-existent... |
+<!-- /autogen:modules -->
 
 ---
 
