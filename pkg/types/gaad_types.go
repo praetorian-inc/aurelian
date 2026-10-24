@@ -192,9 +192,7 @@ func (policy *ManagedPolicyDetail) DefaultPolicyDocument() *Policy {
 
 // ResolveManagedPolicyStatements looks up a managed policy by ARN in the
 // Policies store and returns its default version's statement list. Returns nil
-// if the policy is not found, has no default version, or has no statements.
-// This eliminates the duplicated lookup-then-DefaultPolicyDocument pattern
-// across the escalation, subprocess, and gaad packages.
+// if the policy is not found or has no default version.
 func (a *AuthorizationAccountDetails) ResolveManagedPolicyStatements(policyArn string) *PolicyStatementList {
 	policy, ok := a.Policies.Get(policyArn)
 	if !ok {
