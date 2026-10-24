@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/escalation"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -23,11 +24,12 @@ import (
 // Evaluator implements the subprocess Handler interface using Aurelian's
 // PolicyEvaluator. It loads GAAD data and answers permission queries.
 type Evaluator struct {
-	gaad         *types.AuthorizationAccountDetails
-	orgPolicies  *orgpolicies.OrgPolicies
-	policyData   *iam.PolicyData
-	evaluator    *iam.PolicyEvaluator
-	groupsByName map[string]types.GroupDetail
+	gaad           *types.AuthorizationAccountDetails
+	orgPolicies    *orgpolicies.OrgPolicies
+	policyData     *iam.PolicyData
+	evaluator      *iam.PolicyEvaluator
+	groupsByName   map[string]types.GroupDetail
+	policyResolver escalation.ManagedPolicyResolver
 }
 
 // checkWithStatementsCalls counts Evaluate invocations through
@@ -44,11 +46,12 @@ func NewEvaluator(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 		return true
 	})
 	return &Evaluator{
-		gaad:         gaad,
-		orgPolicies:  orgPolicies,
-		policyData:   pd,
-		evaluator:    iam.NewPolicyEvaluator(pd),
-		groupsByName: groupsByName,
+		gaad:           gaad,
+		orgPolicies:    orgPolicies,
+		policyData:     pd,
+		evaluator:      iam.NewPolicyEvaluator(pd),
+		groupsByName:   groupsByName,
+		policyResolver: escalation.GAADPolicyResolver(gaad),
 	}
 }
 
@@ -388,16 +391,7 @@ func (e *Evaluator) identityStatementsForPrincipal(principalArn string) types.Po
 }
 
 func (e *Evaluator) collectGroupStatements(g *types.GroupDetail) types.PolicyStatementList {
-	var stmts types.PolicyStatementList
-	for _, p := range g.GroupPolicyList {
-		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, *p.PolicyDocument.Statement...)
-		}
-	}
-	for _, mp := range g.AttachedManagedPolicies {
-		stmts = append(stmts, e.resolveManagedPolicy(mp)...)
-	}
-	return stmts
+	return escalation.CollectRawGroupStatements(g, e.policyResolver)
 }
 
 // whoCanBulkSerial is the single-threaded cross-product. It is the worker=1
@@ -623,58 +617,18 @@ func (e *Evaluator) collectStatementsForPrincipal(principalArn string) (*types.P
 }
 
 func (e *Evaluator) collectUserStatements(user *types.UserDetail) types.PolicyStatementList {
-	var stmts types.PolicyStatementList
-	for _, p := range user.UserPolicyList {
-		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, *p.PolicyDocument.Statement...)
-		}
-	}
-	for _, mp := range user.AttachedManagedPolicies {
-		stmts = append(stmts, e.resolveManagedPolicy(mp)...)
-	}
-	for _, groupName := range user.GroupList {
-		g, ok := e.groupsByName[groupName]
-		if !ok {
-			continue
-		}
-		for _, p := range g.GroupPolicyList {
-			if p.PolicyDocument.Statement != nil {
-				stmts = append(stmts, *p.PolicyDocument.Statement...)
-			}
-		}
-		for _, mp := range g.AttachedManagedPolicies {
-			stmts = append(stmts, e.resolveManagedPolicy(mp)...)
-		}
-	}
-	return stmts
+	return escalation.CollectRawUserStatements(user, e.groupsByName, e.policyResolver)
 }
 
 func (e *Evaluator) collectRoleStatements(role *types.RoleDetail) types.PolicyStatementList {
-	var stmts types.PolicyStatementList
-	for _, p := range role.RolePolicyList {
-		if p.PolicyDocument.Statement != nil {
-			stmts = append(stmts, *p.PolicyDocument.Statement...)
-		}
-	}
-	for _, mp := range role.AttachedManagedPolicies {
-		stmts = append(stmts, e.resolveManagedPolicy(mp)...)
-	}
-	return stmts
-}
-
-func (e *Evaluator) resolveManagedPolicy(mp types.ManagedPolicy) types.PolicyStatementList {
-	stmts := e.gaad.ResolveManagedPolicyStatements(mp.PolicyArn)
-	if stmts == nil {
-		return nil
-	}
-	return *stmts
+	return escalation.CollectRawRoleStatements(role, e.policyResolver)
 }
 
 func (e *Evaluator) resolveBoundary(boundary types.ManagedPolicy) *types.PolicyStatementList {
 	if boundary.PolicyArn == "" {
 		return nil
 	}
-	return e.gaad.ResolveManagedPolicyStatements(boundary.PolicyArn)
+	return e.policyResolver(boundary.PolicyArn)
 }
 
 func (e *Evaluator) buildRequestContext(principalArn, resourceArn string) *iam.RequestContext {

@@ -245,6 +245,100 @@ func TestCollectPolicySummary_GroupWithPolicies(t *testing.T) {
 	assert.True(t, found, "group should have Allow *:* from managed policy")
 }
 
+func TestOriginToSource_Labels(t *testing.T) {
+	// Build a GAAD with a user in a group, both having inline + managed policies.
+	groupInlineStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"ec2:Describe*"}, Resource: &types.DynaString{"*"}},
+	}
+	userInlineStmt := types.PolicyStatementList{
+		{Effect: "Deny", Action: &types.DynaString{"iam:*"}, Resource: &types.DynaString{"*"}},
+	}
+	roleInlineStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"logs:PutLogEvents"}, Resource: &types.DynaString{"*"}},
+	}
+	managedStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:GetObject"}, Resource: &types.DynaString{"*"}},
+	}
+	managedArn := "arn:aws:iam::111111111111:policy/ReadOnly"
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		[]types.UserDetail{{
+			Arn:      "arn:aws:iam::111111111111:user/alice",
+			UserName: "alice",
+			UserPolicyList: []types.InlinePolicy{
+				{PolicyName: "user-pol", PolicyDocument: types.Policy{Statement: &userInlineStmt}},
+			},
+			AttachedManagedPolicies: []types.ManagedPolicy{
+				{PolicyName: "ReadOnly", PolicyArn: managedArn},
+			},
+			GroupList: []string{"devs"},
+		}},
+		[]types.GroupDetail{{
+			Arn:       "arn:aws:iam::111111111111:group/devs",
+			GroupName: "devs",
+			GroupPolicyList: []types.InlinePolicy{
+				{PolicyName: "grp-pol", PolicyDocument: types.Policy{Statement: &groupInlineStmt}},
+			},
+			AttachedManagedPolicies: []types.ManagedPolicy{
+				{PolicyName: "ReadOnly", PolicyArn: managedArn},
+			},
+		}},
+		[]types.RoleDetail{{
+			Arn:      "arn:aws:iam::111111111111:role/lambda",
+			RoleName: "lambda",
+			RolePolicyList: []types.InlinePolicy{
+				{PolicyName: "role-pol", PolicyDocument: types.Policy{Statement: &roleInlineStmt}},
+			},
+			AttachedManagedPolicies: []types.ManagedPolicy{
+				{PolicyName: "ReadOnly", PolicyArn: managedArn},
+			},
+		}},
+		[]types.ManagedPolicyDetail{{
+			Arn:        managedArn,
+			PolicyName: "ReadOnly",
+			PolicyVersionList: []types.PolicyVersion{
+				{VersionId: "v1", IsDefaultVersion: true, Document: types.Policy{Statement: &managedStmt}},
+			},
+		}},
+	)
+	resources := store.NewMap[output.AWSResource]()
+	entries := CollectPolicySummary(PolicySummaryInput{GAAD: gaad, Resources: resources})
+
+	byPrincipal := make(map[string]PolicySummaryEntry)
+	for _, e := range entries {
+		byPrincipal[e.Principal] = e
+	}
+
+	sources := func(e PolicySummaryEntry) map[string]bool {
+		m := make(map[string]bool)
+		for _, s := range e.EffectiveStatements {
+			m[s.Source] = true
+		}
+		return m
+	}
+
+	// User: inline → inline:<user>/<pol>, managed → managed:<arn>,
+	//        group inline → group-inline:<group>/<pol>, group managed → managed:<arn>
+	userEntry := byPrincipal["arn:aws:iam::111111111111:user/alice"]
+	userSources := sources(userEntry)
+	assert.True(t, userSources["inline:alice/user-pol"], "user inline source")
+	assert.True(t, userSources["managed:"+managedArn], "user managed source")
+	assert.True(t, userSources["group-inline:devs/grp-pol"],
+		"group inline policies reached via user walk use group-inline: prefix")
+
+	// Role: inline → inline:<role>/<pol>, managed → managed:<arn>
+	roleEntry := byPrincipal["arn:aws:iam::111111111111:role/lambda"]
+	roleSources := sources(roleEntry)
+	assert.True(t, roleSources["inline:lambda/role-pol"], "role inline source")
+	assert.True(t, roleSources["managed:"+managedArn], "role managed source")
+
+	// Group: inline → group-inline:<group>/<pol>, managed → managed:<arn>
+	groupEntry := byPrincipal["arn:aws:iam::111111111111:group/devs"]
+	groupSources := sources(groupEntry)
+	assert.True(t, groupSources["group-inline:devs/grp-pol"], "group inline source")
+	assert.True(t, groupSources["managed:"+managedArn], "group managed source")
+}
+
 func TestCollectPolicySummary_SCPIntegration(t *testing.T) {
 	gaad := types.NewAuthorizationAccountDetails("111111111111",
 		nil,
