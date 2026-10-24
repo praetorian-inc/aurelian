@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/store"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,7 +23,7 @@ func TestCollectCodeBuildServiceRole(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	var codebuildFacts []output.StructuralFact
 	for _, f := range facts {
@@ -53,7 +54,7 @@ func TestCollectCodeBuildServiceRoleNoRole(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	for _, f := range facts {
 		if f.FactType == FactCodeBuildServiceRole {
@@ -75,7 +76,7 @@ func TestCollectLaunchTemplateInstanceProfile(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	var ltFacts []output.StructuralFact
 	for _, f := range facts {
@@ -94,6 +95,7 @@ func TestCollectLaunchTemplateInstanceProfile(t *testing.T) {
 }
 
 func TestCollectLaunchTemplateInstanceProfileNameForm(t *testing.T) {
+	// Without an instance-profile index, bare names pass through unresolved.
 	resources := store.NewMap[output.AWSResource]()
 	resources.Set("arn:aws:ec2:us-east-1:123456789012:launch-template/lt-def456", output.AWSResource{
 		ResourceType: "AWS::EC2::LaunchTemplate",
@@ -106,7 +108,7 @@ func TestCollectLaunchTemplateInstanceProfileNameForm(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	var ltFacts []output.StructuralFact
 	for _, f := range facts {
@@ -117,6 +119,172 @@ func TestCollectLaunchTemplateInstanceProfileNameForm(t *testing.T) {
 
 	require.Len(t, ltFacts, 1)
 	assert.Equal(t, "prod-profile", ltFacts[0].RoleARN)
+}
+
+func TestCollectLaunchTemplateBareName_ResolvedViaIndex(t *testing.T) {
+	// When an instance-profile index is provided, a bare name is resolved to its ARN.
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("arn:aws:ec2:us-east-1:123456789012:launch-template/lt-def456", output.AWSResource{
+		ResourceType: "AWS::EC2::LaunchTemplate",
+		ResourceID:   "lt-def456",
+		ARN:          "arn:aws:ec2:us-east-1:123456789012:launch-template/lt-def456",
+		AccountRef:   "123456789012",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"IamInstanceProfile": "prod-profile",
+		},
+	})
+
+	ipIndex := map[string]string{
+		"prod-profile": "arn:aws:iam::123456789012:instance-profile/prod-profile",
+	}
+	facts := Collect(resources, ipIndex)
+
+	var ltFacts []output.StructuralFact
+	for _, f := range facts {
+		if f.FactType == FactLaunchTemplateInstanceProfile {
+			ltFacts = append(ltFacts, f)
+		}
+	}
+
+	require.Len(t, ltFacts, 1)
+	assert.Equal(t, "arn:aws:iam::123456789012:instance-profile/prod-profile", ltFacts[0].RoleARN)
+}
+
+func TestCollectLaunchTemplateARN_NotDoubleResolved(t *testing.T) {
+	// A value that is already an ARN must not be altered by the index.
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("lt", output.AWSResource{
+		ResourceType: "AWS::EC2::LaunchTemplate",
+		ARN:          "arn:aws:ec2:us-east-1:111:launch-template/lt-1",
+		AccountRef:   "111",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"IamInstanceProfile": "arn:aws:iam::111:instance-profile/already-arn",
+		},
+	})
+
+	ipIndex := map[string]string{
+		"already-arn": "arn:aws:iam::111:instance-profile/should-not-use-this",
+	}
+	facts := Collect(resources, ipIndex)
+
+	var ltFacts []output.StructuralFact
+	for _, f := range facts {
+		if f.FactType == FactLaunchTemplateInstanceProfile {
+			ltFacts = append(ltFacts, f)
+		}
+	}
+
+	require.Len(t, ltFacts, 1)
+	assert.Equal(t, "arn:aws:iam::111:instance-profile/already-arn", ltFacts[0].RoleARN)
+}
+
+func TestCollectLaunchTemplateBareName_NotInIndex(t *testing.T) {
+	// A bare name not found in the index passes through unresolved.
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("lt", output.AWSResource{
+		ResourceType: "AWS::EC2::LaunchTemplate",
+		ARN:          "arn:aws:ec2:us-east-1:111:launch-template/lt-1",
+		AccountRef:   "111",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"IamInstanceProfile": "unknown-profile",
+		},
+	})
+
+	ipIndex := map[string]string{
+		"other-profile": "arn:aws:iam::111:instance-profile/other",
+	}
+	facts := Collect(resources, ipIndex)
+
+	var ltFacts []output.StructuralFact
+	for _, f := range facts {
+		if f.FactType == FactLaunchTemplateInstanceProfile {
+			ltFacts = append(ltFacts, f)
+		}
+	}
+
+	require.Len(t, ltFacts, 1)
+	assert.Equal(t, "unknown-profile", ltFacts[0].RoleARN)
+}
+
+func TestCollectEC2InstanceBareName_ResolvedViaIndex(t *testing.T) {
+	// EC2 instances also reference IamInstanceProfile; bare names are resolved.
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("i", output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ARN:          "arn:aws:ec2:us-east-1:111:instance/i-1",
+		AccountRef:   "111",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"IamInstanceProfile": "ec2-profile",
+		},
+	})
+
+	ipIndex := map[string]string{
+		"ec2-profile": "arn:aws:iam::111:instance-profile/ec2-profile",
+	}
+	facts := Collect(resources, ipIndex)
+
+	var ipFacts []output.StructuralFact
+	for _, f := range facts {
+		if f.FactType == FactInstanceProfile {
+			ipFacts = append(ipFacts, f)
+		}
+	}
+
+	require.Len(t, ipFacts, 1)
+	assert.Equal(t, "arn:aws:iam::111:instance-profile/ec2-profile", ipFacts[0].RoleARN)
+}
+
+func TestBuildInstanceProfileIndex(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111122223333", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:      "arn:aws:iam::111122223333:role/role-a",
+				RoleName: "role-a",
+				InstanceProfileList: []types.InstanceProfile{
+					{
+						InstanceProfileName: "profile-a",
+						Arn:                 "arn:aws:iam::111122223333:instance-profile/profile-a",
+					},
+				},
+			},
+			{
+				Arn:      "arn:aws:iam::111122223333:role/role-b",
+				RoleName: "role-b",
+				InstanceProfileList: []types.InstanceProfile{
+					{
+						InstanceProfileName: "profile-b",
+						Arn:                 "arn:aws:iam::111122223333:instance-profile/profile-b",
+					},
+					{
+						InstanceProfileName: "profile-c",
+						Arn:                 "arn:aws:iam::111122223333:instance-profile/profile-c",
+					},
+				},
+			},
+			{
+				Arn:                 "arn:aws:iam::111122223333:role/role-no-ip",
+				RoleName:            "role-no-ip",
+				InstanceProfileList: nil,
+			},
+		}, nil)
+
+	index := BuildInstanceProfileIndex(gaad)
+
+	assert.Equal(t, "arn:aws:iam::111122223333:instance-profile/profile-a", index["profile-a"])
+	assert.Equal(t, "arn:aws:iam::111122223333:instance-profile/profile-b", index["profile-b"])
+	assert.Equal(t, "arn:aws:iam::111122223333:instance-profile/profile-c", index["profile-c"])
+	assert.Empty(t, index["nonexistent"])
+	assert.Len(t, index, 3)
+}
+
+func TestBuildInstanceProfileIndex_NilGAAD(t *testing.T) {
+	index := BuildInstanceProfileIndex(nil)
+	assert.NotNil(t, index)
+	assert.Empty(t, index)
 }
 
 func TestCollectLaunchTemplateNoProfile(t *testing.T) {
@@ -132,7 +300,7 @@ func TestCollectLaunchTemplateNoProfile(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	for _, f := range facts {
 		if f.FactType == FactLaunchTemplateInstanceProfile {
@@ -154,7 +322,7 @@ func TestCollectCloudFormationStackRole(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	var cfnFacts []output.StructuralFact
 	for _, f := range facts {
@@ -184,7 +352,7 @@ func TestCollectCloudFormationStackNoRole(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	for _, f := range facts {
 		if f.FactType == FactCloudFormationStackRole {
@@ -218,7 +386,7 @@ func TestCollectMultipleFactTypes(t *testing.T) {
 		Properties:   map[string]any{"RoleARN": "arn:aws:iam::111:role/cfn-role"},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	typeCount := map[string]int{}
 	for _, f := range facts {
@@ -287,7 +455,7 @@ func TestCollectAllFactTypes(t *testing.T) {
 		"arn:aws:cognito-identity:us-east-1:111:identitypool/us-east-1:pool-1", "111", "us-east-1",
 		map[string]any{"authenticatedRole": "arn:aws:iam::111:role/cognito-auth"})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	typeCount := map[string]int{}
 	for _, f := range facts {
@@ -316,7 +484,7 @@ func TestCollectNilProperties(t *testing.T) {
 		AccountRef:   "111",
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	for _, f := range facts {
 		if f.FactType == FactCodeBuildServiceRole {
@@ -327,7 +495,7 @@ func TestCollectNilProperties(t *testing.T) {
 
 func TestCollectEmptyResources(t *testing.T) {
 	resources := store.NewMap[output.AWSResource]()
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 	assert.Empty(t, facts)
 }
 
@@ -346,7 +514,7 @@ func TestCollectBatchJobDefinition(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	var batchFacts []output.StructuralFact
 	for _, f := range facts {
@@ -375,7 +543,7 @@ func TestCollectCognitoMultipleRoles(t *testing.T) {
 		},
 	})
 
-	facts := Collect(resources)
+	facts := Collect(resources, nil)
 
 	factsByType := map[string]output.StructuralFact{}
 	for _, f := range facts {

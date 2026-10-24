@@ -555,7 +555,8 @@ func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 	// privileged service role exists). The facts are extracted from the same
 	// resource set the Neo4j enrichers read, so they carry the same role
 	// references without requiring a graph database.
-	facts := structuralfacts.Collect(m.resourcesWithPolicies)
+	ipIndex := structuralfacts.BuildInstanceProfileIndex(m.gaadData)
+	facts := structuralfacts.Collect(m.resourcesWithPolicies, ipIndex)
 	for _, f := range facts {
 		out.Send(f)
 	}
