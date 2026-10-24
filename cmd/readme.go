@@ -194,18 +194,24 @@ func mergeReadmeMods(existing, live []readmeMod) []readmeMod {
 	for i, m := range existing {
 		existingOrder[m.ID] = i
 	}
-	out := make([]readmeMod, 0, len(live))
+	liveByID := make(map[string]readmeMod, len(live))
+	for _, m := range live {
+		liveByID[m.ID] = m
+	}
+	ordered := make([]readmeMod, 0, len(live))
+	for _, e := range existing {
+		if m, ok := liveByID[e.ID]; ok {
+			ordered = append(ordered, readmeMod{ID: m.ID, Description: shortReadmeDescription(m.Description)})
+		}
+	}
 	var added []readmeMod
 	for _, m := range live {
-		rm := readmeMod{ID: m.ID, Description: shortReadmeDescription(m.Description)}
-		if _, ok := existingOrder[m.ID]; ok {
-			out = append(out, rm)
-		} else {
-			added = append(added, rm)
+		if _, ok := existingOrder[m.ID]; !ok {
+			added = append(added, readmeMod{ID: m.ID, Description: shortReadmeDescription(m.Description)})
 		}
 	}
 	sort.Slice(added, func(i, j int) bool { return added[i].ID < added[j].ID })
-	return append(out, added...)
+	return append(ordered, added...)
 }
 
 func renderReadmeModuleTables(groups []readmeGroup) string {
