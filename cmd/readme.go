@@ -310,11 +310,7 @@ func parseReadmeHeading(title string) (plugin.Platform, plugin.Category, bool) {
 			}
 		}
 	}
-	parts := strings.SplitN(title, " ", 2)
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return plugin.Platform(strings.ToLower(parts[0])), plugin.Category(strings.ToLower(parts[1])), true
+	return "", "", false
 }
 
 func parseReadmeModuleRow(line string) (id, desc string, ok bool) {
