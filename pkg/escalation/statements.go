@@ -45,7 +45,8 @@ type PolicyOrigin struct {
 type ManagedPolicyResolver func(policyARN string) *types.PolicyStatementList
 
 // GAADPolicyResolver returns a ManagedPolicyResolver backed by a GAAD's
-// Policies map. This is the production resolver.
+// Policies map. The returned *PolicyStatementList aliases the cached GAAD
+// document; callers must treat it as read-only.
 func GAADPolicyResolver(gaad *types.AuthorizationAccountDetails) ManagedPolicyResolver {
 	return func(policyARN string) *types.PolicyStatementList {
 		policy, ok := gaad.Policies.Get(policyARN)
