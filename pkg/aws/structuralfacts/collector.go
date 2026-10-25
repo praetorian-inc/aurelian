@@ -36,6 +36,8 @@ const (
 	FactInstanceProfile              = "instance_profile"
 	FactCognitoAuthenticatedRole     = "cognito_authenticated_role"
 	FactCognitoUnauthenticatedRole   = "cognito_unauthenticated_role"
+	FactStackSetAdminRole            = "stackset_admin_role"
+	FactStackSetExecutionRole        = "stackset_execution_role"
 )
 
 // extractor defines one resource-type → fact-type extraction: which property
@@ -59,10 +61,8 @@ var extractors = []extractor{
 	{"AWS::CloudFormation::Stack", FactCloudFormationStackRole, []string{"RoleARN"}},
 
 	// Priority 2: remaining chain-rule facts from the expanded scope.
-	// NOTE: StackSet extraction is deferred — AdministrationRoleARN targets the
-	// management-account role (wrong principal) and ExecutionRoleName is a bare
-	// name, not an ARN. Proper extraction requires resolving target-account
-	// execution role ARNs from StackSet instances.
+	{"AWS::CloudFormation::StackSet", FactStackSetAdminRole, []string{"AdministrationRoleARN"}},
+	{"AWS::CloudFormation::StackSet", FactStackSetExecutionRole, []string{"ExecutionRoleName"}},
 	{"AWS::Lambda::Function", FactLambdaExecutionRole, []string{"Role"}},
 	{"AWS::ECS::TaskDefinition", FactECSTaskRole, []string{"TaskRoleArn"}},
 	{"AWS::Glue::Job", FactGlueJobRole, []string{"Role"}},
