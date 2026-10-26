@@ -185,7 +185,6 @@ const (
 	FactSageMakerSpaceRole     StructuralFactType = "sagemaker_space_role"
 	FactGlueEndpointRole       StructuralFactType = "glue_endpoint_role"
 	FactSageMakerNotebookRole  StructuralFactType = "sagemaker_notebook_role"
-	FactBedrockInterpreterRole StructuralFactType = "bedrock_interpreter_role"
 	FactGroupMembership        StructuralFactType = "group_membership"
 	FactPolicyAttachment       StructuralFactType = "policy_attachment"
 )
