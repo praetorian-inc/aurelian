@@ -95,6 +95,10 @@ func (m *AWSGraphModule) Parameters() any {
 func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	m.log = cfg.Log
 
+	if m.Offline && m.GAADFile == "" {
+		return fmt.Errorf("--offline requires --gaad-file")
+	}
+
 	if err := m.collectInputs(); err != nil {
 		return fmt.Errorf("collecting inputs: %w", err)
 	}
@@ -115,11 +119,8 @@ func (m *AWSGraphModule) collectInputs() error {
 	var eg errgroup.Group
 	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
 
-	// When --gaad-file is provided without --profile, skip all AWS API collectors
-	// (structural facts, resource policies) since there are no credentials to call
-	// AWS. The model is still valid — it just won't contain chain-rule facts.
-	if m.GAADFile != "" && m.Profile == "" {
-		m.log.Warn("--gaad-file without --profile: skipping structural facts and resource policy collection")
+	if m.Offline {
+		m.log.Warn("--offline: skipping structural facts and resource policy collection")
 		return eg.Wait()
 	}
 

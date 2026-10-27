@@ -56,8 +56,9 @@ func TestAWSGraphModuleParameters(t *testing.T) {
 	// Must include org-policies-file
 	assert.True(t, paramNames["org-policies-file"], "should have org-policies-file param")
 
-	// Must include gaad-file
+	// Must include gaad-file and offline
 	assert.True(t, paramNames["gaad-file"], "should have gaad-file param")
+	assert.True(t, paramNames["offline"], "should have offline param")
 }
 
 // TestEmitOutputsEmitsStructuralFacts verifies that emitOutputs emits
@@ -180,7 +181,7 @@ func TestLoadGAADFromFile_InvalidJSON(t *testing.T) {
 	assert.Contains(t, err.Error(), "parsing GAAD file")
 }
 
-func TestCollectInputs_GAADFileWithoutProfile(t *testing.T) {
+func TestCollectInputs_OfflineMode(t *testing.T) {
 	gaadJSON := `{
 		"accountId": "123456789012",
 		"UserDetailList": [],
@@ -196,7 +197,7 @@ func TestCollectInputs_GAADFileWithoutProfile(t *testing.T) {
 	m := &AWSGraphModule{}
 	m.log = plugin.NewLogger(nil, true, true)
 	m.GraphConfig.GAADFile = path
-	// Profile is empty — structural facts should be skipped.
+	m.GraphConfig.Offline = true
 
 	err := m.collectInputs()
 	require.NoError(t, err)

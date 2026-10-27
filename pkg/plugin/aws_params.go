@@ -15,6 +15,7 @@ type AWSReconBase struct {
 	Profile    string `param:"profile"      desc:"AWS profile to use" shortcode:"p"`
 	ProfileDir string `param:"profile-dir"  desc:"Set to override the default AWS profile directory"`
 	OpsecLevel string `param:"opsec_level"  desc:"Operational security level for AWS operations" default:"none"`
+	Offline    bool   `param:"offline"      desc:"Skip all AWS API calls (use with --gaad-file for local-only analysis)" default:"false"`
 }
 
 type AWSCommonRecon struct {
@@ -27,13 +28,17 @@ type AWSCommonRecon struct {
 
 func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
 	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
-		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
-		if err != nil {
-			return fmt.Errorf("resolving regions: %w", err)
+		if c.Offline {
+			c.Regions = nil
+		} else {
+			resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
+			if err != nil {
+				return fmt.Errorf("resolving regions: %w", err)
+			}
+			c.Regions = resolved
 		}
-		c.Regions = resolved
 	}
-	
+
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }
