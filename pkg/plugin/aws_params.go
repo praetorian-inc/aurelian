@@ -15,7 +15,6 @@ type AWSReconBase struct {
 	Profile    string `param:"profile"      desc:"AWS profile to use" shortcode:"p"`
 	ProfileDir string `param:"profile-dir"  desc:"Set to override the default AWS profile directory"`
 	OpsecLevel string `param:"opsec_level"  desc:"Operational security level for AWS operations" default:"none"`
-	Offline    bool   `param:"offline"      desc:"Skip all AWS API calls (use with --gaad-file for local-only analysis)" default:"false"`
 }
 
 type AWSCommonRecon struct {
@@ -26,9 +25,9 @@ type AWSCommonRecon struct {
 	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }
 
-func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
+func (c *AWSCommonRecon) PostBind(cfg Config, _ Module) error {
 	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
-		if c.Offline {
+		if isOffline(cfg) {
 			c.Regions = nil
 		} else {
 			resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
@@ -41,6 +40,15 @@ func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
 
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
+}
+
+func isOffline(cfg Config) bool {
+	v, ok := cfg.Args["offline"]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }
 
 type OrgPoliciesParam struct {

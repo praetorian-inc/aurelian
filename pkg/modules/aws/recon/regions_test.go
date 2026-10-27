@@ -75,7 +75,7 @@ func TestRegionsConfig_ParameterSurfaceIsExact(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t,
-		[]string{"output-dir", "profile", "profile-dir", "opsec_level", "offline"},
+		[]string{"output-dir", "profile", "profile-dir", "opsec_level"},
 		names,
 		"RegionsConfig's parameter surface changed. If a parameter was ADDED, confirm it "+
 			"carries no credential material and is genuinely needed, then update this list "+

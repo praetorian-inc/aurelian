@@ -34,6 +34,7 @@ type GraphConfig struct {
 	PermissionFormat string `param:"permission-format" desc:"Permission source format: policy_summary (default) or evaluated_triples" default:"policy_summary"`
 	Attacker         string `param:"attacker" desc:"Attacker principal ARN for escalation-solver goal, or * for all principals" default:"*"`
 	GAADFile         string `param:"gaad-file" desc:"Path to a local GAAD JSON file (skips live GetAccountAuthorizationDetails call)"`
+	Offline          bool   `param:"offline" desc:"Skip all AWS API calls; requires --gaad-file for local-only analysis" default:"false"`
 }
 
 // AWSGraphModule is a refactored version of AWSGraphModule.
