@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -187,27 +188,38 @@ func TestMergeModels_CoveragePerAccount(t *testing.T) {
 }
 
 func TestMergeModels_CoverageRepeatedAccount_ORMerged(t *testing.T) {
-	// Same account in two models with different coverage flags — should OR-merge.
-	modelA := accountModel("111111111111", []Principal{
-		{ARN: "arn:aws:iam::111111111111:role/R1", Account: "111111111111", Type: PrincipalTypeRole},
-	}, nil, nil)
-	modelA.CollectionCoverage = map[string]*CollectionCoverage{
-		"111111111111": {IAMGAAD: true},
+	// For each bool field on CollectionCoverage, verify that OR-merge works:
+	// model A sets only that field, model B sets none → merged has it true.
+	// This uses reflection so new fields are automatically covered.
+	covType := reflect.TypeOf(CollectionCoverage{})
+	for i := 0; i < covType.NumField(); i++ {
+		f := covType.Field(i)
+		if f.Type.Kind() != reflect.Bool {
+			continue
+		}
+		t.Run(f.Name, func(t *testing.T) {
+			modelA := accountModel("111111111111", []Principal{
+				{ARN: "arn:aws:iam::111111111111:role/R1", Account: "111111111111", Type: PrincipalTypeRole},
+			}, nil, nil)
+			covA := &CollectionCoverage{}
+			reflect.ValueOf(covA).Elem().Field(i).SetBool(true)
+			modelA.CollectionCoverage = map[string]*CollectionCoverage{"111111111111": covA}
+
+			modelB := accountModel("111111111111", []Principal{
+				{ARN: "arn:aws:iam::111111111111:role/R2", Account: "111111111111", Type: PrincipalTypeRole},
+			}, nil, nil)
+			modelB.CollectionCoverage = map[string]*CollectionCoverage{
+				"111111111111": {},
+			}
+
+			merged, err := MergeModels([]*Model{modelA, modelB})
+			require.NoError(t, err)
+
+			require.NotNil(t, merged.CollectionCoverage["111111111111"])
+			got := reflect.ValueOf(merged.CollectionCoverage["111111111111"]).Elem().Field(i).Bool()
+			assert.True(t, got, "%s should be OR-merged from model A", f.Name)
+		})
 	}
-
-	modelB := accountModel("111111111111", []Principal{
-		{ARN: "arn:aws:iam::111111111111:role/R2", Account: "111111111111", Type: PrincipalTypeRole},
-	}, nil, nil)
-	modelB.CollectionCoverage = map[string]*CollectionCoverage{
-		"111111111111": {S3BucketPolicies: true},
-	}
-
-	merged, err := MergeModels([]*Model{modelA, modelB})
-	require.NoError(t, err)
-
-	require.NotNil(t, merged.CollectionCoverage["111111111111"])
-	assert.True(t, merged.CollectionCoverage["111111111111"].IAMGAAD, "first model's IAMGAAD should be preserved")
-	assert.True(t, merged.CollectionCoverage["111111111111"].S3BucketPolicies, "second model's S3BucketPolicies should be OR-merged in")
 }
 
 func TestMergeModels_CoverageDoesNotAliasInput(t *testing.T) {
