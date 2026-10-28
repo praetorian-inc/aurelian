@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"sort"
 )
 
 // MergeModels combines multiple per-account Models into a single org-wide
@@ -179,12 +180,28 @@ func statementsEqual(a, b []PolicyStatement) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	ja, errA := json.Marshal(a)
-	jb, errB := json.Marshal(b)
+	sa := sortedStatements(a)
+	sb := sortedStatements(b)
+	ja, errA := json.Marshal(sa)
+	jb, errB := json.Marshal(sb)
 	if errA != nil || errB != nil {
 		return false
 	}
 	return string(ja) == string(jb)
+}
+
+func sortedStatements(s []PolicyStatement) []PolicyStatement {
+	out := append([]PolicyStatement(nil), s...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Effect != out[j].Effect {
+			return out[i].Effect < out[j].Effect
+		}
+		if out[i].Action != out[j].Action {
+			return out[i].Action < out[j].Action
+		}
+		return out[i].Resource < out[j].Resource
+	})
+	return out
 }
 
 func tripleKey(t *EvaluatedTriple) string {
