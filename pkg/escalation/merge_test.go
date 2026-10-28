@@ -158,6 +158,28 @@ func TestMergeModels_MergesCoverage(t *testing.T) {
 	assert.True(t, merged.CollectionCoverage.S3BucketPolicies)
 }
 
+func TestMergeModels_CoverageDoesNotAliasInput(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.CollectionCoverage = &CollectionCoverage{IAMGAAD: true}
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+	// modelB has nil coverage — mergeCoverage should return a copy of A, not A itself
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	require.NotNil(t, merged.CollectionCoverage)
+	assert.True(t, merged.CollectionCoverage.IAMGAAD)
+
+	// Mutating merged coverage must not affect the input model
+	merged.CollectionCoverage.S3BucketPolicies = true
+	assert.False(t, modelA.CollectionCoverage.S3BucketPolicies, "merged coverage must not alias input")
+}
+
 func TestMergeModels_MergesCollectionErrors(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
@@ -306,6 +328,20 @@ func TestMergeModels_DuplicatePrincipals_Deduplicated(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, merged.Principals, 1)
+}
+
+func TestMergeModels_DuplicatePrincipals_DivergentAttributes_KeepsFirst(t *testing.T) {
+	pA := Principal{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole, IsAdmin: false}
+	pB := Principal{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole, IsAdmin: true}
+
+	modelA := accountModel("111111111111", []Principal{pA}, nil, nil)
+	modelB := accountModel("111111111111", []Principal{pB}, nil, nil)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.Principals, 1)
+	assert.Equal(t, false, merged.Principals[0].IsAdmin, "first-seen wins")
 }
 
 func TestMergeModels_JSONSerializable(t *testing.T) {

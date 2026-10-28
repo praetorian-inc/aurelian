@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"fmt"
+	"log/slog"
 )
 
 // MergeModels combines multiple per-account Models into a single org-wide
@@ -51,6 +52,14 @@ func MergeModels(models []*Model) (*Model, error) {
 
 		for _, p := range m.Principals {
 			if seenPrincipals[p.ARN] {
+				if existing := findPrincipal(merged.Principals, p.ARN); existing != nil {
+					if existing.IsAdmin != p.IsAdmin || existing.Type != p.Type {
+						slog.Warn("MergeModels: duplicate principal with divergent attributes, keeping first-seen",
+							"arn", p.ARN,
+							"first_is_admin", existing.IsAdmin, "second_is_admin", p.IsAdmin,
+							"first_type", existing.Type, "second_type", p.Type)
+					}
+				}
 				continue
 			}
 			seenPrincipals[p.ARN] = true
@@ -79,11 +88,16 @@ func MergeModels(models []*Model) (*Model, error) {
 
 // mergeCoverage OR-merges two CollectionCoverage structs (true if either is true).
 func mergeCoverage(a, b *CollectionCoverage) *CollectionCoverage {
+	if a == nil && b == nil {
+		return nil
+	}
 	if a == nil {
-		return b
+		c := *b
+		return &c
 	}
 	if b == nil {
-		return a
+		c := *a
+		return &c
 	}
 	return &CollectionCoverage{
 		IAMGAAD:                a.IAMGAAD || b.IAMGAAD,
@@ -97,5 +111,14 @@ func mergeCoverage(a, b *CollectionCoverage) *CollectionCoverage {
 		KMSKeyPolicies:         a.KMSKeyPolicies || b.KMSKeyPolicies,
 		SNSTopicPolicies:       a.SNSTopicPolicies || b.SNSTopicPolicies,
 	}
+}
+
+func findPrincipal(principals []Principal, arn string) *Principal {
+	for i := range principals {
+		if principals[i].ARN == arn {
+			return &principals[i]
+		}
+	}
+	return nil
 }
 
