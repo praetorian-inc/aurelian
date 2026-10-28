@@ -144,7 +144,18 @@ func MergeModels(models []*Model) (*Model, error) {
 			if merged.CollectionCoverage == nil {
 				merged.CollectionCoverage = make(map[string]*CollectionCoverage)
 			}
-			if _, exists := merged.CollectionCoverage[acctID]; !exists {
+			if existing, ok := merged.CollectionCoverage[acctID]; ok {
+				existing.IAMGAAD = existing.IAMGAAD || cov.IAMGAAD
+				existing.EC2InstanceProfiles = existing.EC2InstanceProfiles || cov.EC2InstanceProfiles
+				existing.LambdaExecutionRoles = existing.LambdaExecutionRoles || cov.LambdaExecutionRoles
+				existing.ECSTaskRoles = existing.ECSTaskRoles || cov.ECSTaskRoles
+				existing.CodeBuildServiceRoles = existing.CodeBuildServiceRoles || cov.CodeBuildServiceRoles
+				existing.S3BucketPolicies = existing.S3BucketPolicies || cov.S3BucketPolicies
+				existing.LambdaResourcePolicies = existing.LambdaResourcePolicies || cov.LambdaResourcePolicies
+				existing.SQSQueuePolicies = existing.SQSQueuePolicies || cov.SQSQueuePolicies
+				existing.KMSKeyPolicies = existing.KMSKeyPolicies || cov.KMSKeyPolicies
+				existing.SNSTopicPolicies = existing.SNSTopicPolicies || cov.SNSTopicPolicies
+			} else {
 				c := *cov
 				merged.CollectionCoverage[acctID] = &c
 			}
