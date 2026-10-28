@@ -721,6 +721,40 @@ func TestMergeModels_DuplicateResourcePolicies_DeduplicatedByResource(t *testing
 	assert.Len(t, merged.ResourcePolicies, 1, "duplicate resource policies should be deduped by resource ARN")
 }
 
+func TestMergeModels_DivergentTriples_BothKept(t *testing.T) {
+	// Same (principal, action, target) but different Allowed — must keep both.
+	modelA := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{
+				{Principal: "arn:aws:iam::111111111111:role/R", Action: "s3:GetObject", Target: "*", Allowed: true},
+			},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	modelB := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{
+				{Principal: "arn:aws:iam::111111111111:role/R", Action: "s3:GetObject", Target: "*", Allowed: false},
+			},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.PermissionSource.Triples, 2, "divergent Allowed values must keep both triples")
+}
+
 func TestMergeModels_SameGoal_Succeeds(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},

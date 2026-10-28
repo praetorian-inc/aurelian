@@ -101,6 +101,14 @@ func MergeModels(models []*Model) (*Model, error) {
 		case PermSourcePolicySummary:
 			for _, e := range m.PermissionSource.Entries {
 				if seenEntries[e.Principal] {
+					if existing := findEntry(merged.PermissionSource.Entries, e.Principal); existing != nil {
+						if len(existing.EffectiveStatements) != len(e.EffectiveStatements) {
+							slog.Warn("MergeModels: duplicate entry with divergent statement count, keeping first-seen",
+								"principal", e.Principal,
+								"first_statements", len(existing.EffectiveStatements),
+								"second_statements", len(e.EffectiveStatements))
+						}
+					}
 					continue
 				}
 				seenEntries[e.Principal] = true
@@ -108,7 +116,7 @@ func MergeModels(models []*Model) (*Model, error) {
 			}
 		case PermSourceEvaluatedTriples:
 			for _, t := range m.PermissionSource.Triples {
-				key := t.Principal + "\x00" + t.Action + "\x00" + t.Target
+				key := t.Principal + "\x00" + t.Action + "\x00" + t.Target + "\x00" + fmt.Sprintf("%v", t.Allowed)
 				if seenTriples[key] {
 					continue
 				}
@@ -150,6 +158,15 @@ func mergeCoverage(a, b *CollectionCoverage) *CollectionCoverage {
 		KMSKeyPolicies:         a.KMSKeyPolicies || b.KMSKeyPolicies,
 		SNSTopicPolicies:       a.SNSTopicPolicies || b.SNSTopicPolicies,
 	}
+}
+
+func findEntry(entries []PolicySummaryEntry, principal string) *PolicySummaryEntry {
+	for i := range entries {
+		if entries[i].Principal == principal {
+			return &entries[i]
+		}
+	}
+	return nil
 }
 
 func findPrincipal(principals []Principal, arn string) *Principal {
