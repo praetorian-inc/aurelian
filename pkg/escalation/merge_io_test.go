@@ -118,6 +118,23 @@ func TestLoadAndMergeModelFiles_GlobDir(t *testing.T) {
 	assert.Len(t, merged.Accounts, 2)
 }
 
+func TestGlobModelFiles_ExcludesPath(t *testing.T) {
+	dir := t.TempDir()
+
+	modelA := accountModel("111111111111",
+		[]Principal{
+			{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+		}, nil, nil,
+	)
+	writeModelFile(t, dir, "a.json", modelA)
+	writeModelFile(t, dir, "merged.json", modelA)
+
+	paths, err := GlobModelFiles(dir, filepath.Join(dir, "merged.json"))
+	require.NoError(t, err)
+	assert.Len(t, paths, 1)
+	assert.Contains(t, paths[0], "a.json")
+}
+
 func TestMergeStats(t *testing.T) {
 	m := &Model{
 		Accounts: []Account{{ID: "111"}, {ID: "222"}},

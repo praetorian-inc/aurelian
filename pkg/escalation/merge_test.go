@@ -259,6 +259,20 @@ func TestMergeModels_MixedPermissionSourceTypes_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "permission source type")
 }
 
+func TestMergeModels_ExternalPermissionSource_ReturnsError(t *testing.T) {
+	modelA := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{Type: PermSourceExternal, Command: "some-cmd"},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	_, err := MergeModels([]*Model{modelA})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "external")
+}
+
 func TestMergeModels_DuplicateAccounts_Deduplicated(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R1", Account: "111111111111", Type: PrincipalTypeRole},

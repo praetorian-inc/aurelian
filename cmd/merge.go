@@ -44,7 +44,11 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	if inputDir != "" {
-		globbed, err := escalation.GlobModelFiles(inputDir)
+		var exclude []string
+		if outputPath != "" {
+			exclude = append(exclude, outputPath)
+		}
+		globbed, err := escalation.GlobModelFiles(inputDir, exclude...)
 		if err != nil {
 			return err
 		}

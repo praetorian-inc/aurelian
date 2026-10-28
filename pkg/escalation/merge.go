@@ -18,6 +18,12 @@ func MergeModels(models []*Model) (*Model, error) {
 		return nil, fmt.Errorf("MergeModels: at least one model is required")
 	}
 
+	for _, m := range models {
+		if m.PermissionSource.Type == PermSourceExternal {
+			return nil, fmt.Errorf("MergeModels: external permission source cannot be merged (model uses subprocess command %q)", m.PermissionSource.Command)
+		}
+	}
+
 	if len(models) == 1 {
 		m := models[0]
 		m.StructuralFacts = ExpandRootTrustFacts(m.StructuralFacts, m.Principals)

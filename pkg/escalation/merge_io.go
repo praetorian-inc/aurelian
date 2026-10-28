@@ -33,14 +33,33 @@ func LoadAndMergeModelFiles(paths []string) (*Model, error) {
 }
 
 // GlobModelFiles returns sorted paths to all .json files in a directory.
-func GlobModelFiles(dir string) ([]string, error) {
+// Paths in exclude are omitted (compared after filepath.Abs normalization).
+func GlobModelFiles(dir string, exclude ...string) ([]string, error) {
 	pattern := filepath.Join(dir, "*.json")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, fmt.Errorf("globbing %s: %w", pattern, err)
 	}
-	sort.Strings(matches)
-	return matches, nil
+
+	excludeSet := make(map[string]bool, len(exclude))
+	for _, e := range exclude {
+		abs, err := filepath.Abs(e)
+		if err == nil {
+			excludeSet[abs] = true
+		}
+	}
+
+	var filtered []string
+	for _, m := range matches {
+		abs, err := filepath.Abs(m)
+		if err == nil && excludeSet[abs] {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+
+	sort.Strings(filtered)
+	return filtered, nil
 }
 
 // ModelStats holds summary statistics about a merged model.
