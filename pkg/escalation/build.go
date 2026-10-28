@@ -275,13 +275,15 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 			if !strings.EqualFold(stmt.Effect, "Allow") {
 				continue
 			}
+			seen := make(map[string]bool)
 			for _, p := range stmt.ExtractPrincipals() {
-				if p == "" {
+				if p == "" || seen[p] {
 					continue
 				}
 				if p != "*" && !arn.IsARN(p) {
 					continue
 				}
+				seen[p] = true
 				facts = append(facts, StructuralFact{
 					Type:       FactTrustRelationship,
 					From:       r.Arn,

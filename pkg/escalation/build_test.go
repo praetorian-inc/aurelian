@@ -767,13 +767,13 @@ func TestCollectStructuralFacts_WildcardTrustPrincipalEmitted(t *testing.T) {
 	resources := store.NewMap[output.AWSResource]()
 
 	facts := CollectStructuralFacts(gaad, resources)
-	var found bool
+	var count int
 	for _, f := range facts {
 		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/OpenRole" && f.To == "*" {
-			found = true
+			count++
 		}
 	}
-	assert.True(t, found, "wildcard trust principal '*' should produce a trust_relationship fact with To='*'")
+	assert.Equal(t, 1, count, "wildcard trust principal '*' should produce exactly 1 trust_relationship fact, not duplicates")
 }
 
 func TestCollectStructuralFacts_MultiplePrincipalsInOneTrustStatement(t *testing.T) {
@@ -993,11 +993,11 @@ func TestCollectStructuralFacts_WildcardTrustPrincipal(t *testing.T) {
 
 	facts := CollectStructuralFacts(gaad, newTestResources())
 
-	var found bool
+	var count int
 	for _, f := range facts {
 		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/OpenRole" && f.To == "*" {
-			found = true
+			count++
 		}
 	}
-	assert.True(t, found, "wildcard trust principal '*' should produce a trust_relationship fact with To='*'")
+	assert.Equal(t, 1, count, "wildcard trust principal '*' should produce exactly 1 trust_relationship fact, not duplicates")
 }

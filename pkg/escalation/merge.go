@@ -296,12 +296,14 @@ func deepCopyTriple(t EvaluatedTriple) EvaluatedTriple {
 func orMergeCoverage(dst, src *CollectionCoverage) {
 	dv := reflect.ValueOf(dst).Elem()
 	sv := reflect.ValueOf(src).Elem()
-	for i := 0; i < dv.NumField(); i++ {
+	for i := range dv.NumField() {
 		df := dv.Field(i)
 		sf := sv.Field(i)
-		if df.Kind() == reflect.Bool {
-			df.SetBool(df.Bool() || sf.Bool())
+		if df.Kind() != reflect.Bool {
+			panic(fmt.Sprintf("orMergeCoverage: CollectionCoverage field %q is %s, not bool — update this function",
+				dv.Type().Field(i).Name, df.Kind()))
 		}
+		df.SetBool(df.Bool() || sf.Bool())
 	}
 }
 
