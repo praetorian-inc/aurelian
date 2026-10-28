@@ -1,6 +1,8 @@
 package escalation
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 )
@@ -79,6 +81,14 @@ func MergeModels(models []*Model) (*Model, error) {
 
 		for _, r := range m.Resources {
 			if seenResources[r.ARN] {
+				if existing := findResource(merged.Resources, r.ARN); existing != nil {
+					if existing.Account != r.Account || existing.Type != r.Type {
+						slog.Warn("MergeModels: duplicate resource with divergent attributes, keeping first-seen",
+							"arn", r.ARN,
+							"first_account", existing.Account, "second_account", r.Account,
+							"first_type", existing.Type, "second_type", r.Type)
+					}
+				}
 				continue
 			}
 			seenResources[r.ARN] = true
@@ -89,6 +99,8 @@ func MergeModels(models []*Model) (*Model, error) {
 
 		for _, rp := range m.ResourcePolicies {
 			if seenResourcePolicies[rp.Resource] {
+				slog.Warn("MergeModels: duplicate resource policy, keeping first-seen",
+					"resource", rp.Resource)
 				continue
 			}
 			seenResourcePolicies[rp.Resource] = true
@@ -102,8 +114,8 @@ func MergeModels(models []*Model) (*Model, error) {
 			for _, e := range m.PermissionSource.Entries {
 				if seenEntries[e.Principal] {
 					if existing := findEntry(merged.PermissionSource.Entries, e.Principal); existing != nil {
-						if len(existing.EffectiveStatements) != len(e.EffectiveStatements) {
-							slog.Warn("MergeModels: duplicate entry with divergent statement count, keeping first-seen",
+						if !statementsEqual(existing.EffectiveStatements, e.EffectiveStatements) {
+							slog.Warn("MergeModels: duplicate entry with divergent statements, keeping first-seen",
 								"principal", e.Principal,
 								"first_statements", len(existing.EffectiveStatements),
 								"second_statements", len(e.EffectiveStatements))
@@ -116,7 +128,7 @@ func MergeModels(models []*Model) (*Model, error) {
 			}
 		case PermSourceEvaluatedTriples:
 			for _, t := range m.PermissionSource.Triples {
-				key := t.Principal + "\x00" + t.Action + "\x00" + t.Target + "\x00" + fmt.Sprintf("%v", t.Allowed)
+				key := tripleKey(&t)
 				if seenTriples[key] {
 					continue
 				}
@@ -144,6 +156,34 @@ func MergeModels(models []*Model) (*Model, error) {
 	return merged, nil
 }
 
+
+func findResource(resources []Resource, arn string) *Resource {
+	for i := range resources {
+		if resources[i].ARN == arn {
+			return &resources[i]
+		}
+	}
+	return nil
+}
+
+func statementsEqual(a, b []PolicyStatement) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	ja, _ := json.Marshal(a)
+	jb, _ := json.Marshal(b)
+	return string(ja) == string(jb)
+}
+
+func tripleKey(t *EvaluatedTriple) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%v", t.Principal, t.Action, t.Target, t.Allowed)
+	if len(t.Conditions) > 0 {
+		cj, _ := json.Marshal(t.Conditions)
+		h.Write(cj)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
 
 func findEntry(entries []PolicySummaryEntry, principal string) *PolicySummaryEntry {
 	for i := range entries {

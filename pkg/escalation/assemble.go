@@ -55,7 +55,7 @@ func Assemble(in AssembleInput) (*Model, error) {
 		if cov := in.Coverage.Build(); cov != nil {
 			acctID := in.GAAD.AccountID
 			if acctID == "" {
-				acctID = "_unknown"
+				return nil, fmt.Errorf("Assemble: cannot key collection_coverage without an account ID (GAAD.AccountID is empty)")
 			}
 			m.CollectionCoverage = map[string]*CollectionCoverage{acctID: cov}
 		}

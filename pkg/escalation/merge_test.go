@@ -767,6 +767,67 @@ func TestMergeModels_DivergentTriples_BothKept(t *testing.T) {
 	assert.Len(t, merged.PermissionSource.Triples, 2, "divergent Allowed values must keep both triples")
 }
 
+func TestMergeModels_DivergentTriples_DifferentConditions_BothKept(t *testing.T) {
+	// Same (principal, action, target, allowed) but different Conditions — must keep both.
+	modelA := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{
+				{Principal: "arn:aws:iam::111111111111:role/R", Action: "s3:GetObject", Target: "*", Allowed: true},
+			},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	modelB := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{
+				{Principal: "arn:aws:iam::111111111111:role/R", Action: "s3:GetObject", Target: "*", Allowed: true,
+					Conditions: []Condition{{Key: "aws:SourceIp", Operator: "IpAddress", Values: []string{"10.0.0.0/8"}}}},
+			},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.PermissionSource.Triples, 2,
+		"same tuple with different conditions must keep both triples")
+}
+
+func TestMergeModels_DivergentResourceType_Warns(t *testing.T) {
+	// Same resource ARN but different Type — should still dedup but this
+	// verifies the warning path runs without panic.
+	modelA := accountModel("111111111111",
+		[]Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelA.Resources = []Resource{
+		{ARN: "arn:aws:s3:::shared-bucket", Type: ResourceTypeS3Bucket, Account: "111111111111"},
+	}
+
+	modelB := accountModel("222222222222",
+		[]Principal{{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelB.Resources = []Resource{
+		{ARN: "arn:aws:s3:::shared-bucket", Type: ResourceTypeS3Bucket, Account: "222222222222"},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+	assert.Len(t, merged.Resources, 1)
+	assert.Equal(t, "111111111111", merged.Resources[0].Account, "first-seen wins")
+}
+
 func TestMergeModels_SameGoal_Succeeds(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
