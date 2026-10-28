@@ -135,6 +135,30 @@ func TestGlobModelFiles_ExcludesPath(t *testing.T) {
 	assert.Contains(t, paths[0], "a.json")
 }
 
+func TestLoadAndMergeModelFiles_DeduplicatesPaths(t *testing.T) {
+	dir := t.TempDir()
+
+	m := accountModel("111111111111",
+		[]Principal{
+			{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+		},
+		[]PolicySummaryEntry{
+			{Principal: "arn:aws:iam::111111111111:role/R", EffectiveStatements: []PolicyStatement{
+				{Effect: "Allow", Action: "s3:*", Resource: "*"},
+			}},
+		},
+		nil,
+	)
+	path := writeModelFile(t, dir, "model.json", m)
+
+	// Pass the same file twice — should deduplicate and not double resources
+	merged, err := LoadAndMergeModelFiles([]string{path, path})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.PermissionSource.Entries, 1,
+		"duplicate file path should be deduped, not produce 2x entries")
+}
+
 func TestMergeStats(t *testing.T) {
 	m := &Model{
 		Accounts: []Account{{ID: "111"}, {ID: "222"}},

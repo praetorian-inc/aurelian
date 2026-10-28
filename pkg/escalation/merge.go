@@ -26,12 +26,16 @@ func MergeModels(models []*Model) (*Model, error) {
 
 	version := models[0].Version
 	psType := models[0].PermissionSource.Type
+	goal := models[0].Goal
 	for i, m := range models[1:] {
 		if m.Version != version {
 			return nil, fmt.Errorf("MergeModels: all models must have the same version (model 0 has %q, model %d has %q)", version, i+1, m.Version)
 		}
 		if m.PermissionSource.Type != psType {
 			return nil, fmt.Errorf("MergeModels: all models must have the same permission source type (model 0 has %q, model %d has %q)", psType, i+1, m.PermissionSource.Type)
+		}
+		if m.Goal != goal {
+			return nil, fmt.Errorf("MergeModels: all models must have the same goal (model 0 has %+v, model %d has %+v)", goal, i+1, m.Goal)
 		}
 	}
 

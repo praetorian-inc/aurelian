@@ -8,6 +8,25 @@ import (
 	"sort"
 )
 
+// deduplicatePaths returns paths with duplicates removed (by absolute path).
+// Preserves order of first occurrence.
+func deduplicatePaths(paths []string) []string {
+	seen := make(map[string]bool, len(paths))
+	var out []string
+	for _, p := range paths {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			abs = p
+		}
+		if seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		out = append(out, p)
+	}
+	return out
+}
+
 // LoadAndMergeModelFiles reads model.json files from disk and merges them
 // into a single org-wide Model. Returns an error if any file is unreadable
 // or contains invalid JSON.
@@ -16,6 +35,7 @@ func LoadAndMergeModelFiles(paths []string) (*Model, error) {
 		return nil, fmt.Errorf("LoadAndMergeModelFiles: no input files provided")
 	}
 
+	paths = deduplicatePaths(paths)
 	models := make([]*Model, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)

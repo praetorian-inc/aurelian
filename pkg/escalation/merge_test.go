@@ -595,3 +595,36 @@ func TestMergeModels_MismatchedVersions_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "version")
 }
+
+func TestMergeModels_DivergentGoal_ReturnsError(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.Goal = Goal{Type: GoalReachAdmin, Attacker: "*"}
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelB.Goal = Goal{Type: GoalReachAdmin, Attacker: "arn:aws:iam::222222222222:role/Specific"}
+
+	_, err := MergeModels([]*Model{modelA, modelB})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "goal")
+}
+
+func TestMergeModels_SameGoal_Succeeds(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.Goal = Goal{Type: GoalReachAdmin, Attacker: "*"}
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelB.Goal = Goal{Type: GoalReachAdmin, Attacker: "*"}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+	assert.Equal(t, GoalReachAdmin, merged.Goal.Type)
+	assert.Equal(t, "*", merged.Goal.Attacker)
+}
