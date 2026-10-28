@@ -917,3 +917,52 @@ func TestMergeModels_SameGoal_Succeeds(t *testing.T) {
 	assert.Equal(t, GoalReachAdmin, merged.Goal.Type)
 	assert.Equal(t, "*", merged.Goal.Attacker)
 }
+
+func TestMergeModels_SingleModel_EntriesDoNotAlias(t *testing.T) {
+	m := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	m.PermissionSource.Entries = []PolicySummaryEntry{{
+		Principal: "arn:aws:iam::111111111111:role/R",
+		EffectiveStatements: []PolicyStatement{
+			{Effect: "Allow", Action: "sts:AssumeRole", Resource: "*"},
+		},
+	}}
+
+	merged, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+
+	// Mutating a nested statement in the merged model must not affect input.
+	merged.PermissionSource.Entries[0].EffectiveStatements[0].Action = "MUTATED"
+	assert.Equal(t, "sts:AssumeRole", m.PermissionSource.Entries[0].EffectiveStatements[0].Action,
+		"merged EffectiveStatements must not alias input")
+}
+
+func TestMergeModels_SingleModel_TriplesDoNotAlias(t *testing.T) {
+	m := &Model{
+		Version:  ModelVersion,
+		Accounts: []Account{{ID: "111111111111"}},
+		Principals: []Principal{
+			{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+		},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{{
+				Principal:  "arn:aws:iam::111111111111:role/R",
+				Action:     "sts:AssumeRole",
+				Target:     "*",
+				Allowed:    true,
+				Conditions: []Condition{{Operator: "StringEquals", Key: "k", Values: []string{"v"}}},
+			}},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	merged, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+
+	// Mutating nested Conditions in merged model must not affect input.
+	merged.PermissionSource.Triples[0].Conditions[0].Key = "MUTATED"
+	assert.Equal(t, "k", m.PermissionSource.Triples[0].Conditions[0].Key,
+		"merged Triple Conditions must not alias input")
+}

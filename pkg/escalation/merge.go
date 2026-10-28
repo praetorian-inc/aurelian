@@ -232,6 +232,21 @@ func deepCopyPolicy(v interface{}) interface{} {
 	return out
 }
 
+func copyConditions(src []Condition) []Condition {
+	if src == nil {
+		return nil
+	}
+	out := make([]Condition, len(src))
+	for i, c := range src {
+		out[i] = Condition{
+			Key:      c.Key,
+			Operator: c.Operator,
+			Values:   append([]string(nil), c.Values...),
+		}
+	}
+	return out
+}
+
 func solverConfigsEqual(a, b *SolverConfig) bool {
 	if a == nil && b == nil {
 		return true
@@ -261,8 +276,21 @@ func copyModel(m *Model) *Model {
 		out.ResourcePolicies[i] = ResourcePolicy{Resource: rp.Resource, Policy: deepCopyPolicy(rp.Policy)}
 	}
 	out.CollectionErrors = append([]CollectionError(nil), m.CollectionErrors...)
-	out.PermissionSource.Entries = append([]PolicySummaryEntry(nil), m.PermissionSource.Entries...)
-	out.PermissionSource.Triples = append([]EvaluatedTriple(nil), m.PermissionSource.Triples...)
+	out.PermissionSource.Entries = make([]PolicySummaryEntry, len(m.PermissionSource.Entries))
+	for i, e := range m.PermissionSource.Entries {
+		out.PermissionSource.Entries[i] = PolicySummaryEntry{
+			Principal:           e.Principal,
+			EffectiveStatements: append([]PolicyStatement(nil), e.EffectiveStatements...),
+		}
+		for j, s := range e.EffectiveStatements {
+			out.PermissionSource.Entries[i].EffectiveStatements[j].Conditions = copyConditions(s.Conditions)
+		}
+	}
+	out.PermissionSource.Triples = make([]EvaluatedTriple, len(m.PermissionSource.Triples))
+	for i, t := range m.PermissionSource.Triples {
+		out.PermissionSource.Triples[i] = t
+		out.PermissionSource.Triples[i].Conditions = copyConditions(t.Conditions)
+	}
 	out.Config = copySolverConfig(m.Config)
 	if m.CollectionCoverage != nil {
 		out.CollectionCoverage = make(map[string]*CollectionCoverage, len(m.CollectionCoverage))
