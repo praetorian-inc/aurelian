@@ -741,7 +741,10 @@ func TestCollectStructuralFacts_ServicePrincipalSkipped(t *testing.T) {
 	}
 }
 
-func TestCollectStructuralFacts_WildcardTrustPrincipalSkipped(t *testing.T) {
+func TestCollectStructuralFacts_WildcardTrustPrincipalEmitted(t *testing.T) {
+	// A role with "Principal": "*" trusts anyone — the collector must emit
+	// a trust_relationship fact with To="*" so the solver can match it at
+	// full confidence instead of relying on the speculative fallback.
 	trustStmt := types.PolicyStatementList{
 		{
 			Effect: "Allow",
@@ -764,11 +767,13 @@ func TestCollectStructuralFacts_WildcardTrustPrincipalSkipped(t *testing.T) {
 	resources := store.NewMap[output.AWSResource]()
 
 	facts := CollectStructuralFacts(gaad, resources)
+	var found bool
 	for _, f := range facts {
-		if f.Type == FactTrustRelationship {
-			t.Errorf("wildcard principal '*' is not an ARN and should not produce trust_relationship facts, got To=%q", f.To)
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/OpenRole" && f.To == "*" {
+			found = true
 		}
 	}
+	assert.True(t, found, "wildcard trust principal '*' should produce a trust_relationship fact with To='*'")
 }
 
 func TestCollectStructuralFacts_MultiplePrincipalsInOneTrustStatement(t *testing.T) {
@@ -956,4 +961,43 @@ func TestCollectStructuralFacts_GlueNotebookBedrockWithoutRole(t *testing.T) {
 		assert.NotEqual(t, StructuralFactType("bedrock_interpreter_role"), f.Type,
 			"should not create bedrock_interpreter_role for CodeInterpreter with empty/missing ExecutionRoleArn")
 	}
+}
+
+func TestCollectStructuralFacts_WildcardTrustPrincipal(t *testing.T) {
+	// A role with "Principal": "*" in its trust policy should produce a
+	// trust_relationship fact with To="*", not be silently dropped.
+	wildcardTrustStmt := types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"*"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"*"},
+		},
+	}
+	wildcardTrustPolicy := types.Policy{Statement: &wildcardTrustStmt}
+
+	gaad := types.NewAuthorizationAccountDetails(
+		"111111111111",
+		nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                     "arn:aws:iam::111111111111:role/OpenRole",
+				RoleName:                "OpenRole",
+				AssumeRolePolicyDocument: wildcardTrustPolicy,
+			},
+		},
+		nil,
+	)
+
+	facts := CollectStructuralFacts(gaad, newTestResources())
+
+	var found bool
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/OpenRole" && f.To == "*" {
+			found = true
+		}
+	}
+	assert.True(t, found, "wildcard trust principal '*' should produce a trust_relationship fact with To='*'")
 }

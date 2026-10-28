@@ -276,7 +276,10 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 				continue
 			}
 			for _, p := range stmt.ExtractPrincipals() {
-				if p == "" || !arn.IsARN(p) {
+				if p == "" {
+					continue
+				}
+				if p != "*" && !arn.IsARN(p) {
 					continue
 				}
 				facts = append(facts, StructuralFact{
