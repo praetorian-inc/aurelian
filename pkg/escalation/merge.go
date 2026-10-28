@@ -21,21 +21,24 @@ func MergeModels(models []*Model) (*Model, error) {
 	}
 
 	if len(models) == 1 {
-		m := *models[0]
-		return &m, nil
+		return copyModel(models[0]), nil
 	}
 
+	version := models[0].Version
 	psType := models[0].PermissionSource.Type
 	for i, m := range models[1:] {
+		if m.Version != version {
+			return nil, fmt.Errorf("MergeModels: all models must have the same version (model 0 has %q, model %d has %q)", version, i+1, m.Version)
+		}
 		if m.PermissionSource.Type != psType {
 			return nil, fmt.Errorf("MergeModels: all models must have the same permission source type (model 0 has %q, model %d has %q)", psType, i+1, m.PermissionSource.Type)
 		}
 	}
 
 	merged := &Model{
-		Version: models[0].Version,
+		Version: version,
 		Goal:    models[0].Goal,
-		Config:  models[0].Config,
+		Config:  copySolverConfig(models[0].Config),
 	}
 
 	seenAccounts := make(map[string]bool)
@@ -120,5 +123,31 @@ func findPrincipal(principals []Principal, arn string) *Principal {
 		}
 	}
 	return nil
+}
+
+func copySolverConfig(cfg *SolverConfig) *SolverConfig {
+	if cfg == nil {
+		return nil
+	}
+	c := *cfg
+	return &c
+}
+
+func copyModel(m *Model) *Model {
+	out := *m
+	out.Accounts = append([]Account(nil), m.Accounts...)
+	out.Principals = append([]Principal(nil), m.Principals...)
+	out.Resources = append([]Resource(nil), m.Resources...)
+	out.StructuralFacts = append([]StructuralFact(nil), m.StructuralFacts...)
+	out.ResourcePolicies = append([]ResourcePolicy(nil), m.ResourcePolicies...)
+	out.CollectionErrors = append([]CollectionError(nil), m.CollectionErrors...)
+	out.PermissionSource.Entries = append([]PolicySummaryEntry(nil), m.PermissionSource.Entries...)
+	out.PermissionSource.Triples = append([]EvaluatedTriple(nil), m.PermissionSource.Triples...)
+	out.Config = copySolverConfig(m.Config)
+	if m.CollectionCoverage != nil {
+		c := *m.CollectionCoverage
+		out.CollectionCoverage = &c
+	}
+	return &out
 }
 

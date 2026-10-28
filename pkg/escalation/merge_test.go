@@ -534,3 +534,64 @@ func TestMergeModels_Config_TakesFirst(t *testing.T) {
 	assert.Equal(t, 120, merged.Config.TimeoutSeconds)
 	assert.True(t, merged.Config.FindAllPaths)
 }
+
+func TestMergeModels_SingleModel_DoesNotAliasSlices(t *testing.T) {
+	m := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	m.StructuralFacts = []StructuralFact{{Type: FactTrustRelationship, From: "role/R", To: "arn:aws:iam::111111111111:root"}}
+
+	merged, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+
+	// Mutating an element in merged slice must not affect the input
+	merged.StructuralFacts[0].From = "MUTATED"
+	assert.Equal(t, "role/R", m.StructuralFacts[0].From, "input StructuralFacts must not be modified via merged model")
+}
+
+func TestMergeModels_ConfigDoesNotAliasInput(t *testing.T) {
+	m := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	m.Config = &SolverConfig{TimeoutSeconds: 120}
+
+	merged, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+
+	// Mutating merged Config must not affect input
+	merged.Config.TimeoutSeconds = 999
+	assert.Equal(t, 120, m.Config.TimeoutSeconds, "merged Config must not alias input")
+}
+
+func TestMergeModels_MultiModel_ConfigDoesNotAliasInput(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.Config = &SolverConfig{TimeoutSeconds: 120}
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	merged.Config.TimeoutSeconds = 999
+	assert.Equal(t, 120, modelA.Config.TimeoutSeconds, "merged Config must not alias input model")
+}
+
+func TestMergeModels_MismatchedVersions_ReturnsError(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.Version = "1.0"
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelB.Version = "2.0"
+
+	_, err := MergeModels([]*Model{modelA, modelB})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "version")
+}
