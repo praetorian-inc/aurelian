@@ -6,6 +6,7 @@ package escalation
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 )
@@ -148,8 +149,6 @@ func (ps *PermissionSource) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return err
 	}
-	ps.Type = probe.Type
-	ps.Command = probe.Command
 
 	switch probe.Type {
 	case PermSourcePolicySummary:
@@ -159,6 +158,7 @@ func (ps *PermissionSource) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(data, &wrapper); err != nil {
 			return err
 		}
+		ps.Type = probe.Type
 		ps.Entries = wrapper.Entries
 	case PermSourceEvaluatedTriples:
 		var wrapper struct {
@@ -167,7 +167,13 @@ func (ps *PermissionSource) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(data, &wrapper); err != nil {
 			return err
 		}
+		ps.Type = probe.Type
 		ps.Triples = wrapper.Entries
+	case PermSourceExternal:
+		ps.Type = probe.Type
+		ps.Command = probe.Command
+	default:
+		return fmt.Errorf("unknown permission_source type %q", probe.Type)
 	}
 
 	return nil

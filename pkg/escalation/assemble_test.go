@@ -180,6 +180,61 @@ func TestAssemble_EmptyGAAD_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no IAM principals")
 }
 
+func TestAssemble_ExpandsRootTrust(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::111111111111:root"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/Admin"},
+		},
+	}
+	trustPolicy := types.Policy{Statement: &trustStmt}
+
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		[]types.UserDetail{
+			{Arn: "arn:aws:iam::111111111111:user/Dev", UserName: "Dev"},
+		}, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/Admin",
+				RoleName:                 "Admin",
+				AssumeRolePolicyDocument: trustPolicy,
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "AdminAccess", PolicyDocument: types.Policy{Statement: &adminStmt}},
+				},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	m, err := Assemble(AssembleInput{GAAD: gaad, Resources: resources})
+	require.NoError(t, err)
+
+	// Root trust should be expanded: Admin trusts account root → Dev should get a trust fact
+	found := false
+	for _, f := range m.StructuralFacts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::111111111111:role/Admin" &&
+			f.To == "arn:aws:iam::111111111111:user/Dev" {
+			found = true
+		}
+	}
+	assert.True(t, found, "Assemble should expand root trust to per-principal facts")
+
+	// Root trust fact should be removed
+	for _, f := range m.StructuralFacts {
+		if f.Type == FactTrustRelationship && f.To == "arn:aws:iam::111111111111:root" {
+			t.Error("root trust fact should be replaced with expanded per-principal facts")
+		}
+	}
+}
+
 func TestAssemble_SpecificAttacker(t *testing.T) {
 	gaad := newTestGAAD()
 	resources := newTestResources()

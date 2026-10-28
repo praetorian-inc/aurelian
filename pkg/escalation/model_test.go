@@ -296,6 +296,14 @@ func TestModel_FullRoundTrip_EvaluatedTriples(t *testing.T) {
 	assert.Equal(t, "s3:GetObject", decoded.PermissionSource.Triples[0].Action)
 }
 
+func TestPermissionSource_UnmarshalJSON_UnknownType(t *testing.T) {
+	data := []byte(`{"type":"bogus","entries":[]}`)
+	var ps PermissionSource
+	err := json.Unmarshal(data, &ps)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bogus")
+}
+
 func TestPermissionSource_UnmarshalJSON_WithConditions(t *testing.T) {
 	original := PermissionSource{
 		Type: PermSourcePolicySummary,
