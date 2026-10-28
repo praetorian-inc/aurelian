@@ -24,9 +24,11 @@ func TestModel_ImplementsSingleObjectOutput(t *testing.T) {
 func TestModel_MarshalJSON_RoundTrip(t *testing.T) {
 	m := &Model{
 		Version: "1.0",
-		CollectionCoverage: &CollectionCoverage{
-			IAMGAAD:              true,
-			LambdaExecutionRoles: true,
+		CollectionCoverage: map[string]*CollectionCoverage{
+			"111111111111": {
+				IAMGAAD:              true,
+				LambdaExecutionRoles: true,
+			},
 		},
 		Accounts: []Account{{ID: "111111111111", OrgPath: []string{"root", "ou-prod"}}},
 		Principals: []Principal{
@@ -201,10 +203,12 @@ func TestPermissionSource_UnmarshalJSON_External(t *testing.T) {
 func TestModel_FullRoundTrip_PolicySummary(t *testing.T) {
 	original := &Model{
 		Version: "1.0",
-		CollectionCoverage: &CollectionCoverage{
-			IAMGAAD:              true,
-			LambdaExecutionRoles: true,
-			S3BucketPolicies:     true,
+		CollectionCoverage: map[string]*CollectionCoverage{
+			"111111111111": {
+				IAMGAAD:              true,
+				LambdaExecutionRoles: true,
+				S3BucketPolicies:     true,
+			},
 		},
 		CollectionErrors: []CollectionError{
 			{Source: "ec2", Error: "AccessDenied", Regions: []string{"us-east-1"}},
@@ -243,9 +247,10 @@ func TestModel_FullRoundTrip_PolicySummary(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	assert.Equal(t, original.Version, decoded.Version)
-	assert.Equal(t, original.CollectionCoverage.IAMGAAD, decoded.CollectionCoverage.IAMGAAD)
-	assert.Equal(t, original.CollectionCoverage.LambdaExecutionRoles, decoded.CollectionCoverage.LambdaExecutionRoles)
-	assert.Equal(t, original.CollectionCoverage.S3BucketPolicies, decoded.CollectionCoverage.S3BucketPolicies)
+	require.NotNil(t, decoded.CollectionCoverage["111111111111"])
+	assert.Equal(t, original.CollectionCoverage["111111111111"].IAMGAAD, decoded.CollectionCoverage["111111111111"].IAMGAAD)
+	assert.Equal(t, original.CollectionCoverage["111111111111"].LambdaExecutionRoles, decoded.CollectionCoverage["111111111111"].LambdaExecutionRoles)
+	assert.Equal(t, original.CollectionCoverage["111111111111"].S3BucketPolicies, decoded.CollectionCoverage["111111111111"].S3BucketPolicies)
 	require.Len(t, decoded.CollectionErrors, 1)
 	assert.Equal(t, "ec2", decoded.CollectionErrors[0].Source)
 	require.Len(t, decoded.Accounts, 1)

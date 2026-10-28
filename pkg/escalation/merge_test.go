@@ -138,46 +138,58 @@ func TestMergeModels_PreservesResourcePolicies(t *testing.T) {
 	assert.Len(t, merged.ResourcePolicies, 2)
 }
 
-func TestMergeModels_MergesCoverage(t *testing.T) {
+func TestMergeModels_CoveragePerAccount(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
 	}, nil, nil)
-	modelA.CollectionCoverage = &CollectionCoverage{IAMGAAD: true, LambdaExecutionRoles: true}
+	modelA.CollectionCoverage = map[string]*CollectionCoverage{
+		"111111111111": {IAMGAAD: true, LambdaExecutionRoles: true},
+	}
 
 	modelB := accountModel("222222222222", []Principal{
 		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
 	}, nil, nil)
-	modelB.CollectionCoverage = &CollectionCoverage{IAMGAAD: true, S3BucketPolicies: true}
+	modelB.CollectionCoverage = map[string]*CollectionCoverage{
+		"222222222222": {IAMGAAD: true, S3BucketPolicies: true},
+	}
 
 	merged, err := MergeModels([]*Model{modelA, modelB})
 	require.NoError(t, err)
 
-	require.NotNil(t, merged.CollectionCoverage)
-	assert.True(t, merged.CollectionCoverage.IAMGAAD)
-	assert.True(t, merged.CollectionCoverage.LambdaExecutionRoles)
-	assert.True(t, merged.CollectionCoverage.S3BucketPolicies)
+	require.Len(t, merged.CollectionCoverage, 2)
+	require.NotNil(t, merged.CollectionCoverage["111111111111"])
+	assert.True(t, merged.CollectionCoverage["111111111111"].IAMGAAD)
+	assert.True(t, merged.CollectionCoverage["111111111111"].LambdaExecutionRoles)
+	assert.False(t, merged.CollectionCoverage["111111111111"].S3BucketPolicies)
+
+	require.NotNil(t, merged.CollectionCoverage["222222222222"])
+	assert.True(t, merged.CollectionCoverage["222222222222"].IAMGAAD)
+	assert.True(t, merged.CollectionCoverage["222222222222"].S3BucketPolicies)
+	assert.False(t, merged.CollectionCoverage["222222222222"].LambdaExecutionRoles)
 }
 
 func TestMergeModels_CoverageDoesNotAliasInput(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
 	}, nil, nil)
-	modelA.CollectionCoverage = &CollectionCoverage{IAMGAAD: true}
+	modelA.CollectionCoverage = map[string]*CollectionCoverage{
+		"111111111111": {IAMGAAD: true},
+	}
 
 	modelB := accountModel("222222222222", []Principal{
 		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
 	}, nil, nil)
-	// modelB has nil coverage — mergeCoverage should return a copy of A, not A itself
+	// modelB has nil coverage
 
 	merged, err := MergeModels([]*Model{modelA, modelB})
 	require.NoError(t, err)
 
-	require.NotNil(t, merged.CollectionCoverage)
-	assert.True(t, merged.CollectionCoverage.IAMGAAD)
+	require.NotNil(t, merged.CollectionCoverage["111111111111"])
+	assert.True(t, merged.CollectionCoverage["111111111111"].IAMGAAD)
 
 	// Mutating merged coverage must not affect the input model
-	merged.CollectionCoverage.S3BucketPolicies = true
-	assert.False(t, modelA.CollectionCoverage.S3BucketPolicies, "merged coverage must not alias input")
+	merged.CollectionCoverage["111111111111"].S3BucketPolicies = true
+	assert.False(t, modelA.CollectionCoverage["111111111111"].S3BucketPolicies, "merged coverage must not alias input")
 }
 
 func TestMergeModels_MergesCollectionErrors(t *testing.T) {

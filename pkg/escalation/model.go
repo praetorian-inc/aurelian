@@ -17,7 +17,7 @@ import (
 type Model struct {
 	model.BaseAurelianModel `json:"-"`
 	Version            string              `json:"version"`
-	CollectionCoverage *CollectionCoverage `json:"collection_coverage,omitempty"`
+	CollectionCoverage map[string]*CollectionCoverage `json:"collection_coverage,omitempty"`
 	CollectionErrors   []CollectionError   `json:"collection_errors,omitempty"`
 	Accounts           []Account           `json:"accounts,omitempty"`
 	Principals         []Principal         `json:"principals"`

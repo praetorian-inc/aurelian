@@ -37,7 +37,8 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 	assert.Equal(t, PermSourcePolicySummary, m.PermissionSource.Type)
 	assert.NotEmpty(t, m.PermissionSource.Entries)
 	assert.NotNil(t, m.CollectionCoverage)
-	assert.True(t, m.CollectionCoverage.IAMGAAD)
+	assert.NotNil(t, m.CollectionCoverage["111111111111"])
+	assert.True(t, m.CollectionCoverage["111111111111"].IAMGAAD)
 	assert.Equal(t, GoalReachAdmin, m.Goal.Type)
 	assert.Equal(t, "*", m.Goal.Attacker)
 

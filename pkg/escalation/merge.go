@@ -125,7 +125,18 @@ func MergeModels(models []*Model) (*Model, error) {
 			}
 		}
 
-		merged.CollectionCoverage = mergeCoverage(merged.CollectionCoverage, m.CollectionCoverage)
+		for acctID, cov := range m.CollectionCoverage {
+			if cov == nil {
+				continue
+			}
+			if merged.CollectionCoverage == nil {
+				merged.CollectionCoverage = make(map[string]*CollectionCoverage)
+			}
+			if _, exists := merged.CollectionCoverage[acctID]; !exists {
+				c := *cov
+				merged.CollectionCoverage[acctID] = &c
+			}
+		}
 	}
 
 	merged.PermissionSource.Type = psType
@@ -133,32 +144,6 @@ func MergeModels(models []*Model) (*Model, error) {
 	return merged, nil
 }
 
-// mergeCoverage OR-merges two CollectionCoverage structs (true if either is true).
-func mergeCoverage(a, b *CollectionCoverage) *CollectionCoverage {
-	if a == nil && b == nil {
-		return nil
-	}
-	if a == nil {
-		c := *b
-		return &c
-	}
-	if b == nil {
-		c := *a
-		return &c
-	}
-	return &CollectionCoverage{
-		IAMGAAD:                a.IAMGAAD || b.IAMGAAD,
-		EC2InstanceProfiles:    a.EC2InstanceProfiles || b.EC2InstanceProfiles,
-		LambdaExecutionRoles:   a.LambdaExecutionRoles || b.LambdaExecutionRoles,
-		ECSTaskRoles:           a.ECSTaskRoles || b.ECSTaskRoles,
-		CodeBuildServiceRoles:  a.CodeBuildServiceRoles || b.CodeBuildServiceRoles,
-		S3BucketPolicies:       a.S3BucketPolicies || b.S3BucketPolicies,
-		LambdaResourcePolicies: a.LambdaResourcePolicies || b.LambdaResourcePolicies,
-		SQSQueuePolicies:       a.SQSQueuePolicies || b.SQSQueuePolicies,
-		KMSKeyPolicies:         a.KMSKeyPolicies || b.KMSKeyPolicies,
-		SNSTopicPolicies:       a.SNSTopicPolicies || b.SNSTopicPolicies,
-	}
-}
 
 func findEntry(entries []PolicySummaryEntry, principal string) *PolicySummaryEntry {
 	for i := range entries {
@@ -198,8 +183,13 @@ func copyModel(m *Model) *Model {
 	out.PermissionSource.Triples = append([]EvaluatedTriple(nil), m.PermissionSource.Triples...)
 	out.Config = copySolverConfig(m.Config)
 	if m.CollectionCoverage != nil {
-		c := *m.CollectionCoverage
-		out.CollectionCoverage = &c
+		out.CollectionCoverage = make(map[string]*CollectionCoverage, len(m.CollectionCoverage))
+		for k, v := range m.CollectionCoverage {
+			if v != nil {
+				c := *v
+				out.CollectionCoverage[k] = &c
+			}
+		}
 	}
 	return &out
 }

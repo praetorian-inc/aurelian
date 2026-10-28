@@ -52,7 +52,13 @@ func Assemble(in AssembleInput) (*Model, error) {
 	}
 
 	if in.Coverage != nil {
-		m.CollectionCoverage = in.Coverage.Build()
+		if cov := in.Coverage.Build(); cov != nil {
+			acctID := in.GAAD.AccountID
+			if acctID == "" {
+				acctID = "_unknown"
+			}
+			m.CollectionCoverage = map[string]*CollectionCoverage{acctID: cov}
+		}
 		if errs := in.Coverage.Errors(); len(errs) > 0 {
 			m.CollectionErrors = errs
 		}
