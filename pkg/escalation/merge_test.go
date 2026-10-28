@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -1042,4 +1043,200 @@ func TestMergeModels_MultiModel_EntriesDoNotAlias(t *testing.T) {
 	merged.PermissionSource.Entries[0].EffectiveStatements[0].Action = "MUTATED"
 	assert.Equal(t, "s3:GetObject", modelA.PermissionSource.Entries[0].EffectiveStatements[0].Action,
 		"multi-model merge must deep-copy EffectiveStatements")
+}
+
+// ---------------------------------------------------------------------------
+// Merge correctness oracle: merge then re-serialize must be stable
+// ---------------------------------------------------------------------------
+
+func TestMergeModels_Idempotent(t *testing.T) {
+	// Merging a model with itself should produce a result that, when
+	// serialized, is identical to merging the original once.
+	m := richModel()
+	merged1, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+	merged2, err := MergeModels([]*Model{merged1})
+	require.NoError(t, err)
+
+	j1, _ := json.Marshal(merged1)
+	j2, _ := json.Marshal(merged2)
+	assert.JSONEq(t, string(j1), string(j2), "merge should be idempotent on single model")
+}
+
+func TestMergeModels_NoInputAliasing(t *testing.T) {
+	// After merging, mutating every mutable field in the merged model
+	// must not affect the inputs. This is the generic aliasing oracle.
+	m := richModel()
+	origJSON, _ := json.Marshal(m)
+
+	merged, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+
+	// Mutate every slice/pointer field we can reach in merged.
+	if len(merged.Accounts) > 0 {
+		merged.Accounts[0].ID = "MUTATED"
+		if len(merged.Accounts[0].OrgPath) > 0 {
+			merged.Accounts[0].OrgPath[0] = "MUTATED"
+		}
+	}
+	if len(merged.Principals) > 0 {
+		merged.Principals[0].ARN = "MUTATED"
+	}
+	if len(merged.Resources) > 0 {
+		merged.Resources[0].ARN = "MUTATED"
+	}
+	if len(merged.StructuralFacts) > 0 {
+		merged.StructuralFacts[0].From = "MUTATED"
+	}
+	if len(merged.ResourcePolicies) > 0 {
+		merged.ResourcePolicies[0].Resource = "MUTATED"
+	}
+	if len(merged.CollectionErrors) > 0 {
+		merged.CollectionErrors[0].Error = "MUTATED"
+		if len(merged.CollectionErrors[0].Regions) > 0 {
+			merged.CollectionErrors[0].Regions[0] = "MUTATED"
+		}
+	}
+	if len(merged.PermissionSource.Entries) > 0 {
+		merged.PermissionSource.Entries[0].Principal = "MUTATED"
+		if len(merged.PermissionSource.Entries[0].EffectiveStatements) > 0 {
+			merged.PermissionSource.Entries[0].EffectiveStatements[0].Action = "MUTATED"
+		}
+	}
+	if merged.Config != nil {
+		merged.Config.TimeoutSeconds = 999999
+	}
+
+	afterJSON, _ := json.Marshal(m)
+	assert.JSONEq(t, string(origJSON), string(afterJSON),
+		"mutating merged model must not affect input")
+}
+
+// richModel builds a model with data in every field for aliasing/correctness tests.
+func richModel() *Model {
+	return &Model{
+		Version:  ModelVersion,
+		Accounts: []Account{{ID: "111", OrgPath: []string{"org", "ou"}}},
+		Principals: []Principal{
+			{ARN: "arn:aws:iam::111:role/R", Account: "111", Type: PrincipalTypeRole},
+		},
+		Resources: []Resource{
+			{ARN: "arn:aws:s3:::bucket", Type: "s3_bucket", Account: "111"},
+		},
+		StructuralFacts: []StructuralFact{
+			{Type: FactTrustRelationship, From: "arn:aws:iam::111:role/R", To: "arn:aws:iam::111:root"},
+		},
+		ResourcePolicies: []ResourcePolicy{
+			{Resource: "arn:aws:s3:::bucket", Policy: map[string]any{"Version": "2012-10-17", "Statement": []any{}}},
+		},
+		CollectionErrors: []CollectionError{
+			{Source: "s3", Error: "access denied", Regions: []string{"us-east-1", "us-west-2"}},
+		},
+		PermissionSource: PermissionSource{
+			Type: PermSourcePolicySummary,
+			Entries: []PolicySummaryEntry{{
+				Principal: "arn:aws:iam::111:role/R",
+				EffectiveStatements: []PolicyStatement{
+					{Effect: "Allow", Action: "s3:GetObject", Resource: "*",
+						Conditions: []Condition{{Operator: "StringEquals", Key: "k", Values: []string{"v1", "v2"}}}},
+				},
+			}},
+		},
+		CollectionCoverage: map[string]*CollectionCoverage{
+			"111": {IAMGAAD: true, S3BucketPolicies: true},
+		},
+		Config: &SolverConfig{TimeoutSeconds: 120, FindAllPaths: true},
+		Goal:   Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: merge performance at scale
+// ---------------------------------------------------------------------------
+
+func buildLargeModel(acct string, nPrincipals, nStmtsPerPrincipal, nResources, nFacts int) *Model {
+	principals := make([]Principal, nPrincipals)
+	entries := make([]PolicySummaryEntry, nPrincipals)
+	for i := 0; i < nPrincipals; i++ {
+		arn := fmt.Sprintf("arn:aws:iam::%s:role/Role%d", acct, i)
+		principals[i] = Principal{ARN: arn, Account: acct, Type: PrincipalTypeRole}
+		stmts := make([]PolicyStatement, nStmtsPerPrincipal)
+		for j := 0; j < nStmtsPerPrincipal; j++ {
+			stmts[j] = PolicyStatement{
+				Effect:   "Allow",
+				Action:   fmt.Sprintf("svc%d:Action%d", j%20, j),
+				Resource: fmt.Sprintf("arn:aws:s3:::%s-bucket-%d/*", acct, j%50),
+				Conditions: []Condition{
+					{Operator: "StringEquals", Key: "aws:RequestedRegion", Values: []string{"us-east-1", "us-west-2"}},
+				},
+			}
+		}
+		entries[i] = PolicySummaryEntry{Principal: arn, EffectiveStatements: stmts}
+	}
+
+	resources := make([]Resource, nResources)
+	resourcePolicies := make([]ResourcePolicy, nResources)
+	for i := 0; i < nResources; i++ {
+		rArn := fmt.Sprintf("arn:aws:s3:::%s-bucket-%d", acct, i)
+		resources[i] = Resource{ARN: rArn, Type: "s3_bucket", Account: acct}
+		resourcePolicies[i] = ResourcePolicy{
+			Resource: rArn,
+			Policy:   map[string]any{"Version": "2012-10-17", "Statement": []any{map[string]any{"Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": rArn + "/*"}}},
+		}
+	}
+
+	facts := make([]StructuralFact, nFacts)
+	for i := 0; i < nFacts; i++ {
+		facts[i] = StructuralFact{
+			Type:       FactTrustRelationship,
+			From:       fmt.Sprintf("arn:aws:iam::%s:role/Role%d", acct, i%nPrincipals),
+			To:         fmt.Sprintf("arn:aws:iam::%s:root", acct),
+			Confidence: 1.0,
+		}
+	}
+
+	return &Model{
+		Version:          ModelVersion,
+		Accounts:         []Account{{ID: acct, OrgPath: []string{"org", "ou-prod"}}},
+		Principals:       principals,
+		Resources:        resources,
+		ResourcePolicies: resourcePolicies,
+		StructuralFacts:  facts,
+		CollectionErrors: []CollectionError{
+			{Source: "s3_bucket_policies", Error: "partial: 3 buckets denied", Regions: []string{"us-east-1", "eu-west-1"}},
+		},
+		PermissionSource: PermissionSource{
+			Type:    PermSourcePolicySummary,
+			Entries: entries,
+		},
+		CollectionCoverage: map[string]*CollectionCoverage{
+			acct: {IAMGAAD: true, S3BucketPolicies: true, LambdaExecutionRoles: true},
+		},
+		Config: &SolverConfig{TimeoutSeconds: 300, FindAllPaths: true},
+		Goal:   Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+}
+
+func BenchmarkMergeModels_10Accounts_5kPrincipals(b *testing.B) {
+	const (
+		numAccounts    = 10
+		principalsPerAcct = 5000
+		stmtsPerPrincipal = 50
+		resourcesPerAcct  = 200
+		factsPerAcct      = 500
+	)
+	models := make([]*Model, numAccounts)
+	for i := 0; i < numAccounts; i++ {
+		acct := fmt.Sprintf("%012d", i+1)
+		models[i] = buildLargeModel(acct, principalsPerAcct, stmtsPerPrincipal, resourcesPerAcct, factsPerAcct)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := MergeModels(models)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
