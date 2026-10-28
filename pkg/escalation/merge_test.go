@@ -138,6 +138,24 @@ func TestMergeModels_PreservesResourcePolicies(t *testing.T) {
 	assert.Len(t, merged.ResourcePolicies, 2)
 }
 
+func TestMergeModels_SingleModel_ResourcePolicyDoesNotAlias(t *testing.T) {
+	m := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	m.ResourcePolicies = []ResourcePolicy{
+		{Resource: "arn:aws:s3:::bucket", Policy: map[string]any{"Version": "2012-10-17", "Statement": []any{}}},
+	}
+
+	merged, err := MergeModels([]*Model{m})
+	require.NoError(t, err)
+
+	// Mutating the merged policy must not affect the input
+	mergedPolicy := merged.ResourcePolicies[0].Policy.(map[string]any)
+	mergedPolicy["Version"] = "MUTATED"
+	inputPolicy := m.ResourcePolicies[0].Policy.(map[string]any)
+	assert.Equal(t, "2012-10-17", inputPolicy["Version"], "merged ResourcePolicy.Policy must not alias input")
+}
+
 func TestMergeModels_CoveragePerAccount(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},

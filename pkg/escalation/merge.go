@@ -214,6 +214,21 @@ func findPrincipal(principals []Principal, arn string) *Principal {
 	return nil
 }
 
+func deepCopyPolicy(v interface{}) interface{} {
+	if v == nil {
+		return nil
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out interface{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return v
+	}
+	return out
+}
+
 func copySolverConfig(cfg *SolverConfig) *SolverConfig {
 	if cfg == nil {
 		return nil
@@ -228,7 +243,10 @@ func copyModel(m *Model) *Model {
 	out.Principals = append([]Principal(nil), m.Principals...)
 	out.Resources = append([]Resource(nil), m.Resources...)
 	out.StructuralFacts = append([]StructuralFact(nil), m.StructuralFacts...)
-	out.ResourcePolicies = append([]ResourcePolicy(nil), m.ResourcePolicies...)
+	out.ResourcePolicies = make([]ResourcePolicy, len(m.ResourcePolicies))
+	for i, rp := range m.ResourcePolicies {
+		out.ResourcePolicies[i] = ResourcePolicy{Resource: rp.Resource, Policy: deepCopyPolicy(rp.Policy)}
+	}
 	out.CollectionErrors = append([]CollectionError(nil), m.CollectionErrors...)
 	out.PermissionSource.Entries = append([]PolicySummaryEntry(nil), m.PermissionSource.Entries...)
 	out.PermissionSource.Triples = append([]EvaluatedTriple(nil), m.PermissionSource.Triples...)
