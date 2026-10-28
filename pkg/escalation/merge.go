@@ -47,6 +47,10 @@ func MergeModels(models []*Model) (*Model, error) {
 
 	seenAccounts := make(map[string]bool)
 	seenPrincipals := make(map[string]bool)
+	seenResources := make(map[string]bool)
+	seenResourcePolicies := make(map[string]bool)
+	seenEntries := make(map[string]bool)
+	seenTriples := make(map[string]bool)
 
 	for _, m := range models {
 		for _, a := range m.Accounts {
@@ -73,16 +77,44 @@ func MergeModels(models []*Model) (*Model, error) {
 			merged.Principals = append(merged.Principals, p)
 		}
 
-		merged.Resources = append(merged.Resources, m.Resources...)
+		for _, r := range m.Resources {
+			if seenResources[r.ARN] {
+				continue
+			}
+			seenResources[r.ARN] = true
+			merged.Resources = append(merged.Resources, r)
+		}
+
 		merged.StructuralFacts = append(merged.StructuralFacts, m.StructuralFacts...)
-		merged.ResourcePolicies = append(merged.ResourcePolicies, m.ResourcePolicies...)
+
+		for _, rp := range m.ResourcePolicies {
+			if seenResourcePolicies[rp.Resource] {
+				continue
+			}
+			seenResourcePolicies[rp.Resource] = true
+			merged.ResourcePolicies = append(merged.ResourcePolicies, rp)
+		}
+
 		merged.CollectionErrors = append(merged.CollectionErrors, m.CollectionErrors...)
 
 		switch psType {
 		case PermSourcePolicySummary:
-			merged.PermissionSource.Entries = append(merged.PermissionSource.Entries, m.PermissionSource.Entries...)
+			for _, e := range m.PermissionSource.Entries {
+				if seenEntries[e.Principal] {
+					continue
+				}
+				seenEntries[e.Principal] = true
+				merged.PermissionSource.Entries = append(merged.PermissionSource.Entries, e)
+			}
 		case PermSourceEvaluatedTriples:
-			merged.PermissionSource.Triples = append(merged.PermissionSource.Triples, m.PermissionSource.Triples...)
+			for _, t := range m.PermissionSource.Triples {
+				key := t.Principal + "\x00" + t.Action + "\x00" + t.Target
+				if seenTriples[key] {
+					continue
+				}
+				seenTriples[key] = true
+				merged.PermissionSource.Triples = append(merged.PermissionSource.Triples, t)
+			}
 		}
 
 		merged.CollectionCoverage = mergeCoverage(merged.CollectionCoverage, m.CollectionCoverage)

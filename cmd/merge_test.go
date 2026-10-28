@@ -106,6 +106,21 @@ func TestMergeCmd_WithInputDir(t *testing.T) {
 	assert.Len(t, merged.Accounts, 2)
 }
 
+func TestMergeCmd_OutputOverlapsInput_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestModel(t, dir, "model.json", testModel("111111111111", "arn:aws:iam::111111111111:role/R"))
+
+	cmd := newMergeCmd()
+	cmd.SetArgs([]string{
+		"--input", path,
+		"--output", path,
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "output")
+}
+
 func TestMergeCmd_NoInputs_ReturnsError(t *testing.T) {
 	cmd := newMergeCmd()
 	cmd.SetArgs([]string{})

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/escalation"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -56,6 +57,18 @@ func runMerge(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("no .json files found in %s", inputDir)
 		}
 		inputFiles = append(inputFiles, globbed...)
+	}
+
+	if outputPath != "" {
+		absOut, err := filepath.Abs(outputPath)
+		if err == nil {
+			for _, in := range inputFiles {
+				absIn, err := filepath.Abs(in)
+				if err == nil && absIn == absOut {
+					return fmt.Errorf("output path %q is also an input file; refusing to overwrite source", outputPath)
+				}
+			}
+		}
 	}
 
 	log.Info("merging %d model file(s)", len(inputFiles))

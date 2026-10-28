@@ -612,6 +612,115 @@ func TestMergeModels_DivergentGoal_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "goal")
 }
 
+func TestMergeModels_DuplicateEntries_DeduplicatedByPrincipal(t *testing.T) {
+	// Same principal ARN in two models should produce 1 PolicySummaryEntry, not 2.
+	entry := PolicySummaryEntry{
+		Principal: "arn:aws:iam::111111111111:role/R",
+		EffectiveStatements: []PolicyStatement{
+			{Effect: "Allow", Action: "s3:GetObject", Resource: "*"},
+		},
+	}
+
+	modelA := accountModel("111111111111",
+		[]Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		[]PolicySummaryEntry{entry},
+		nil,
+	)
+	modelB := accountModel("111111111111",
+		[]Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		[]PolicySummaryEntry{entry},
+		nil,
+	)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.Principals, 1, "principal deduped")
+	assert.Len(t, merged.PermissionSource.Entries, 1, "entries should be deduped by principal ARN")
+}
+
+func TestMergeModels_DuplicateTriples_Deduplicated(t *testing.T) {
+	// Same (principal, action, target) triple in two models should produce 1 triple, not 2.
+	modelA := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{
+				{Principal: "arn:aws:iam::111111111111:role/R", Action: "s3:GetObject", Target: "*", Allowed: true},
+			},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	modelB := &Model{
+		Version:    "1.0",
+		Accounts:   []Account{{ID: "111111111111"}},
+		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		PermissionSource: PermissionSource{
+			Type: PermSourceEvaluatedTriples,
+			Triples: []EvaluatedTriple{
+				{Principal: "arn:aws:iam::111111111111:role/R", Action: "s3:GetObject", Target: "*", Allowed: true},
+			},
+		},
+		Goal: Goal{Type: GoalReachAdmin, Attacker: "*"},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.PermissionSource.Triples, 1, "duplicate triples should be deduped")
+}
+
+func TestMergeModels_DuplicateResources_DeduplicatedByARN(t *testing.T) {
+	// Same resource ARN in two models (e.g. cross-account S3 bucket) should produce 1 Resource.
+	modelA := accountModel("111111111111",
+		[]Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelA.Resources = []Resource{
+		{ARN: "arn:aws:s3:::shared-bucket", Type: ResourceTypeS3Bucket, Account: "111111111111"},
+	}
+
+	modelB := accountModel("222222222222",
+		[]Principal{{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelB.Resources = []Resource{
+		{ARN: "arn:aws:s3:::shared-bucket", Type: ResourceTypeS3Bucket, Account: "222222222222"},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.Resources, 1, "duplicate resources should be deduped by ARN")
+}
+
+func TestMergeModels_DuplicateResourcePolicies_DeduplicatedByResource(t *testing.T) {
+	// Same resource policy ARN in two models should produce 1 ResourcePolicy.
+	modelA := accountModel("111111111111",
+		[]Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelA.ResourcePolicies = []ResourcePolicy{
+		{Resource: "arn:aws:s3:::shared-bucket", Policy: map[string]any{"Statement": []any{}}},
+	}
+
+	modelB := accountModel("222222222222",
+		[]Principal{{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelB.ResourcePolicies = []ResourcePolicy{
+		{Resource: "arn:aws:s3:::shared-bucket", Policy: map[string]any{"Statement": []any{}}},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	assert.Len(t, merged.ResourcePolicies, 1, "duplicate resource policies should be deduped by resource ARN")
+}
+
 func TestMergeModels_SameGoal_Succeeds(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
