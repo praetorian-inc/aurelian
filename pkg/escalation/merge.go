@@ -24,11 +24,14 @@ func MergeModels(models []*Model) (*Model, error) {
 		}
 	}
 
+	version := models[0].Version
+	if version != ModelVersion {
+		return nil, fmt.Errorf("MergeModels: unsupported model version %q (this build supports %q)", version, ModelVersion)
+	}
+
 	if len(models) == 1 {
 		return copyModel(models[0]), nil
 	}
-
-	version := models[0].Version
 	psType := models[0].PermissionSource.Type
 	goal := models[0].Goal
 	for i, m := range models[1:] {
@@ -132,7 +135,14 @@ func MergeModels(models []*Model) (*Model, error) {
 					continue
 				}
 				seenEntries[e.Principal] = true
-				merged.PermissionSource.Entries = append(merged.PermissionSource.Entries, e)
+				copied := PolicySummaryEntry{
+					Principal:           e.Principal,
+					EffectiveStatements: append([]PolicyStatement(nil), e.EffectiveStatements...),
+				}
+				for j, s := range e.EffectiveStatements {
+					copied.EffectiveStatements[j].Conditions = copyConditions(s.Conditions)
+				}
+				merged.PermissionSource.Entries = append(merged.PermissionSource.Entries, copied)
 			}
 		case PermSourceEvaluatedTriples:
 			for _, t := range m.PermissionSource.Triples {
@@ -141,7 +151,9 @@ func MergeModels(models []*Model) (*Model, error) {
 					continue
 				}
 				seenTriples[key] = true
-				merged.PermissionSource.Triples = append(merged.PermissionSource.Triples, t)
+				copied := t
+				copied.Conditions = copyConditions(t.Conditions)
+				merged.PermissionSource.Triples = append(merged.PermissionSource.Triples, copied)
 			}
 		}
 
@@ -192,14 +204,22 @@ func statementsEqual(a, b []PolicyStatement) bool {
 
 func sortedStatements(s []PolicyStatement) []PolicyStatement {
 	out := append([]PolicyStatement(nil), s...)
-	sort.Slice(out, func(i, j int) bool {
+	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Effect != out[j].Effect {
 			return out[i].Effect < out[j].Effect
 		}
 		if out[i].Action != out[j].Action {
 			return out[i].Action < out[j].Action
 		}
-		return out[i].Resource < out[j].Resource
+		if out[i].Resource != out[j].Resource {
+			return out[i].Resource < out[j].Resource
+		}
+		if out[i].Source != out[j].Source {
+			return out[i].Source < out[j].Source
+		}
+		ci, _ := json.Marshal(out[i].Conditions)
+		cj, _ := json.Marshal(out[j].Conditions)
+		return string(ci) < string(cj)
 	})
 	return out
 }

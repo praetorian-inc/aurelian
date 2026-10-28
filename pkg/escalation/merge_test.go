@@ -1005,3 +1005,41 @@ func TestMergeModels_MultiModel_ResourcePolicyDoesNotAlias(t *testing.T) {
 	assert.Equal(t, "2012-10-17", modelA.ResourcePolicies[0].Policy.(map[string]any)["Version"],
 		"multi-model merge must deep-copy ResourcePolicy.Policy")
 }
+
+func TestMergeModels_UnsupportedVersion_ReturnsError(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.Version = "99.0"
+
+	_, err := MergeModels([]*Model{modelA})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported")
+	assert.Contains(t, err.Error(), ModelVersion)
+}
+
+func TestMergeModels_MultiModel_EntriesDoNotAlias(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.PermissionSource.Entries = []PolicySummaryEntry{{
+		Principal:           "arn:aws:iam::111111111111:role/R",
+		EffectiveStatements: []PolicyStatement{{Effect: "Allow", Action: "s3:GetObject", Resource: "*"}},
+	}}
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelB.PermissionSource.Entries = []PolicySummaryEntry{{
+		Principal:           "arn:aws:iam::222222222222:role/R",
+		EffectiveStatements: []PolicyStatement{{Effect: "Allow", Action: "iam:PassRole", Resource: "*"}},
+	}}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+	require.Len(t, merged.PermissionSource.Entries, 2)
+
+	merged.PermissionSource.Entries[0].EffectiveStatements[0].Action = "MUTATED"
+	assert.Equal(t, "s3:GetObject", modelA.PermissionSource.Entries[0].EffectiveStatements[0].Action,
+		"multi-model merge must deep-copy EffectiveStatements")
+}
