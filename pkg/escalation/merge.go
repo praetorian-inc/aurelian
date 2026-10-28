@@ -68,7 +68,9 @@ func MergeModels(models []*Model) (*Model, error) {
 				continue
 			}
 			seenAccounts[a.ID] = true
-			merged.Accounts = append(merged.Accounts, a)
+			copied := a
+			copied.OrgPath = append([]string(nil), a.OrgPath...)
+			merged.Accounts = append(merged.Accounts, copied)
 		}
 
 		for _, p := range m.Principals {
@@ -118,7 +120,11 @@ func MergeModels(models []*Model) (*Model, error) {
 			})
 		}
 
-		merged.CollectionErrors = append(merged.CollectionErrors, m.CollectionErrors...)
+		for _, ce := range m.CollectionErrors {
+			copied := ce
+			copied.Regions = append([]string(nil), ce.Regions...)
+			merged.CollectionErrors = append(merged.CollectionErrors, copied)
+		}
 
 		switch psType {
 		case PermSourcePolicySummary:
@@ -314,7 +320,11 @@ func copySolverConfig(cfg *SolverConfig) *SolverConfig {
 
 func copyModel(m *Model) *Model {
 	out := *m
-	out.Accounts = append([]Account(nil), m.Accounts...)
+	out.Accounts = make([]Account, len(m.Accounts))
+	for i, a := range m.Accounts {
+		out.Accounts[i] = a
+		out.Accounts[i].OrgPath = append([]string(nil), a.OrgPath...)
+	}
 	out.Principals = append([]Principal(nil), m.Principals...)
 	out.Resources = append([]Resource(nil), m.Resources...)
 	out.StructuralFacts = append([]StructuralFact(nil), m.StructuralFacts...)
@@ -322,7 +332,11 @@ func copyModel(m *Model) *Model {
 	for i, rp := range m.ResourcePolicies {
 		out.ResourcePolicies[i] = ResourcePolicy{Resource: rp.Resource, Policy: deepCopyPolicy(rp.Policy)}
 	}
-	out.CollectionErrors = append([]CollectionError(nil), m.CollectionErrors...)
+	out.CollectionErrors = make([]CollectionError, len(m.CollectionErrors))
+	for i, ce := range m.CollectionErrors {
+		out.CollectionErrors[i] = ce
+		out.CollectionErrors[i].Regions = append([]string(nil), ce.Regions...)
+	}
 	out.PermissionSource.Entries = make([]PolicySummaryEntry, len(m.PermissionSource.Entries))
 	for i, e := range m.PermissionSource.Entries {
 		out.PermissionSource.Entries[i] = PolicySummaryEntry{
