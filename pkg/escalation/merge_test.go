@@ -555,6 +555,120 @@ func TestMergeModels_ExpandsRootTrust(t *testing.T) {
 	}
 }
 
+func TestExpandRootTrustFacts_SelfTrust(t *testing.T) {
+	// A role trusts its own account root — the role itself should get a
+	// trust fact to itself (a role CAN assume itself via account root trust).
+	principals := []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/SelfRole", Account: "111111111111", Type: PrincipalTypeRole},
+		{ARN: "arn:aws:iam::111111111111:user/OtherUser", Account: "111111111111", Type: PrincipalTypeUser},
+	}
+
+	facts := []StructuralFact{
+		{Type: FactTrustRelationship, From: "arn:aws:iam::111111111111:role/SelfRole", To: "arn:aws:iam::111111111111:root", Confidence: 1.0},
+	}
+
+	expanded := ExpandRootTrustFacts(facts, principals)
+
+	selfTrust := false
+	otherTrust := false
+	for _, f := range expanded {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/SelfRole" {
+			if f.To == "arn:aws:iam::111111111111:role/SelfRole" {
+				selfTrust = true
+			}
+			if f.To == "arn:aws:iam::111111111111:user/OtherUser" {
+				otherTrust = true
+			}
+		}
+	}
+	assert.True(t, selfTrust, "role should get trust fact to itself via account root expansion")
+	assert.True(t, otherTrust, "other user in account should also get trust fact")
+}
+
+func TestMergeModels_CrossModelTrustReferences(t *testing.T) {
+	// Model A has a trust fact referencing a principal only present in model B.
+	// After merge, the trust fact and both principals should be present.
+	modelA := accountModel("111111111111",
+		[]Principal{
+			{ARN: "arn:aws:iam::111111111111:role/RoleA", Account: "111111111111", Type: PrincipalTypeRole},
+		},
+		[]PolicySummaryEntry{
+			{Principal: "arn:aws:iam::111111111111:role/RoleA", EffectiveStatements: []PolicyStatement{
+				{Effect: "Allow", Action: "sts:AssumeRole", Resource: "arn:aws:iam::222222222222:role/RoleB"},
+			}},
+		},
+		nil,
+	)
+
+	modelB := accountModel("222222222222",
+		[]Principal{
+			{ARN: "arn:aws:iam::222222222222:role/RoleB", Account: "222222222222", Type: PrincipalTypeRole, IsAdmin: true},
+		},
+		nil,
+		[]StructuralFact{
+			{Type: FactTrustRelationship, From: "arn:aws:iam::222222222222:role/RoleB", To: "arn:aws:iam::111111111111:role/RoleA", Confidence: 1.0},
+		},
+	)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	// Both principals present
+	arnSet := map[string]bool{}
+	for _, p := range merged.Principals {
+		arnSet[p.ARN] = true
+	}
+	assert.True(t, arnSet["arn:aws:iam::111111111111:role/RoleA"], "RoleA from model A should be in merged model")
+	assert.True(t, arnSet["arn:aws:iam::222222222222:role/RoleB"], "RoleB from model B should be in merged model")
+
+	// Cross-model trust fact preserved
+	found := false
+	for _, f := range merged.StructuralFacts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::222222222222:role/RoleB" &&
+			f.To == "arn:aws:iam::111111111111:role/RoleA" {
+			found = true
+		}
+	}
+	assert.True(t, found, "cross-model trust fact should be preserved after merge")
+}
+
+func TestMergeModels_DuplicateTrustFactsPreserved(t *testing.T) {
+	// Two models both have the same trust fact (e.g. both collected the same
+	// cross-account role). Merge concatenates without dedup.
+	trustFact := StructuralFact{
+		Type: FactTrustRelationship, From: "arn:aws:iam::222222222222:role/Shared",
+		To: "arn:aws:iam::111111111111:role/Caller", Confidence: 1.0,
+	}
+
+	modelA := accountModel("111111111111",
+		[]Principal{
+			{ARN: "arn:aws:iam::111111111111:role/Caller", Account: "111111111111", Type: PrincipalTypeRole},
+		}, nil,
+		[]StructuralFact{trustFact},
+	)
+
+	modelB := accountModel("222222222222",
+		[]Principal{
+			{ARN: "arn:aws:iam::222222222222:role/Shared", Account: "222222222222", Type: PrincipalTypeRole},
+		}, nil,
+		[]StructuralFact{trustFact},
+	)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	count := 0
+	for _, f := range merged.StructuralFacts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::222222222222:role/Shared" &&
+			f.To == "arn:aws:iam::111111111111:role/Caller" {
+			count++
+		}
+	}
+	assert.Equal(t, 2, count, "duplicate trust facts should be preserved (concatenated, not deduped)")
+}
+
 func TestMergeModels_Config_TakesFirst(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
