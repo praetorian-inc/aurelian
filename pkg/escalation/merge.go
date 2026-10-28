@@ -9,10 +9,8 @@ import (
 
 // MergeModels combines multiple per-account Models into a single org-wide
 // model suitable for cross-account escalation analysis. All models must use
-// the same permission source type.
-//
-// After merging, root-trust structural facts (arn:aws:iam::ACCOUNT:root)
-// are expanded into per-principal trust facts so the solver can match them.
+// the same permission source type. Root-trust facts (arn:aws:iam::ACCOUNT:root)
+// are preserved as-is for solver-side interpretation.
 func MergeModels(models []*Model) (*Model, error) {
 	if len(models) == 0 {
 		return nil, fmt.Errorf("MergeModels: at least one model is required")
