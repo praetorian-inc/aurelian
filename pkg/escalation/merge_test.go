@@ -570,7 +570,7 @@ func TestMergeModels_DuplicateTrustFactsPreserved(t *testing.T) {
 	assert.Equal(t, 2, count, "duplicate trust facts should be preserved (concatenated, not deduped)")
 }
 
-func TestMergeModels_Config_TakesFirst(t *testing.T) {
+func TestMergeModels_Config_Conflicting_ReturnsError(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
 	}, nil, nil)
@@ -581,12 +581,42 @@ func TestMergeModels_Config_TakesFirst(t *testing.T) {
 	}, nil, nil)
 	modelB.Config = &SolverConfig{TimeoutSeconds: 60}
 
+	_, err := MergeModels([]*Model{modelA, modelB})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "config")
+}
+
+func TestMergeModels_Config_Same_Succeeds(t *testing.T) {
+	cfg := &SolverConfig{TimeoutSeconds: 120, FindAllPaths: true}
+
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelA.Config = cfg
+
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelB.Config = &SolverConfig{TimeoutSeconds: 120, FindAllPaths: true}
+
 	merged, err := MergeModels([]*Model{modelA, modelB})
 	require.NoError(t, err)
-
 	require.NotNil(t, merged.Config)
 	assert.Equal(t, 120, merged.Config.TimeoutSeconds)
 	assert.True(t, merged.Config.FindAllPaths)
+}
+
+func TestMergeModels_Config_BothNil_Succeeds(t *testing.T) {
+	modelA := accountModel("111111111111", []Principal{
+		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
+	}, nil, nil)
+	modelB := accountModel("222222222222", []Principal{
+		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
+	}, nil, nil)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+	assert.Nil(t, merged.Config)
 }
 
 func TestMergeModels_SingleModel_DoesNotAliasSlices(t *testing.T) {
@@ -626,6 +656,7 @@ func TestMergeModels_MultiModel_ConfigDoesNotAliasInput(t *testing.T) {
 	modelB := accountModel("222222222222", []Principal{
 		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
 	}, nil, nil)
+	modelB.Config = &SolverConfig{TimeoutSeconds: 120}
 
 	merged, err := MergeModels([]*Model{modelA, modelB})
 	require.NoError(t, err)

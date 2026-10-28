@@ -39,6 +39,9 @@ func MergeModels(models []*Model) (*Model, error) {
 		if m.Goal != goal {
 			return nil, fmt.Errorf("MergeModels: all models must have the same goal (model 0 has %+v, model %d has %+v)", goal, i+1, m.Goal)
 		}
+		if !solverConfigsEqual(models[0].Config, m.Config) {
+			return nil, fmt.Errorf("MergeModels: all models must have the same solver config (model 0 has %+v, model %d has %+v)", models[0].Config, i+1, m.Config)
+		}
 	}
 
 	merged := &Model{
@@ -227,6 +230,16 @@ func deepCopyPolicy(v interface{}) interface{} {
 		return v
 	}
 	return out
+}
+
+func solverConfigsEqual(a, b *SolverConfig) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 func copySolverConfig(cfg *SolverConfig) *SolverConfig {
