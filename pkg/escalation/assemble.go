@@ -39,7 +39,7 @@ func Assemble(in AssembleInput) (*Model, error) {
 	}
 
 	m := &Model{
-		Version:          "1.0",
+		Version:          ModelVersion,
 		Principals:       principals,
 		Resources:        CollectResources(in.Resources),
 		StructuralFacts:  CollectStructuralFacts(in.GAAD, in.Resources),

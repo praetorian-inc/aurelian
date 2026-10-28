@@ -29,7 +29,7 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "1.0", m.Version)
+	assert.Equal(t, ModelVersion, m.Version)
 	assert.NotEmpty(t, m.Principals)
 	assert.NotEmpty(t, m.Resources)
 	assert.NotEmpty(t, m.StructuralFacts)
@@ -70,7 +70,7 @@ func TestAssemble_JSONSchemaCompliance(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &raw))
 
 	// Required fields
-	assert.Equal(t, "1.0", raw["version"])
+	assert.Equal(t, ModelVersion, raw["version"])
 	assert.NotNil(t, raw["principals"])
 	assert.NotNil(t, raw["permission_source"])
 	assert.NotNil(t, raw["goal"])

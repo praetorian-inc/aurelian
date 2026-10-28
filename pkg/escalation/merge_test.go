@@ -14,7 +14,7 @@ import (
 
 func accountModel(accountID string, principals []Principal, entries []PolicySummaryEntry, facts []StructuralFact) *Model {
 	return &Model{
-		Version:  "1.0",
+		Version:  ModelVersion,
 		Accounts: []Account{{ID: accountID}},
 		Principals: principals,
 		PermissionSource: PermissionSource{
@@ -89,7 +89,7 @@ func TestMergeModels_TwoAccounts(t *testing.T) {
 	assert.Len(t, merged.StructuralFacts, 2)
 
 	// Version preserved
-	assert.Equal(t, "1.0", merged.Version)
+	assert.Equal(t, ModelVersion, merged.Version)
 
 	// Goal preserved (wildcard)
 	assert.Equal(t, GoalReachAdmin, merged.Goal.Type)
@@ -239,7 +239,7 @@ func TestMergeModels_MergesCollectionErrors(t *testing.T) {
 
 func TestMergeModels_EvaluatedTriplesFormat(t *testing.T) {
 	modelA := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -252,7 +252,7 @@ func TestMergeModels_EvaluatedTriplesFormat(t *testing.T) {
 	}
 
 	modelB := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "222222222222"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -297,7 +297,7 @@ func TestMergeModels_SingleModel_ReturnsCopy(t *testing.T) {
 
 func TestMergeModels_MixedPermissionSourceTypes_ReturnsError(t *testing.T) {
 	modelA := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{Type: PermSourcePolicySummary},
@@ -305,7 +305,7 @@ func TestMergeModels_MixedPermissionSourceTypes_ReturnsError(t *testing.T) {
 	}
 
 	modelB := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "222222222222"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{Type: PermSourceEvaluatedTriples},
@@ -319,7 +319,7 @@ func TestMergeModels_MixedPermissionSourceTypes_ReturnsError(t *testing.T) {
 
 func TestMergeModels_ExternalPermissionSource_ReturnsError(t *testing.T) {
 	modelA := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{Type: PermSourceExternal, Command: "some-cmd"},
@@ -414,7 +414,7 @@ func TestMergeModels_JSONSerializable(t *testing.T) {
 	var raw map[string]interface{}
 	require.NoError(t, json.Unmarshal(data, &raw))
 
-	assert.Equal(t, "1.0", raw["version"])
+	assert.Equal(t, ModelVersion, raw["version"])
 	principals := raw["principals"].([]interface{})
 	assert.Len(t, principals, 2)
 }
@@ -678,7 +678,7 @@ func TestMergeModels_DuplicateEntries_DeduplicatedByPrincipal(t *testing.T) {
 func TestMergeModels_DuplicateTriples_Deduplicated(t *testing.T) {
 	// Same (principal, action, target) triple in two models should produce 1 triple, not 2.
 	modelA := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -691,7 +691,7 @@ func TestMergeModels_DuplicateTriples_Deduplicated(t *testing.T) {
 	}
 
 	modelB := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -760,7 +760,7 @@ func TestMergeModels_DuplicateResourcePolicies_DeduplicatedByResource(t *testing
 func TestMergeModels_DivergentTriples_BothKept(t *testing.T) {
 	// Same (principal, action, target) but different Allowed — must keep both.
 	modelA := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -773,7 +773,7 @@ func TestMergeModels_DivergentTriples_BothKept(t *testing.T) {
 	}
 
 	modelB := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -794,7 +794,7 @@ func TestMergeModels_DivergentTriples_BothKept(t *testing.T) {
 func TestMergeModels_DivergentTriples_DifferentConditions_BothKept(t *testing.T) {
 	// Same (principal, action, target, allowed) but different Conditions — must keep both.
 	modelA := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{
@@ -807,7 +807,7 @@ func TestMergeModels_DivergentTriples_DifferentConditions_BothKept(t *testing.T)
 	}
 
 	modelB := &Model{
-		Version:    "1.0",
+		Version:    ModelVersion,
 		Accounts:   []Account{{ID: "111111111111"}},
 		Principals: []Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
 		PermissionSource: PermissionSource{

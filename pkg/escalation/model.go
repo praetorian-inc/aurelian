@@ -11,6 +11,8 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/model"
 )
 
+const ModelVersion = "1.1"
+
 // Model is the top-level escalation-solver input (model-v1.schema.json).
 // It implements model.SingleObjectOutput so the JSON formatter writes it as
 // a bare object rather than wrapping in an array.

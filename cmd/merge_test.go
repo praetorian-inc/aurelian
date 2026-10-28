@@ -23,7 +23,7 @@ func writeTestModel(t *testing.T, dir, name string, m *escalation.Model) string 
 
 func testModel(accountID string, roleARN string) *escalation.Model {
 	return &escalation.Model{
-		Version:  "1.0",
+		Version:  escalation.ModelVersion,
 		Accounts: []escalation.Account{{ID: accountID}},
 		Principals: []escalation.Principal{
 			{ARN: roleARN, Account: accountID, Type: escalation.PrincipalTypeRole},

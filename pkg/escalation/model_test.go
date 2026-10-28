@@ -23,7 +23,7 @@ func TestModel_ImplementsSingleObjectOutput(t *testing.T) {
 
 func TestModel_MarshalJSON_RoundTrip(t *testing.T) {
 	m := &Model{
-		Version: "1.0",
+		Version: ModelVersion,
 		CollectionCoverage: map[string]*CollectionCoverage{
 			"111111111111": {
 				IAMGAAD:              true,
@@ -62,7 +62,7 @@ func TestModel_MarshalJSON_RoundTrip(t *testing.T) {
 	var raw map[string]interface{}
 	require.NoError(t, json.Unmarshal(data, &raw))
 
-	assert.Equal(t, "1.0", raw["version"])
+	assert.Equal(t, ModelVersion, raw["version"])
 	assert.NotNil(t, raw["principals"])
 	assert.NotNil(t, raw["permission_source"])
 	assert.NotNil(t, raw["goal"])
@@ -202,7 +202,7 @@ func TestPermissionSource_UnmarshalJSON_External(t *testing.T) {
 
 func TestModel_FullRoundTrip_PolicySummary(t *testing.T) {
 	original := &Model{
-		Version: "1.0",
+		Version: ModelVersion,
 		CollectionCoverage: map[string]*CollectionCoverage{
 			"111111111111": {
 				IAMGAAD:              true,
@@ -276,7 +276,7 @@ func TestModel_FullRoundTrip_PolicySummary(t *testing.T) {
 
 func TestModel_FullRoundTrip_EvaluatedTriples(t *testing.T) {
 	original := &Model{
-		Version: "1.0",
+		Version: ModelVersion,
 		Accounts: []Account{{ID: "111111111111"}},
 		Principals: []Principal{
 			{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
