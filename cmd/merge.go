@@ -21,8 +21,8 @@ var mergeCmd = &cobra.Command{
 	Long: `Merge multiple per-account escalation-solver model.json files into a
 single org-wide model for cross-account privilege escalation analysis.
 
-Account-root trust relationships (arn:aws:iam::ACCOUNT:root) are automatically
-expanded into per-principal trust facts.`,
+Account-root trust relationships (arn:aws:iam::ACCOUNT:root) are preserved
+in the merged model for solver-side interpretation.`,
 	RunE: runMerge,
 }
 
