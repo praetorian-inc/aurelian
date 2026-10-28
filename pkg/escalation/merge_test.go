@@ -1150,6 +1150,109 @@ func richModel() *Model {
 	}
 }
 
+func TestMergeModels_LargeScale_Correctness(t *testing.T) {
+	const (
+		numAccounts       = 5
+		principalsPerAcct = 100
+		stmtsPerPrincipal = 20
+		resourcesPerAcct  = 30
+		factsPerAcct      = 50
+	)
+
+	models := make([]*Model, numAccounts)
+	for i := 0; i < numAccounts; i++ {
+		acct := fmt.Sprintf("%012d", i+1)
+		models[i] = buildLargeModel(acct, principalsPerAcct, stmtsPerPrincipal, resourcesPerAcct, factsPerAcct)
+	}
+
+	merged, err := MergeModels(models)
+	require.NoError(t, err)
+
+	// Accounts: each model contributes 1 unique account.
+	assert.Len(t, merged.Accounts, numAccounts, "each account should appear once")
+
+	// Principals: each account has unique ARNs, so total = sum.
+	assert.Len(t, merged.Principals, numAccounts*principalsPerAcct,
+		"all principals from all accounts should be present")
+
+	// Resources: each account has unique ARNs, so total = sum.
+	assert.Len(t, merged.Resources, numAccounts*resourcesPerAcct,
+		"all resources from all accounts should be present")
+
+	// ResourcePolicies: one per resource, unique ARNs.
+	assert.Len(t, merged.ResourcePolicies, numAccounts*resourcesPerAcct,
+		"all resource policies should be present")
+
+	// StructuralFacts: not deduped, so total = sum.
+	assert.Len(t, merged.StructuralFacts, numAccounts*factsPerAcct,
+		"all structural facts should be present")
+
+	// Entries: each account has unique principal ARNs, so total = sum.
+	assert.Len(t, merged.PermissionSource.Entries, numAccounts*principalsPerAcct,
+		"all permission entries should be present")
+
+	// CollectionErrors: 1 per model, not deduped.
+	assert.Len(t, merged.CollectionErrors, numAccounts,
+		"all collection errors should be present")
+
+	// Coverage: one key per account, all should be present.
+	assert.Len(t, merged.CollectionCoverage, numAccounts,
+		"coverage should have one entry per account")
+
+	// Spot-check: verify specific entries survived.
+	for i := 0; i < numAccounts; i++ {
+		acct := fmt.Sprintf("%012d", i+1)
+
+		// Account exists.
+		found := false
+		for _, a := range merged.Accounts {
+			if a.ID == acct {
+				found = true
+				assert.Equal(t, []string{"org", "ou-prod"}, a.OrgPath, "OrgPath should be preserved")
+			}
+		}
+		assert.True(t, found, "account %s should be in merged output", acct)
+
+		// First principal's first statement survived with conditions.
+		firstARN := fmt.Sprintf("arn:aws:iam::%s:role/Role0", acct)
+		var entry *PolicySummaryEntry
+		for j := range merged.PermissionSource.Entries {
+			if merged.PermissionSource.Entries[j].Principal == firstARN {
+				entry = &merged.PermissionSource.Entries[j]
+				break
+			}
+		}
+		if assert.NotNil(t, entry, "entry for %s should exist", firstARN) {
+			assert.Len(t, entry.EffectiveStatements, stmtsPerPrincipal,
+				"all statements for %s should be present", firstARN)
+			assert.Len(t, entry.EffectiveStatements[0].Conditions, 1,
+				"conditions should be preserved")
+			assert.Len(t, entry.EffectiveStatements[0].Conditions[0].Values, 2,
+				"condition values should be preserved")
+		}
+
+		// Coverage preserved.
+		cov, ok := merged.CollectionCoverage[acct]
+		assert.True(t, ok, "coverage for %s should exist", acct)
+		if ok {
+			assert.True(t, cov.IAMGAAD)
+			assert.True(t, cov.S3BucketPolicies)
+			assert.True(t, cov.LambdaExecutionRoles)
+		}
+	}
+
+	// Verify no aliasing: mutate merged, check inputs unchanged.
+	origFirst, _ := json.Marshal(models[0])
+	merged.Principals[0].ARN = "MUTATED"
+	merged.PermissionSource.Entries[0].EffectiveStatements[0].Action = "MUTATED"
+	if len(merged.ResourcePolicies) > 0 {
+		merged.ResourcePolicies[0].Resource = "MUTATED"
+	}
+	afterFirst, _ := json.Marshal(models[0])
+	assert.JSONEq(t, string(origFirst), string(afterFirst),
+		"mutating merged output must not affect input models")
+}
+
 // ---------------------------------------------------------------------------
 // Benchmark: merge performance at scale
 // ---------------------------------------------------------------------------
