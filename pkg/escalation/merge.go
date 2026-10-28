@@ -25,9 +25,7 @@ func MergeModels(models []*Model) (*Model, error) {
 	}
 
 	if len(models) == 1 {
-		m := models[0]
-		m.StructuralFacts = ExpandRootTrustFacts(m.StructuralFacts, m.Principals)
-		return m, nil
+		return models[0], nil
 	}
 
 	psType := models[0].PermissionSource.Type
@@ -79,7 +77,6 @@ func MergeModels(models []*Model) (*Model, error) {
 	}
 
 	merged.PermissionSource.Type = psType
-	merged.StructuralFacts = ExpandRootTrustFacts(merged.StructuralFacts, merged.Principals)
 
 	return merged, nil
 }

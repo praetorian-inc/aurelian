@@ -504,9 +504,10 @@ func TestExpandRootTrustFacts_MultipleRootTrusts(t *testing.T) {
 // Integration: MergeModels + ExpandRootTrustFacts together
 // ---------------------------------------------------------------------------
 
-func TestMergeModels_ExpandsRootTrust(t *testing.T) {
+func TestMergeModels_PreservesRootTrust(t *testing.T) {
 	// Account A: RoleA with sts:AssumeRole on account B's RoleB
 	// Account B: RoleB trusts arn:aws:iam::111111111111:root (account A root)
+	// Root trust should be preserved as-is (the solver handles matching)
 	modelA := accountModel("111111111111",
 		[]Principal{
 			{ARN: "arn:aws:iam::111111111111:role/RoleA", Account: "111111111111", Type: PrincipalTypeRole},
@@ -536,23 +537,16 @@ func TestMergeModels_ExpandsRootTrust(t *testing.T) {
 	merged, err := MergeModels([]*Model{modelA, modelB})
 	require.NoError(t, err)
 
-	// After merge + root trust expansion, RoleB should have a trust fact to RoleA
+	// Root trust fact should be preserved for the solver to interpret
 	found := false
 	for _, f := range merged.StructuralFacts {
 		if f.Type == FactTrustRelationship &&
 			f.From == "arn:aws:iam::222222222222:role/RoleB" &&
-			f.To == "arn:aws:iam::111111111111:role/RoleA" {
+			f.To == "arn:aws:iam::111111111111:root" {
 			found = true
 		}
 	}
-	assert.True(t, found, "after merge, root trust should be expanded: RoleB should trust RoleA")
-
-	// Root trust should be removed
-	for _, f := range merged.StructuralFacts {
-		if f.Type == FactTrustRelationship && f.To == "arn:aws:iam::111111111111:root" {
-			t.Error("root trust fact should be replaced with expanded per-principal facts")
-		}
-	}
+	assert.True(t, found, "root trust fact should be preserved in merged model for solver-side matching")
 }
 
 func TestExpandRootTrustFacts_SelfTrust(t *testing.T) {

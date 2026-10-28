@@ -58,16 +58,16 @@ func TestLoadAndMergeModelFiles_TwoFiles(t *testing.T) {
 	assert.Len(t, merged.Principals, 2)
 	assert.Len(t, merged.PermissionSource.Entries, 2)
 
-	// Root trust should be expanded
+	// Root trust should be preserved (solver handles matching)
 	found := false
 	for _, f := range merged.StructuralFacts {
 		if f.Type == FactTrustRelationship &&
 			f.From == "arn:aws:iam::222222222222:role/RoleB" &&
-			f.To == "arn:aws:iam::111111111111:role/RoleA" {
+			f.To == "arn:aws:iam::111111111111:root" {
 			found = true
 		}
 	}
-	assert.True(t, found, "root trust should be expanded to RoleA")
+	assert.True(t, found, "root trust fact should be preserved for solver-side matching")
 }
 
 func TestLoadAndMergeModelFiles_InvalidFile(t *testing.T) {

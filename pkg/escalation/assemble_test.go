@@ -180,7 +180,7 @@ func TestAssemble_EmptyGAAD_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no IAM principals")
 }
 
-func TestAssemble_ExpandsRootTrust(t *testing.T) {
+func TestAssemble_PreservesRootTrust(t *testing.T) {
 	trustStmt := types.PolicyStatementList{
 		{
 			Effect: "Allow",
@@ -216,23 +216,16 @@ func TestAssemble_ExpandsRootTrust(t *testing.T) {
 	m, err := Assemble(AssembleInput{GAAD: gaad, Resources: resources})
 	require.NoError(t, err)
 
-	// Root trust should be expanded: Admin trusts account root → Dev should get a trust fact
+	// Root trust should be preserved as-is (the solver handles matching)
 	found := false
 	for _, f := range m.StructuralFacts {
 		if f.Type == FactTrustRelationship &&
 			f.From == "arn:aws:iam::111111111111:role/Admin" &&
-			f.To == "arn:aws:iam::111111111111:user/Dev" {
+			f.To == "arn:aws:iam::111111111111:root" {
 			found = true
 		}
 	}
-	assert.True(t, found, "Assemble should expand root trust to per-principal facts")
-
-	// Root trust fact should be removed
-	for _, f := range m.StructuralFacts {
-		if f.Type == FactTrustRelationship && f.To == "arn:aws:iam::111111111111:root" {
-			t.Error("root trust fact should be replaced with expanded per-principal facts")
-		}
-	}
+	assert.True(t, found, "Assemble should preserve root trust facts for the solver to interpret")
 }
 
 func TestAssemble_SpecificAttacker(t *testing.T) {

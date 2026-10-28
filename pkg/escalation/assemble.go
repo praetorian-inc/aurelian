@@ -38,14 +38,11 @@ func Assemble(in AssembleInput) (*Model, error) {
 		return nil, fmt.Errorf("no IAM principals found in GAAD (account: %s); cannot produce a valid model (schema requires at least one principal)", in.GAAD.AccountID)
 	}
 
-	facts := CollectStructuralFacts(in.GAAD, in.Resources)
-	facts = ExpandRootTrustFacts(facts, principals)
-
 	m := &Model{
 		Version:          "1.0",
 		Principals:       principals,
 		Resources:        CollectResources(in.Resources),
-		StructuralFacts:  facts,
+		StructuralFacts:  CollectStructuralFacts(in.GAAD, in.Resources),
 		ResourcePolicies: CollectResourcePolicies(in.Resources),
 		Accounts:         collectAccounts(in.GAAD),
 		Goal: Goal{
