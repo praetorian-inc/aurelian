@@ -326,13 +326,39 @@ func copySolverConfig(cfg *SolverConfig) *SolverConfig {
 }
 
 func copyModel(m *Model) *Model {
-	data, err := json.Marshal(m)
-	if err != nil {
-		panic(fmt.Sprintf("copyModel: marshal failed: %v", err))
+	out := *m
+	out.Accounts = make([]Account, len(m.Accounts))
+	for i, a := range m.Accounts {
+		out.Accounts[i] = deepCopyAccount(a)
 	}
-	var out Model
-	if err := json.Unmarshal(data, &out); err != nil {
-		panic(fmt.Sprintf("copyModel: unmarshal failed: %v", err))
+	out.Principals = append([]Principal(nil), m.Principals...)
+	out.Resources = append([]Resource(nil), m.Resources...)
+	out.StructuralFacts = append([]StructuralFact(nil), m.StructuralFacts...)
+	out.ResourcePolicies = make([]ResourcePolicy, len(m.ResourcePolicies))
+	for i, rp := range m.ResourcePolicies {
+		out.ResourcePolicies[i] = deepCopyResourcePolicy(rp)
+	}
+	out.CollectionErrors = make([]CollectionError, len(m.CollectionErrors))
+	for i, ce := range m.CollectionErrors {
+		out.CollectionErrors[i] = deepCopyCollectionError(ce)
+	}
+	out.PermissionSource.Entries = make([]PolicySummaryEntry, len(m.PermissionSource.Entries))
+	for i, e := range m.PermissionSource.Entries {
+		out.PermissionSource.Entries[i] = deepCopyEntry(e)
+	}
+	out.PermissionSource.Triples = make([]EvaluatedTriple, len(m.PermissionSource.Triples))
+	for i, t := range m.PermissionSource.Triples {
+		out.PermissionSource.Triples[i] = deepCopyTriple(t)
+	}
+	out.Config = copySolverConfig(m.Config)
+	if m.CollectionCoverage != nil {
+		out.CollectionCoverage = make(map[string]*CollectionCoverage, len(m.CollectionCoverage))
+		for k, v := range m.CollectionCoverage {
+			if v != nil {
+				c := *v
+				out.CollectionCoverage[k] = &c
+			}
+		}
 	}
 	return &out
 }
