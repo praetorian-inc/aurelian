@@ -2,9 +2,6 @@ package escalation
 
 import (
 	"fmt"
-	"strings"
-
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
 )
 
 // MergeModels combines multiple per-account Models into a single org-wide
@@ -23,7 +20,8 @@ func MergeModels(models []*Model) (*Model, error) {
 	}
 
 	if len(models) == 1 {
-		return models[0], nil
+		m := *models[0]
+		return &m, nil
 	}
 
 	psType := models[0].PermissionSource.Type
@@ -101,72 +99,3 @@ func mergeCoverage(a, b *CollectionCoverage) *CollectionCoverage {
 	}
 }
 
-// ExpandRootTrustFacts replaces trust_relationship facts that target an
-// account root principal (arn:aws:iam::ACCOUNT:root) with per-principal
-// trust facts for all roles and users in that account. Groups are excluded
-// because they cannot assume roles.
-//
-// This is necessary because the solver matches trust_relationship facts by
-// exact principal ARN. Without expansion, a trust policy that trusts the
-// account root would not match any individual principal.
-func ExpandRootTrustFacts(facts []StructuralFact, principals []Principal) []StructuralFact {
-	accountPrincipals := make(map[string][]string)
-	for _, p := range principals {
-		if p.Type == PrincipalTypeGroup {
-			continue
-		}
-		accountPrincipals[p.Account] = append(accountPrincipals[p.Account], p.ARN)
-	}
-
-	var result []StructuralFact
-	for _, f := range facts {
-		if f.Type != FactTrustRelationship || !isAccountRootARN(f.To) {
-			result = append(result, f)
-			continue
-		}
-
-		accountID := extractAccountFromRootARN(f.To)
-		arns, ok := accountPrincipals[accountID]
-		if !ok {
-			continue
-		}
-
-		for _, principalARN := range arns {
-			result = append(result, StructuralFact{
-				Type:       FactTrustRelationship,
-				From:       f.From,
-				To:         principalARN,
-				Confidence: f.Confidence,
-			})
-		}
-	}
-
-	return result
-}
-
-// isAccountRootARN returns true if the ARN is an account root principal
-// (arn:aws:iam::ACCOUNT:root).
-func isAccountRootARN(arnStr string) bool {
-	parsed, err := arn.Parse(arnStr)
-	if err != nil {
-		return false
-	}
-	return parsed.Service == "iam" && parsed.Resource == "root"
-}
-
-// extractAccountFromRootARN extracts the account ID from an account root ARN.
-func extractAccountFromRootARN(arnStr string) string {
-	parsed, err := arn.Parse(arnStr)
-	if err != nil {
-		return ""
-	}
-	if parsed.Service == "iam" && parsed.Resource == "root" {
-		return parsed.AccountID
-	}
-	// Fallback: try extracting from arn:aws:iam::ACCOUNT:root pattern
-	parts := strings.SplitN(arnStr, ":", 6)
-	if len(parts) >= 5 {
-		return parts[4]
-	}
-	return ""
-}
