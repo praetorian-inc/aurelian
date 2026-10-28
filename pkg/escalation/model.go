@@ -140,6 +140,39 @@ func (ps PermissionSource) MarshalJSON() ([]byte, error) {
 	}
 }
 
+func (ps *PermissionSource) UnmarshalJSON(data []byte) error {
+	var probe struct {
+		Type    PermissionSourceType `json:"type"`
+		Command string               `json:"command"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return err
+	}
+	ps.Type = probe.Type
+	ps.Command = probe.Command
+
+	switch probe.Type {
+	case PermSourcePolicySummary:
+		var wrapper struct {
+			Entries []PolicySummaryEntry `json:"entries"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err != nil {
+			return err
+		}
+		ps.Entries = wrapper.Entries
+	case PermSourceEvaluatedTriples:
+		var wrapper struct {
+			Entries []EvaluatedTriple `json:"entries"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err != nil {
+			return err
+		}
+		ps.Triples = wrapper.Entries
+	}
+
+	return nil
+}
+
 // PolicySummaryEntry holds the collapsed effective statements for a single principal.
 type PolicySummaryEntry struct {
 	Principal           string            `json:"principal"`

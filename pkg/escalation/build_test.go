@@ -677,6 +677,70 @@ func TestCollectStructuralFacts_CrossAccountTrust(t *testing.T) {
 	assert.True(t, found, "should create cross-account trust relationship fact")
 }
 
+func TestCollectStructuralFacts_AccountRootTrust(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::222222222222:root"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/TrustedRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/TrustedRole",
+				RoleName:                 "TrustedRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::111111111111:role/TrustedRole" &&
+			f.To == "arn:aws:iam::222222222222:root" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should create trust_relationship fact for account root principal")
+}
+
+func TestCollectStructuralFacts_ServicePrincipalSkipped(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				Service: &types.DynaString{"lambda.amazonaws.com"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/LambdaExecRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/LambdaExecRole",
+				RoleName:                 "LambdaExecRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/LambdaExecRole" {
+			t.Errorf("service principals should not produce trust_relationship facts, got To=%q", f.To)
+		}
+	}
+}
+
 func TestCollectStructuralFacts_GlueDevEndpointRole(t *testing.T) {
 	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
 	resources := store.NewMap[output.AWSResource]()
