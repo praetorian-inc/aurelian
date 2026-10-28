@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 )
 
 // MergeModels combines multiple per-account Models into a single org-wide
@@ -107,7 +108,10 @@ func MergeModels(models []*Model) (*Model, error) {
 				continue
 			}
 			seenResourcePolicies[rp.Resource] = true
-			merged.ResourcePolicies = append(merged.ResourcePolicies, rp)
+			merged.ResourcePolicies = append(merged.ResourcePolicies, ResourcePolicy{
+				Resource: rp.Resource,
+				Policy:   deepCopyPolicy(rp.Policy),
+			})
 		}
 
 		merged.CollectionErrors = append(merged.CollectionErrors, m.CollectionErrors...)
@@ -148,16 +152,7 @@ func MergeModels(models []*Model) (*Model, error) {
 				merged.CollectionCoverage = make(map[string]*CollectionCoverage)
 			}
 			if existing, ok := merged.CollectionCoverage[acctID]; ok {
-				existing.IAMGAAD = existing.IAMGAAD || cov.IAMGAAD
-				existing.EC2InstanceProfiles = existing.EC2InstanceProfiles || cov.EC2InstanceProfiles
-				existing.LambdaExecutionRoles = existing.LambdaExecutionRoles || cov.LambdaExecutionRoles
-				existing.ECSTaskRoles = existing.ECSTaskRoles || cov.ECSTaskRoles
-				existing.CodeBuildServiceRoles = existing.CodeBuildServiceRoles || cov.CodeBuildServiceRoles
-				existing.S3BucketPolicies = existing.S3BucketPolicies || cov.S3BucketPolicies
-				existing.LambdaResourcePolicies = existing.LambdaResourcePolicies || cov.LambdaResourcePolicies
-				existing.SQSQueuePolicies = existing.SQSQueuePolicies || cov.SQSQueuePolicies
-				existing.KMSKeyPolicies = existing.KMSKeyPolicies || cov.KMSKeyPolicies
-				existing.SNSTopicPolicies = existing.SNSTopicPolicies || cov.SNSTopicPolicies
+				orMergeCoverage(existing, cov)
 			} else {
 				c := *cov
 				merged.CollectionCoverage[acctID] = &c
@@ -184,8 +179,11 @@ func statementsEqual(a, b []PolicyStatement) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	ja, _ := json.Marshal(a)
-	jb, _ := json.Marshal(b)
+	ja, errA := json.Marshal(a)
+	jb, errB := json.Marshal(b)
+	if errA != nil || errB != nil {
+		return false
+	}
 	return string(ja) == string(jb)
 }
 
@@ -217,19 +215,31 @@ func findPrincipal(principals []Principal, arn string) *Principal {
 	return nil
 }
 
-func deepCopyPolicy(v interface{}) interface{} {
+func deepCopyPolicy(v any) any {
 	if v == nil {
 		return nil
 	}
 	data, err := json.Marshal(v)
 	if err != nil {
-		return v
+		panic(fmt.Sprintf("deepCopyPolicy: marshal failed: %v", err))
 	}
-	var out interface{}
+	var out any
 	if err := json.Unmarshal(data, &out); err != nil {
-		return v
+		panic(fmt.Sprintf("deepCopyPolicy: unmarshal failed: %v", err))
 	}
 	return out
+}
+
+func orMergeCoverage(dst, src *CollectionCoverage) {
+	dv := reflect.ValueOf(dst).Elem()
+	sv := reflect.ValueOf(src).Elem()
+	for i := 0; i < dv.NumField(); i++ {
+		df := dv.Field(i)
+		sf := sv.Field(i)
+		if df.Kind() == reflect.Bool {
+			df.SetBool(df.Bool() || sf.Bool())
+		}
+	}
 }
 
 func copyConditions(src []Condition) []Condition {

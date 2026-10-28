@@ -61,12 +61,16 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 	if outputPath != "" {
 		absOut, err := filepath.Abs(outputPath)
-		if err == nil {
-			for _, in := range inputFiles {
-				absIn, err := filepath.Abs(in)
-				if err == nil && absIn == absOut {
-					return fmt.Errorf("output path %q is also an input file; refusing to overwrite source", outputPath)
-				}
+		if err != nil {
+			return fmt.Errorf("resolving output path: %w", err)
+		}
+		for _, in := range inputFiles {
+			absIn, err := filepath.Abs(in)
+			if err != nil {
+				return fmt.Errorf("resolving input path %q: %w", in, err)
+			}
+			if absIn == absOut {
+				return fmt.Errorf("output path %q is also an input file; refusing to overwrite source", outputPath)
 			}
 		}
 	}

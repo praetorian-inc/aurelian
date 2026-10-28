@@ -966,3 +966,30 @@ func TestMergeModels_SingleModel_TriplesDoNotAlias(t *testing.T) {
 	assert.Equal(t, "k", m.PermissionSource.Triples[0].Conditions[0].Key,
 		"merged Triple Conditions must not alias input")
 }
+
+func TestMergeModels_MultiModel_ResourcePolicyDoesNotAlias(t *testing.T) {
+	modelA := accountModel("111111111111",
+		[]Principal{{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelA.ResourcePolicies = []ResourcePolicy{
+		{Resource: "arn:aws:s3:::bucket-a", Policy: map[string]any{"Version": "2012-10-17"}},
+	}
+
+	modelB := accountModel("222222222222",
+		[]Principal{{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole}},
+		nil, nil,
+	)
+	modelB.ResourcePolicies = []ResourcePolicy{
+		{Resource: "arn:aws:s3:::bucket-b", Policy: map[string]any{"Version": "2012-10-17"}},
+	}
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+	require.Len(t, merged.ResourcePolicies, 2)
+
+	// Mutating the merged model's policy must not affect input.
+	merged.ResourcePolicies[0].Policy.(map[string]any)["Version"] = "MUTATED"
+	assert.Equal(t, "2012-10-17", modelA.ResourcePolicies[0].Policy.(map[string]any)["Version"],
+		"multi-model merge must deep-copy ResourcePolicy.Policy")
+}
