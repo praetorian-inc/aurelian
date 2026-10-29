@@ -275,10 +275,18 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 			if !strings.EqualFold(stmt.Effect, "Allow") {
 				continue
 			}
+			// Per-statement scope: dedup within a statement only (ExtractPrincipals
+			// returns "*" 4 times). Cross-statement duplicates are kept because each
+			// statement has its own Effect/Condition context.
+			seen := make(map[string]bool)
 			for _, p := range stmt.ExtractPrincipals() {
-				if p == "" || !arn.IsARN(p) {
+				if p == "" || seen[p] {
 					continue
 				}
+				if p != "*" && !arn.IsARN(p) {
+					continue
+				}
+				seen[p] = true
 				facts = append(facts, StructuralFact{
 					Type:       FactTrustRelationship,
 					From:       r.Arn,

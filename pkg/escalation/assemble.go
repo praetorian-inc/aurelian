@@ -39,7 +39,7 @@ func Assemble(in AssembleInput) (*Model, error) {
 	}
 
 	m := &Model{
-		Version:          "1.0",
+		Version:          ModelVersion,
 		Principals:       principals,
 		Resources:        CollectResources(in.Resources),
 		StructuralFacts:  CollectStructuralFacts(in.GAAD, in.Resources),
@@ -52,7 +52,13 @@ func Assemble(in AssembleInput) (*Model, error) {
 	}
 
 	if in.Coverage != nil {
-		m.CollectionCoverage = in.Coverage.Build()
+		if cov := in.Coverage.Build(); cov != nil {
+			acctID := in.GAAD.AccountID
+			if acctID == "" {
+				return nil, fmt.Errorf("Assemble: cannot key collection_coverage without an account ID (GAAD.AccountID is empty)")
+			}
+			m.CollectionCoverage = map[string]*CollectionCoverage{acctID: cov}
+		}
 		if errs := in.Coverage.Errors(); len(errs) > 0 {
 			m.CollectionErrors = errs
 		}

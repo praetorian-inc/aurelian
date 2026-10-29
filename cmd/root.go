@@ -29,6 +29,8 @@ func initCommands() {
 	runtime.GC()
 	rootCmd.AddCommand(listModulesCmd)
 	rootCmd.AddCommand(serveCmd)
+	escalationCmd.AddCommand(mergeCmd)
+	rootCmd.AddCommand(escalationCmd)
 	generateCommands(rootCmd)
 }
 

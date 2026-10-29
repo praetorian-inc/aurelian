@@ -6,9 +6,12 @@ package escalation
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 )
+
+const ModelVersion = "1.1"
 
 // Model is the top-level escalation-solver input (model-v1.schema.json).
 // It implements model.SingleObjectOutput so the JSON formatter writes it as
@@ -16,7 +19,7 @@ import (
 type Model struct {
 	model.BaseAurelianModel `json:"-"`
 	Version            string              `json:"version"`
-	CollectionCoverage *CollectionCoverage `json:"collection_coverage,omitempty"`
+	CollectionCoverage map[string]*CollectionCoverage `json:"collection_coverage,omitempty"`
 	CollectionErrors   []CollectionError   `json:"collection_errors,omitempty"`
 	Accounts           []Account           `json:"accounts,omitempty"`
 	Principals         []Principal         `json:"principals"`
@@ -138,6 +141,44 @@ func (ps PermissionSource) MarshalJSON() ([]byte, error) {
 			Type PermissionSourceType `json:"type"`
 		}{Type: ps.Type})
 	}
+}
+
+func (ps *PermissionSource) UnmarshalJSON(data []byte) error {
+	var probe struct {
+		Type    PermissionSourceType `json:"type"`
+		Command string               `json:"command"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return err
+	}
+
+	switch probe.Type {
+	case PermSourcePolicySummary:
+		var wrapper struct {
+			Entries []PolicySummaryEntry `json:"entries"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err != nil {
+			return err
+		}
+		ps.Type = probe.Type
+		ps.Entries = wrapper.Entries
+	case PermSourceEvaluatedTriples:
+		var wrapper struct {
+			Entries []EvaluatedTriple `json:"entries"`
+		}
+		if err := json.Unmarshal(data, &wrapper); err != nil {
+			return err
+		}
+		ps.Type = probe.Type
+		ps.Triples = wrapper.Entries
+	case PermSourceExternal:
+		ps.Type = probe.Type
+		ps.Command = probe.Command
+	default:
+		return fmt.Errorf("unknown permission_source type %q", probe.Type)
+	}
+
+	return nil
 }
 
 // PolicySummaryEntry holds the collapsed effective statements for a single principal.

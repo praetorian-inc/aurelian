@@ -29,7 +29,7 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, "1.0", m.Version)
+	assert.Equal(t, ModelVersion, m.Version)
 	assert.NotEmpty(t, m.Principals)
 	assert.NotEmpty(t, m.Resources)
 	assert.NotEmpty(t, m.StructuralFacts)
@@ -37,7 +37,8 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 	assert.Equal(t, PermSourcePolicySummary, m.PermissionSource.Type)
 	assert.NotEmpty(t, m.PermissionSource.Entries)
 	assert.NotNil(t, m.CollectionCoverage)
-	assert.True(t, m.CollectionCoverage.IAMGAAD)
+	assert.NotNil(t, m.CollectionCoverage["111111111111"])
+	assert.True(t, m.CollectionCoverage["111111111111"].IAMGAAD)
 	assert.Equal(t, GoalReachAdmin, m.Goal.Type)
 	assert.Equal(t, "*", m.Goal.Attacker)
 
@@ -69,7 +70,7 @@ func TestAssemble_JSONSchemaCompliance(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &raw))
 
 	// Required fields
-	assert.Equal(t, "1.0", raw["version"])
+	assert.Equal(t, ModelVersion, raw["version"])
 	assert.NotNil(t, raw["principals"])
 	assert.NotNil(t, raw["permission_source"])
 	assert.NotNil(t, raw["goal"])
@@ -178,6 +179,54 @@ func TestAssemble_EmptyGAAD_ReturnsError(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no IAM principals")
+}
+
+func TestAssemble_PreservesRootTrust(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::111111111111:root"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/Admin"},
+		},
+	}
+	trustPolicy := types.Policy{Statement: &trustStmt}
+
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		[]types.UserDetail{
+			{Arn: "arn:aws:iam::111111111111:user/Dev", UserName: "Dev"},
+		}, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/Admin",
+				RoleName:                 "Admin",
+				AssumeRolePolicyDocument: trustPolicy,
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "AdminAccess", PolicyDocument: types.Policy{Statement: &adminStmt}},
+				},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	m, err := Assemble(AssembleInput{GAAD: gaad, Resources: resources})
+	require.NoError(t, err)
+
+	// Root trust should be preserved as-is (the solver handles matching)
+	found := false
+	for _, f := range m.StructuralFacts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::111111111111:role/Admin" &&
+			f.To == "arn:aws:iam::111111111111:root" {
+			found = true
+		}
+	}
+	assert.True(t, found, "Assemble should preserve root trust facts for the solver to interpret")
 }
 
 func TestAssemble_SpecificAttacker(t *testing.T) {

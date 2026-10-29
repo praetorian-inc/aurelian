@@ -677,6 +677,172 @@ func TestCollectStructuralFacts_CrossAccountTrust(t *testing.T) {
 	assert.True(t, found, "should create cross-account trust relationship fact")
 }
 
+func TestCollectStructuralFacts_AccountRootTrust(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::222222222222:root"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/TrustedRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/TrustedRole",
+				RoleName:                 "TrustedRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::111111111111:role/TrustedRole" &&
+			f.To == "arn:aws:iam::222222222222:root" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should create trust_relationship fact for account root principal")
+}
+
+func TestCollectStructuralFacts_ServicePrincipalSkipped(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				Service: &types.DynaString{"lambda.amazonaws.com"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/LambdaExecRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/LambdaExecRole",
+				RoleName:                 "LambdaExecRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/LambdaExecRole" {
+			t.Errorf("service principals should not produce trust_relationship facts, got To=%q", f.To)
+		}
+	}
+}
+
+func TestCollectStructuralFacts_WildcardTrustPrincipalEmitted(t *testing.T) {
+	// A role with "Principal": "*" trusts anyone — the collector must emit
+	// a trust_relationship fact with To="*" so the solver can match it at
+	// full confidence instead of relying on the speculative fallback.
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"*"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/OpenRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/OpenRole",
+				RoleName:                 "OpenRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	var count int
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/OpenRole" && f.To == "*" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "wildcard trust principal '*' should produce exactly 1 trust_relationship fact, not duplicates")
+}
+
+func TestCollectStructuralFacts_MultiplePrincipalsInOneTrustStatement(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{
+					"arn:aws:iam::222222222222:role/RoleA",
+					"arn:aws:iam::333333333333:role/RoleB",
+				},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/TrustedRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/TrustedRole",
+				RoleName:                 "TrustedRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	trustFacts := map[string]bool{}
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/TrustedRole" {
+			trustFacts[f.To] = true
+		}
+	}
+	assert.True(t, trustFacts["arn:aws:iam::222222222222:role/RoleA"], "should emit trust fact for RoleA")
+	assert.True(t, trustFacts["arn:aws:iam::333333333333:role/RoleB"], "should emit trust fact for RoleB")
+	assert.Len(t, trustFacts, 2, "should produce exactly 2 trust facts from one multi-principal statement")
+}
+
+func TestCollectStructuralFacts_DenyTrustStatementSkipped(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Deny",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::222222222222:role/DeniedRole"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/ProtectedRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/ProtectedRole",
+				RoleName:                 "ProtectedRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/ProtectedRole" {
+			t.Errorf("Deny trust statement should not produce trust_relationship fact, got To=%q", f.To)
+		}
+	}
+}
+
 func TestCollectStructuralFacts_GlueDevEndpointRole(t *testing.T) {
 	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
 	resources := store.NewMap[output.AWSResource]()
@@ -795,4 +961,43 @@ func TestCollectStructuralFacts_GlueNotebookBedrockWithoutRole(t *testing.T) {
 		assert.NotEqual(t, StructuralFactType("bedrock_interpreter_role"), f.Type,
 			"should not create bedrock_interpreter_role for CodeInterpreter with empty/missing ExecutionRoleArn")
 	}
+}
+
+func TestCollectStructuralFacts_WildcardTrustPrincipal(t *testing.T) {
+	// A role with "Principal": "*" in its trust policy should produce a
+	// trust_relationship fact with To="*", not be silently dropped.
+	wildcardTrustStmt := types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"*"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"*"},
+		},
+	}
+	wildcardTrustPolicy := types.Policy{Statement: &wildcardTrustStmt}
+
+	gaad := types.NewAuthorizationAccountDetails(
+		"111111111111",
+		nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                     "arn:aws:iam::111111111111:role/OpenRole",
+				RoleName:                "OpenRole",
+				AssumeRolePolicyDocument: wildcardTrustPolicy,
+			},
+		},
+		nil,
+	)
+
+	facts := CollectStructuralFacts(gaad, newTestResources())
+
+	var count int
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship && f.From == "arn:aws:iam::111111111111:role/OpenRole" && f.To == "*" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "wildcard trust principal '*' should produce exactly 1 trust_relationship fact, not duplicates")
 }
