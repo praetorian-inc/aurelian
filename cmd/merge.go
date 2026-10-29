@@ -75,6 +75,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	inputFiles = escalation.DeduplicatePaths(inputFiles)
 	log.Info("merging %d model file(s)", len(inputFiles))
 
 	merged, err := escalation.LoadAndMergeModelFiles(inputFiles)

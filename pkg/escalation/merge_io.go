@@ -8,9 +8,9 @@ import (
 	"sort"
 )
 
-// deduplicatePaths returns paths with duplicates removed (by absolute path).
+// DeduplicatePaths returns paths with duplicates removed (by absolute path).
 // Preserves order of first occurrence.
-func deduplicatePaths(paths []string) []string {
+func DeduplicatePaths(paths []string) []string {
 	seen := make(map[string]bool, len(paths))
 	var out []string
 	for _, p := range paths {
@@ -35,7 +35,7 @@ func LoadAndMergeModelFiles(paths []string) (*Model, error) {
 		return nil, fmt.Errorf("LoadAndMergeModelFiles: no input files provided")
 	}
 
-	paths = deduplicatePaths(paths)
+	paths = DeduplicatePaths(paths)
 	models := make([]*Model, 0, len(paths))
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
