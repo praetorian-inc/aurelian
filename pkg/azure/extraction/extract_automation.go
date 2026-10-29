@@ -119,5 +119,9 @@ func fetchRunbookContent(ctx context.Context, client *armautomation.RunbookClien
 	if err != nil {
 		return nil, err
 	}
+	if resp.Value == nil {
+		return nil, nil
+	}
+
 	return []byte(*resp.Value), nil
 }
