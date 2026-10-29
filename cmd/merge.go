@@ -104,6 +104,9 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(outputPath, data, 0600); err != nil {
 		return fmt.Errorf("writing to %s: %w", outputPath, err)
 	}
+	if err := os.Chmod(outputPath, 0600); err != nil {
+		return fmt.Errorf("setting permissions on %s: %w", outputPath, err)
+	}
 	log.Success("output written to %s", outputPath)
 	return nil
 }
