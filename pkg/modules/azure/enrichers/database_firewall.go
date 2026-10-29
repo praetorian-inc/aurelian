@@ -51,7 +51,7 @@ func checkFirewallRules(cfg plugin.AzureEnricherConfig, subID, rg, name, resourc
 }
 
 func checkSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName string) (bool, error) {
-	factory, err := armsql.NewClientFactory(subID, cfg.Credential, nil)
+	factory, err := armsql.NewClientFactory(subID, cfg.Credential, cfg.Env.ARMClientOptions())
 	if err != nil {
 		return false, fmt.Errorf("creating SQL client: %w", err)
 	}
@@ -75,7 +75,7 @@ func checkSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName stri
 }
 
 func checkPostgreSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName string) (bool, error) {
-	client, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subID, cfg.Credential, nil)
+	client, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subID, cfg.Credential, cfg.Env.ARMClientOptions())
 	if err != nil {
 		return false, fmt.Errorf("creating PostgreSQL firewall client: %w", err)
 	}
@@ -100,7 +100,7 @@ func checkPostgreSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverNa
 }
 
 func checkMySQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName string) (bool, error) {
-	factory, err := armmysqlflexibleservers.NewClientFactory(subID, cfg.Credential, nil)
+	factory, err := armmysqlflexibleservers.NewClientFactory(subID, cfg.Credential, cfg.Env.ARMClientOptions())
 	if err != nil {
 		return false, fmt.Errorf("creating MySQL client: %w", err)
 	}

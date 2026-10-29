@@ -1,11 +1,13 @@
 package extraction
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	azappconfig "github.com/Azure/azure-sdk-for-go/sdk/data/azappconfig"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration/v2"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -15,7 +17,7 @@ func init() {
 }
 
 func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse App Configuration resource ID: %w", err)
 	}
@@ -25,8 +27,16 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no configurationStores segment in resource ID %s", r.ResourceID)
 	}
 
-	endpoint := fmt.Sprintf("https://%s.azconfig.io", storeName)
-	client, err := azappconfig.NewClient(endpoint, ctx.Cred, nil)
+	storesClient, err := armappconfiguration.NewConfigurationStoresClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
+	if err != nil {
+		return fmt.Errorf("failed to create configuration stores client: %w", err)
+	}
+
+	endpoint, err := resolveAppConfigEndpoint(ctx.Context, storesClient, resourceGroup, storeName, r.Properties)
+	if err != nil {
+		return handleExtractError(err, "app-config-keyvalues", r.ResourceID)
+	}
+	client, err := azappconfig.NewClient(endpoint, ctx.Cred, &azappconfig.ClientOptions{ClientOptions: ctx.Env.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create App Configuration client: %w", err)
 	}
@@ -68,4 +78,19 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 	}
 
 	return nil
+}
+
+func resolveAppConfigEndpoint(ctx context.Context, client *armappconfiguration.ConfigurationStoresClient, resourceGroup, storeName string, properties map[string]any) (string, error) {
+	if endpoint := endpointFromResourceProperties(properties, "endpoint"); endpoint != "" {
+		return endpoint, nil
+	}
+
+	store, err := client.Get(ctx, resourceGroup, storeName, nil)
+	if err != nil {
+		return "", fmt.Errorf("get App Configuration endpoint: %w", err)
+	}
+	if store.Properties == nil || store.Properties.Endpoint == nil || *store.Properties.Endpoint == "" {
+		return "", fmt.Errorf("no endpoint for App Configuration store %s", storeName)
+	}
+	return *store.Properties.Endpoint, nil
 }

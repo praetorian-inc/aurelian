@@ -20,7 +20,7 @@ func enrichRemoteDebugging(cfg plugin.AzureEnricherConfig, result *templates.ARG
 		return err
 	}
 
-	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, nil)
+	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, cfg.Env.ARMClientOptions())
 	if err != nil {
 		return err
 	}

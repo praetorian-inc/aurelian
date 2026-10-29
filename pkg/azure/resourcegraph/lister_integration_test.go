@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -21,7 +22,7 @@ func TestResourceGraphListerListAll(t *testing.T) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	require.NoError(t, err)
 
-	lister := NewResourceGraphLister(cred, nil)
+	lister := NewResourceGraphLister(cred, azurecloud.Resolve(""), nil)
 
 	subscriptionID := fixture.Output("subscription_id")
 	sub := azuretypes.SubscriptionInfo{
@@ -75,7 +76,7 @@ func TestResourceGraphListerListByTypes(t *testing.T) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	require.NoError(t, err)
 
-	lister := NewResourceGraphLister(cred, nil)
+	lister := NewResourceGraphLister(cred, azurecloud.Resolve(""), nil)
 
 	subscriptionID := fixture.Output("subscription_id")
 	sub := azuretypes.SubscriptionInfo{

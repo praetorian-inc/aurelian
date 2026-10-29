@@ -23,7 +23,7 @@ func extractAppInsightsKeys(ctx extractContext, r output.AzureResource, out *pip
 		return fmt.Errorf("no components segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armapplicationinsights.NewComponentsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armapplicationinsights.NewComponentsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create App Insights client: %w", err)
 	}

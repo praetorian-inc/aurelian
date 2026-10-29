@@ -23,7 +23,7 @@ type frontDoorNameAvailabilityClient interface {
 }
 
 func checkFrontDoor(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
-	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("create front door client: %w", err)
 	}

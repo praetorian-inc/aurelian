@@ -24,7 +24,7 @@ func extractContainerInstanceEnvVars(ctx extractContext, r output.AzureResource,
 		return fmt.Errorf("no containerGroups segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcontainerinstance.NewContainerGroupsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcontainerinstance.NewContainerGroupsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create container groups client: %w", err)
 	}

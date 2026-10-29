@@ -26,7 +26,7 @@ func extractADFPipelines(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no factories segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armdatafactory.NewPipelinesClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armdatafactory.NewPipelinesClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create ADF pipelines client: %w", err)
 	}
@@ -72,7 +72,7 @@ func extractADFLinkedServices(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("no factories segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armdatafactory.NewLinkedServicesClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armdatafactory.NewLinkedServicesClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create ADF linked services client: %w", err)
 	}

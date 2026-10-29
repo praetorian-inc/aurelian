@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -12,6 +13,7 @@ import (
 type extractContext struct {
 	Context          context.Context
 	Cred             azcore.TokenCredential
+	Env              azurecloud.Environment
 	ScanMode         string // "critical" or "all" — used by storage blob extractor
 	MaxCosmosDocSize int    // max individual Cosmos document size in bytes; 0 uses defaultMaxCosmosDocSize
 	MaxCosmosDocScan int    // max total documents to scan per container; 0 uses defaultMaxCosmosDocScan (50)

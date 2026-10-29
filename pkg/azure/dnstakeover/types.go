@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -29,6 +30,7 @@ type CheckContext struct {
 	Ctx             context.Context
 	Opts            plugin.AzureCommonRecon
 	Credential      azcore.TokenCredential
+	Env             azurecloud.Environment
 	SubscriptionID  string
 	SubscriptionIDs []string // resolved subscription IDs for cross-subscription lookups
 	PublicIPCache   *publicIPCache

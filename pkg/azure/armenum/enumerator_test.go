@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -16,7 +17,7 @@ import (
 // TestARMEnumerator_List_NilCred verifies List does not panic when
 // credentials are nil. The raw policy pager constructor rejects nil creds.
 func TestARMEnumerator_List_NilCred(t *testing.T) {
-	e := NewARMEnumerator(nil)
+	e := NewARMEnumerator(nil, azurecloud.Resolve(""))
 	sub := azuretypes.SubscriptionInfo{ID: "00000000-0000-0000-0000-000000000000"}
 
 	out := pipeline.New[output.AzureResource]()

@@ -29,7 +29,7 @@ func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out
 		return fmt.Errorf("no templateSpecs segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armtemplatespecs.NewTemplateSpecVersionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armtemplatespecs.NewTemplateSpecVersionsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create template spec versions client: %w", err)
 	}
@@ -72,7 +72,7 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no blueprints segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armblueprint.NewArtifactsClient(ctx.Cred, nil)
+	client, err := armblueprint.NewArtifactsClient(ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create blueprint artifacts client: %w", err)
 	}
@@ -113,7 +113,7 @@ func extractPolicyDefinitions(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("could not extract policy name from resource ID %s", r.ResourceID)
 	}
 
-	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create policy definitions client: %w", err)
 	}

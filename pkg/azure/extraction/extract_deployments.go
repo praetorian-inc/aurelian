@@ -23,7 +23,7 @@ func extractDeploymentParams(ctx extractContext, r output.AzureResource, out *pi
 		return fmt.Errorf("no deployments segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armresources.NewDeploymentsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armresources.NewDeploymentsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create deployments client: %w", err)
 	}
