@@ -77,11 +77,13 @@ func MergeModels(models []*Model) (*Model, error) {
 		for _, p := range m.Principals {
 			if seenPrincipals[p.ARN] {
 				if existing := findPrincipal(merged.Principals, p.ARN); existing != nil {
-					if existing.IsAdmin != p.IsAdmin || existing.Type != p.Type {
-						slog.Warn("MergeModels: duplicate principal with divergent attributes, keeping first-seen",
+					if existing.Type != p.Type {
+						slog.Warn("MergeModels: duplicate principal with divergent type, keeping first-seen",
 							"arn", p.ARN,
-							"first_is_admin", existing.IsAdmin, "second_is_admin", p.IsAdmin,
 							"first_type", existing.Type, "second_type", p.Type)
+					}
+					if !existing.IsAdmin && p.IsAdmin {
+						existing.IsAdmin = true
 					}
 				}
 				continue

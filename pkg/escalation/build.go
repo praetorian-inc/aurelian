@@ -275,6 +275,7 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 			if !strings.EqualFold(stmt.Effect, "Allow") {
 				continue
 			}
+			// Per-statement scope: different statements may carry different conditions.
 			seen := make(map[string]bool)
 			for _, p := range stmt.ExtractPrincipals() {
 				if p == "" || seen[p] {

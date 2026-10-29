@@ -397,7 +397,7 @@ func TestMergeModels_DuplicatePrincipals_Deduplicated(t *testing.T) {
 	assert.Len(t, merged.Principals, 1)
 }
 
-func TestMergeModels_DuplicatePrincipals_DivergentAttributes_KeepsFirst(t *testing.T) {
+func TestMergeModels_DuplicatePrincipals_IsAdminORMerged(t *testing.T) {
 	pA := Principal{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole, IsAdmin: false}
 	pB := Principal{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole, IsAdmin: true}
 
@@ -408,7 +408,7 @@ func TestMergeModels_DuplicatePrincipals_DivergentAttributes_KeepsFirst(t *testi
 	require.NoError(t, err)
 
 	assert.Len(t, merged.Principals, 1)
-	assert.Equal(t, false, merged.Principals[0].IsAdmin, "first-seen wins")
+	assert.True(t, merged.Principals[0].IsAdmin, "IsAdmin is OR-merged: any admin view wins")
 }
 
 func TestMergeModels_JSONSerializable(t *testing.T) {
@@ -1341,4 +1341,39 @@ func BenchmarkMergeModels_10Accounts_5kPrincipals(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestMergeModels_IsAdmin_ORMerged(t *testing.T) {
+	// Same principal ARN in two models: one says IsAdmin=false, the other
+	// says IsAdmin=true. The merged result should be true (OR-merge) —
+	// any admin view is correct, and false would silently hide admin paths.
+	modelA := accountModel("111", []Principal{
+		{ARN: "arn:aws:iam::111:role/R", Account: "111", Type: PrincipalTypeRole, IsAdmin: false},
+	}, nil, nil)
+	modelB := accountModel("222", []Principal{
+		{ARN: "arn:aws:iam::111:role/R", Account: "111", Type: PrincipalTypeRole, IsAdmin: true},
+	}, nil, nil)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	p := findPrincipal(merged.Principals, "arn:aws:iam::111:role/R")
+	require.NotNil(t, p)
+	assert.True(t, p.IsAdmin, "IsAdmin should be OR-merged: if any model says admin, merged should say admin")
+}
+
+func TestMergeModels_IsAdmin_BothFalse_StaysFalse(t *testing.T) {
+	modelA := accountModel("111", []Principal{
+		{ARN: "arn:aws:iam::111:role/R", Account: "111", Type: PrincipalTypeRole, IsAdmin: false},
+	}, nil, nil)
+	modelB := accountModel("222", []Principal{
+		{ARN: "arn:aws:iam::111:role/R", Account: "111", Type: PrincipalTypeRole, IsAdmin: false},
+	}, nil, nil)
+
+	merged, err := MergeModels([]*Model{modelA, modelB})
+	require.NoError(t, err)
+
+	p := findPrincipal(merged.Principals, "arn:aws:iam::111:role/R")
+	require.NotNil(t, p)
+	assert.False(t, p.IsAdmin, "IsAdmin should stay false when both models agree")
 }
