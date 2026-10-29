@@ -1,7 +1,9 @@
 package recon
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 
 	"golang.org/x/sync/errgroup"
@@ -31,6 +33,8 @@ type GraphConfig struct {
 	Format           string `param:"format" desc:"Output format: json (default) or escalation-solver-v1" default:"json"`
 	PermissionFormat string `param:"permission-format" desc:"Permission source format: policy_summary (default) or evaluated_triples" default:"policy_summary"`
 	Attacker         string `param:"attacker" desc:"Attacker principal ARN for escalation-solver goal, or * for all principals" default:"*"`
+	GAADFile         string `param:"gaad-file" desc:"Path to a local GAAD JSON file (skips live GetAccountAuthorizationDetails call)"`
+	Offline          bool   `param:"offline" desc:"Skip all AWS API calls; requires --gaad-file for local-only analysis" default:"false"`
 }
 
 // AWSGraphModule is a refactored version of AWSGraphModule.
@@ -92,6 +96,10 @@ func (m *AWSGraphModule) Parameters() any {
 func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	m.log = cfg.Log
 
+	if m.Offline && m.GAADFile == "" {
+		return fmt.Errorf("--offline requires --gaad-file")
+	}
+
 	if err := m.collectInputs(); err != nil {
 		return fmt.Errorf("collecting inputs: %w", err)
 	}
@@ -109,6 +117,14 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianMo
 }
 
 func (m *AWSGraphModule) collectInputs() error {
+	var eg errgroup.Group
+	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
+
+	if m.Offline {
+		m.log.Warn("--offline: skipping structural facts and resource policy collection")
+		return eg.Wait()
+	}
+
 	policyCollector := resourcepolicies.New(m.AWSCommonRecon)
 	regions := m.Regions
 
@@ -126,8 +142,6 @@ func (m *AWSGraphModule) collectInputs() error {
 	// the prior per-collector defer behavior.
 	defer skipReport.LogSummary()
 
-	var eg errgroup.Group
-	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
 	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions, provider, skipReport)
 	m.collectEC2Instances(&eg, m.GraphConfig, provider, skipReport)
 	m.collectCloudFormationStacks(&eg, m.GraphConfig, provider, skipReport)
@@ -237,6 +251,9 @@ func (m *AWSGraphModule) collectInputs() error {
 
 func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, c GraphConfig) {
 	eg.Go(func() error {
+		if c.GAADFile != "" {
+			return m.loadGAADFromFile(c.GAADFile)
+		}
 		m.log.Info("collecting account authorization details")
 		g := gaad.New(c.AWSReconBase)
 		gaadData, err := g.Get()
@@ -248,6 +265,22 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, 
 		m.gaadData = gaadData
 		return nil
 	})
+}
+
+func (m *AWSGraphModule) loadGAADFromFile(path string) error {
+	m.log.Info("loading GAAD from file: %s", path)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading GAAD file %s: %w", path, err)
+	}
+	var gaadData types.AuthorizationAccountDetails
+	if err := json.Unmarshal(data, &gaadData); err != nil {
+		return fmt.Errorf("parsing GAAD file %s: %w", path, err)
+	}
+	m.log.Success("GAAD loaded from file (account: %s, users: %d, roles: %d, groups: %d)",
+		gaadData.AccountID, gaadData.Users.Len(), gaadData.Roles.Len(), gaadData.Groups.Len())
+	m.gaadData = &gaadData
+	return nil
 }
 
 // escalationExtraResourceTypes are resource types needed by the escalation-solver

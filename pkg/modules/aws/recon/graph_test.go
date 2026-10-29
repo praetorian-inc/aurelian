@@ -1,6 +1,8 @@
 package recon
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -53,6 +55,10 @@ func TestAWSGraphModuleParameters(t *testing.T) {
 
 	// Must include org-policies-file
 	assert.True(t, paramNames["org-policies-file"], "should have org-policies-file param")
+
+	// Must include gaad-file and offline
+	assert.True(t, paramNames["gaad-file"], "should have gaad-file param")
+	assert.True(t, paramNames["offline"], "should have offline param")
 }
 
 // TestEmitOutputsEmitsStructuralFacts verifies that emitOutputs emits
@@ -120,4 +126,81 @@ func TestEmitOutputsEmitsStructuralFacts(t *testing.T) {
 	assert.True(t, factTypes["codebuild_service_role"], "should emit codebuild_service_role fact")
 	assert.True(t, factTypes["launch_template_instance_profile"], "should emit launch_template_instance_profile fact")
 	assert.True(t, factTypes["cloudformation_stack_role"], "should emit cloudformation_stack_role fact")
+}
+
+func TestLoadGAADFromFile(t *testing.T) {
+	gaadJSON := `{
+		"accountId": "123456789012",
+		"UserDetailList": [
+			{"Arn": "arn:aws:iam::123456789012:user/admin", "UserName": "admin"}
+		],
+		"GroupDetailList": [],
+		"RoleDetailList": [
+			{"Arn": "arn:aws:iam::123456789012:role/test-role", "RoleName": "test-role"}
+		],
+		"Policies": []
+	}`
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gaad.json")
+	require.NoError(t, os.WriteFile(path, []byte(gaadJSON), 0o644))
+
+	m := &AWSGraphModule{}
+	m.log = plugin.NewLogger(nil, true, true)
+
+	err := m.loadGAADFromFile(path)
+	require.NoError(t, err)
+	require.NotNil(t, m.gaadData)
+
+	assert.Equal(t, "123456789012", m.gaadData.AccountID)
+	assert.Equal(t, 1, m.gaadData.Users.Len())
+	assert.Equal(t, 1, m.gaadData.Roles.Len())
+	assert.Equal(t, 0, m.gaadData.Groups.Len())
+	assert.Equal(t, 0, m.gaadData.Policies.Len())
+}
+
+func TestLoadGAADFromFile_FileNotFound(t *testing.T) {
+	m := &AWSGraphModule{}
+	m.log = plugin.NewLogger(nil, true, true)
+
+	err := m.loadGAADFromFile("/nonexistent/gaad.json")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading GAAD file")
+}
+
+func TestLoadGAADFromFile_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.json")
+	require.NoError(t, os.WriteFile(path, []byte("not json"), 0o644))
+
+	m := &AWSGraphModule{}
+	m.log = plugin.NewLogger(nil, true, true)
+
+	err := m.loadGAADFromFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing GAAD file")
+}
+
+func TestCollectInputs_OfflineMode(t *testing.T) {
+	gaadJSON := `{
+		"accountId": "123456789012",
+		"UserDetailList": [],
+		"GroupDetailList": [],
+		"RoleDetailList": [],
+		"Policies": []
+	}`
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gaad.json")
+	require.NoError(t, os.WriteFile(path, []byte(gaadJSON), 0o644))
+
+	m := &AWSGraphModule{}
+	m.log = plugin.NewLogger(nil, true, true)
+	m.GraphConfig.GAADFile = path
+	m.GraphConfig.Offline = true
+
+	err := m.collectInputs()
+	require.NoError(t, err)
+	require.NotNil(t, m.gaadData)
+	assert.Equal(t, "123456789012", m.gaadData.AccountID)
 }

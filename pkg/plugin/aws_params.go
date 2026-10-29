@@ -25,17 +25,30 @@ type AWSCommonRecon struct {
 	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }
 
-func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
+func (c *AWSCommonRecon) PostBind(cfg Config, _ Module) error {
 	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
-		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
-		if err != nil {
-			return fmt.Errorf("resolving regions: %w", err)
+		if isOffline(cfg) {
+			c.Regions = nil
+		} else {
+			resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
+			if err != nil {
+				return fmt.Errorf("resolving regions: %w", err)
+			}
+			c.Regions = resolved
 		}
-		c.Regions = resolved
 	}
-	
+
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
+}
+
+func isOffline(cfg Config) bool {
+	v, ok := cfg.Args["offline"]
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }
 
 type OrgPoliciesParam struct {
