@@ -682,16 +682,15 @@ func TestMergeModels_MismatchedVersions_ReturnsError(t *testing.T) {
 	modelA := accountModel("111111111111", []Principal{
 		{ARN: "arn:aws:iam::111111111111:role/R", Account: "111111111111", Type: PrincipalTypeRole},
 	}, nil, nil)
-	modelA.Version = "1.0"
-
 	modelB := accountModel("222222222222", []Principal{
 		{ARN: "arn:aws:iam::222222222222:role/R", Account: "222222222222", Type: PrincipalTypeRole},
 	}, nil, nil)
-	modelB.Version = "2.0"
+	modelB.Version = "99.0"
 
 	_, err := MergeModels([]*Model{modelA, modelB})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "version")
+	assert.Contains(t, err.Error(), "same version")
+	assert.Contains(t, err.Error(), "99.0")
 }
 
 func TestMergeModels_DivergentGoal_ReturnsError(t *testing.T) {
