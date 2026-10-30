@@ -8,13 +8,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armtemplatespecs"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 func init() {
 	mustRegister("microsoft.resources/templatespecs", "template-spec-versions", extractTemplateSpecVersions)
-	mustRegister("microsoft.blueprint/blueprints", "blueprint-artifacts", extractBlueprintArtifacts)
+	// Blueprint availability in Government is unverified.
+	mustRegister("microsoft.blueprint/blueprints", "blueprint-artifacts", extractBlueprintArtifacts, azurecloud.Public)
 	mustRegister("microsoft.authorization/policydefinitions", "policy-definitions", extractPolicyDefinitions)
 }
 

@@ -36,7 +36,7 @@ func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *
 	if err != nil {
 		return handleExtractError(err, "app-config-keyvalues", r.ResourceID)
 	}
-	client, err := azappconfig.NewClient(endpoint, ctx.Cred, &azappconfig.ClientOptions{ClientOptions: ctx.Env.ClientOptions()})
+	client, err := azappconfig.NewClient(endpoint, ctx.Env.AppConfigCredential(ctx.Cred), &azappconfig.ClientOptions{ClientOptions: ctx.Env.ClientOptions()})
 	if err != nil {
 		return fmt.Errorf("failed to create App Configuration client: %w", err)
 	}

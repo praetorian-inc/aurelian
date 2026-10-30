@@ -16,9 +16,8 @@ func init() {
 	mustRegister("CNAME", "appsvc-takeover", checkAppService)
 }
 
-const appServiceSuffix = ".azurewebsites.net"
-
 func checkAppService(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	appServiceSuffix := ctx.Env.AppServiceSuffix
 	for _, val := range rec.Values {
 		if !strings.HasSuffix(strings.ToLower(val), appServiceSuffix) {
 			continue

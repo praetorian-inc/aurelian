@@ -7,13 +7,15 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/frontdoor/armfrontdoor"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 func init() {
-	mustRegister("CNAME", "frontdoor-takeover", checkFrontDoor)
+	// Front Door takeover verification is only supported in Public.
+	mustRegister("CNAME", "frontdoor-takeover", checkFrontDoor, azurecloud.Public)
 }
 
 const frontdoorSuffix = ".azurefd.net"
