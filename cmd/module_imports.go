@@ -7,6 +7,7 @@ import (
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/enrichers"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/evaluators"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/analyze"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/enrichers"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/recon"
 )
