@@ -1,0 +1,17 @@
+id: azure/enrich/pim-permanent-classification
+name: PIM Permanent vs Eligible Classification
+platform: azure
+type: enrich
+category: permissions
+description: |
+  Marks Entra ID directory role assignments that are NOT PIM-managed as
+  permanent assignments. PIM assignments already have assignmentType set
+  during import. This helps identify always-on privileged access.
+severity: medium
+order: 16
+cypher: |
+  MATCH ()-[r:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE r.source = 'Entra ID Directory Role'
+    AND r.assignmentType IS NULL
+  SET r.assignmentType = 'Permanent'
+  RETURN count(r) AS marked

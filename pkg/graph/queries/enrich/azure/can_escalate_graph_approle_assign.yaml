@@ -1,0 +1,21 @@
+id: azure/enrich/can-escalate-graph-approle-assign
+name: Graph API AppRoleAssignment.ReadWrite.All Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Service principals with AppRoleAssignment.ReadWrite.All can grant themselves
+  any permission including RoleManagement.ReadWrite.Directory, enabling full
+  directory compromise.
+severity: critical
+order: 72
+cypher: |
+  MATCH (attacker:ServicePrincipal)-[perm:HAS_PERMISSION {source: 'Microsoft Graph App Role'}]->(resource:ServicePrincipal)
+  WHERE resource.displayName = 'Microsoft Graph' OR resource.appId = '00000003-0000-0000-c000-000000000000'
+  SET attacker._canEscalate = true
+  WITH DISTINCT attacker
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphAppRoleAssignment'}]->(attacker)
+  ON CREATE SET
+    r.condition = 'Service Principal with AppRoleAssignment.ReadWrite.All can grant itself any permission including RoleManagement.ReadWrite.Directory',
+    r.category = 'GraphPermission'
+  RETURN count(r) AS created
