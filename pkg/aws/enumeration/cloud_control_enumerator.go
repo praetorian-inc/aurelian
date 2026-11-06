@@ -151,8 +151,8 @@ func (cc *CloudControlEnumerator) resolveARNTarget(resourceARN string) (string, 
 // global services, S3 (which omits region from its ARN), and standard ARNs.
 func (cc *CloudControlEnumerator) resolveResourceRegion(parsed awsaarn.ARN, resourceType string) (string, error) {
 	region := parsed.Region
-	if awshelpers.IsGlobalService(resourceType) {
-		region = "us-east-1"
+	if globalRegion, ok := awshelpers.GlobalServiceControlPlaneRegion(resourceType); ok {
+		region = globalRegion
 	}
 
 	if region == "" && parsed.Service == "s3" {
@@ -201,6 +201,25 @@ func (cc *CloudControlEnumerator) requiresSpecialIdentifier(resourceType, resour
 		"AWS::CloudFormation::Stack":       cc.parseCloudFormationStackID,
 		"AWS::StepFunctions::StateMachine": cc.parseAsARN,
 		"AWS::ECS::TaskDefinition":         cc.parseTaskDefinition,
+
+		// Cloud Control identifies these by their full ARN; the resource
+		// segment on its own is rejected.
+		"AWS::ElasticLoadBalancingV2::LoadBalancer": cc.parseAsARN,
+		"AWS::GlobalAccelerator::Accelerator":       cc.parseAsARN,
+		"AWS::AppRunner::Service":                   cc.parseAsARN,
+		"AWS::Transfer::Server":                     cc.parseAsARN,
+
+		// Cloud Control identifies these by a bare name/ID, so the ARN's
+		// resource-segment prefix has to come off first.
+		"AWS::CloudFront::Distribution": trimResourcePrefix("distribution/"),
+		"AWS::EFS::FileSystem":          trimResourcePrefix("file-system/"),
+		"AWS::EKS::Cluster":             trimResourcePrefix("cluster/"),
+		"AWS::AppSync::GraphQLApi":      trimResourcePrefix("apis/"),
+		"AWS::ApiGateway::RestApi":      trimResourcePrefix("/restapis/"),
+		"AWS::ApiGatewayV2::Api":        trimResourcePrefix("/apis/"),
+		"AWS::Redshift::Cluster":        trimResourcePrefix("cluster:"),
+
+		"AWS::ElasticBeanstalk::Environment": cc.parseBeanstalkEnvironmentName,
 	}
 
 	parser, ok := parsers[resourceType]
@@ -233,6 +252,29 @@ func (cc *CloudControlEnumerator) parseCloudFormationStackID(_, stackID string) 
 	}
 
 	return parts[1]
+}
+
+// trimResourcePrefix builds a parser that strips a known resource-segment
+// prefix from an ARN, yielding the bare name/ID that Cloud Control's
+// GetResource expects (e.g. "distribution/E124R3VALIF56C" -> "E124R3VALIF56C").
+// An identifier that does not carry the prefix is returned unchanged.
+func trimResourcePrefix(prefix string) func(string, string) string {
+	return func(_, resourceID string) string {
+		return strings.TrimPrefix(resourceID, prefix)
+	}
+}
+
+// parseBeanstalkEnvironmentName extracts the environment name from an Elastic
+// Beanstalk environment ARN. Cloud Control identifies the environment by name
+// alone, while the ARN qualifies it with the owning application.
+func (cc *CloudControlEnumerator) parseBeanstalkEnvironmentName(_, environmentID string) string {
+	// example: environment/my-application/my-environment
+	idx := strings.LastIndex(environmentID, "/")
+	if idx < 0 {
+		return environmentID
+	}
+
+	return environmentID[idx+1:]
 }
 
 func (cc *CloudControlEnumerator) parseTaskDefinition(_, taskDefinition string) string {
