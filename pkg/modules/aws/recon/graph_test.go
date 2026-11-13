@@ -159,6 +159,51 @@ func TestLoadGAADFromFile(t *testing.T) {
 	assert.Equal(t, 0, m.gaadData.Policies.Len())
 }
 
+func TestLoadGAADFromRawAWSFileInfersAccountID(t *testing.T) {
+	gaadJSON := `{
+		"UserDetailList": [],
+		"GroupDetailList": [],
+		"RoleDetailList": [
+			{"Arn": "arn:aws:iam::123456789012:role/test-role", "RoleName": "test-role"}
+		],
+		"Policies": []
+	}`
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "raw-gaad.json")
+	require.NoError(t, os.WriteFile(path, []byte(gaadJSON), 0o644))
+
+	m := &AWSGraphModule{}
+	m.log = plugin.NewLogger(nil, true, true)
+
+	require.NoError(t, m.loadGAADFromFile(path))
+	assert.Equal(t, "123456789012", m.gaadData.AccountID)
+}
+
+func TestLoadGAADFromFileRejectsMixedAccounts(t *testing.T) {
+	gaadJSON := `{
+		"UserDetailList": [
+			{"Arn": "arn:aws:iam::111111111111:user/a", "UserName": "a"}
+		],
+		"GroupDetailList": [],
+		"RoleDetailList": [
+			{"Arn": "arn:aws:iam::222222222222:role/b", "RoleName": "b"}
+		],
+		"Policies": []
+	}`
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mixed-gaad.json")
+	require.NoError(t, os.WriteFile(path, []byte(gaadJSON), 0o644))
+
+	m := &AWSGraphModule{}
+	m.log = plugin.NewLogger(nil, true, true)
+
+	err := m.loadGAADFromFile(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple account IDs")
+}
+
 func TestLoadGAADFromFile_FileNotFound(t *testing.T) {
 	m := &AWSGraphModule{}
 	m.log = plugin.NewLogger(nil, true, true)

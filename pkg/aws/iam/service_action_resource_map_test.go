@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func TestKnownResourceActionsMirrorsMappings(t *testing.T) {
+	actions := KnownResourceActions()
+	if !slices.IsSorted(actions) {
+		t.Fatal("offline action catalog must be deterministic")
+	}
+	expected := 0
+	for service, serviceMap := range serviceResourceMaps {
+		for action := range serviceMap.ActionResourceMap {
+			expected++
+			if !slices.Contains(actions, service+":"+action) {
+				t.Errorf("mapped action missing from offline catalog: %s:%s", service, action)
+			}
+		}
+	}
+	if len(actions) != expected {
+		t.Errorf("catalog has %d actions; expected %d unique mapped actions", len(actions), expected)
+	}
+}
+
 func TestIsValidActionForResource(t *testing.T) {
 	testCases := []struct {
 		name     string

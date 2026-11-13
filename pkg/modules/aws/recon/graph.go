@@ -6,10 +6,12 @@ import (
 	"os"
 	"slices"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/structuralfacts"
@@ -33,7 +35,7 @@ type GraphConfig struct {
 	Format           string `param:"format" desc:"Output format: json (default) or escalation-solver-v1" default:"json"`
 	PermissionFormat string `param:"permission-format" desc:"Permission source format: policy_summary (default) or evaluated_triples" default:"policy_summary"`
 	Attacker         string `param:"attacker" desc:"Attacker principal ARN for escalation-solver goal, or * for all principals" default:"*"`
-	GAADFile         string `param:"gaad-file" desc:"Path to a local GAAD JSON file (skips live GetAccountAuthorizationDetails call)"`
+	GAADFile         string `param:"gaad-file" desc:"Path to Aurelian or raw AWS GetAccountAuthorizationDetails JSON (skips the live GAAD call)"`
 	Offline          bool   `param:"offline" desc:"Skip all AWS API calls; requires --gaad-file for local-only analysis" default:"false"`
 }
 
@@ -277,9 +279,62 @@ func (m *AWSGraphModule) loadGAADFromFile(path string) error {
 	if err := json.Unmarshal(data, &gaadData); err != nil {
 		return fmt.Errorf("parsing GAAD file %s: %w", path, err)
 	}
+	if err := normalizeGAADAccountID(&gaadData); err != nil {
+		return fmt.Errorf("validating GAAD file %s: %w", path, err)
+	}
 	m.log.Success("GAAD loaded from file (account: %s, users: %d, roles: %d, groups: %d)",
 		gaadData.AccountID, gaadData.Users.Len(), gaadData.Roles.Len(), gaadData.Groups.Len())
 	m.gaadData = &gaadData
+	return nil
+}
+
+// normalizeGAADAccountID makes --gaad-file work with both Aurelian's enriched
+// wire format and the unmodified AWS CLI get-account-authorization-details
+// response, which has no accountId field. IAM principal ARNs are authoritative
+// for this account-scoped command; rejecting mixed IDs avoids silently building
+// a cross-account model under the wrong account.
+func normalizeGAADAccountID(details *types.AuthorizationAccountDetails) error {
+	discovered := map[string]struct{}{}
+	add := func(principalARN string) {
+		if parsed, err := arn.Parse(principalARN); err == nil && parsed.AccountID != "" {
+			discovered[parsed.AccountID] = struct{}{}
+		}
+	}
+	details.Users.Range(func(_ string, user types.UserDetail) bool {
+		add(user.Arn)
+		return true
+	})
+	details.Groups.Range(func(_ string, group types.GroupDetail) bool {
+		add(group.Arn)
+		return true
+	})
+	details.Roles.Range(func(_ string, role types.RoleDetail) bool {
+		add(role.Arn)
+		return true
+	})
+
+	if len(discovered) > 1 {
+		accountIDs := make([]string, 0, len(discovered))
+		for accountID := range discovered {
+			accountIDs = append(accountIDs, accountID)
+		}
+		slices.Sort(accountIDs)
+		return fmt.Errorf("principal ARNs contain multiple account IDs: %v", accountIDs)
+	}
+	if details.AccountID == "" {
+		if len(discovered) == 0 {
+			return fmt.Errorf("accountId is missing and cannot be inferred because the file contains no IAM principal ARN")
+		}
+		for accountID := range discovered {
+			details.AccountID = accountID
+		}
+		return nil
+	}
+	if _, present := discovered[details.AccountID]; len(discovered) == 1 && !present {
+		for principalAccountID := range discovered {
+			return fmt.Errorf("accountId %q does not match the principal ARN account %q", details.AccountID, principalAccountID)
+		}
+	}
 	return nil
 }
 
@@ -511,6 +566,9 @@ func (m *AWSGraphModule) collectIdentityPools(eg *errgroup.Group, c GraphConfig,
 func (m *AWSGraphModule) analyzeIAMPermissions() error {
 	m.log.Info("analyzing IAM permissions")
 	analyzer := gaadpkg.NewGaadAnalyzer()
+	if m.Offline {
+		analyzer = gaadpkg.NewGaadAnalyzerWithActions(iampkg.KnownResourceActions())
+	}
 	relationships, err := analyzer.Analyze(m.gaadData, m.OrgPolicies, m.resourcesWithPolicies)
 	if err != nil {
 		return fmt.Errorf("analyzing permissions: %w", err)
