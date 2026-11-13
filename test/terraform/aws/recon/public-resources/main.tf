@@ -542,9 +542,19 @@ resource "aws_opensearch_domain" "public" {
 # ============================================================
 
 variable "deploy_expensive" {
-  description = "Deploy slow/costly fixtures (EKS, extra OpenSearch domain, Beanstalk)."
+  description = "Deploy slow/costly fixtures (EKS, extra OpenSearch domain, Beanstalk, Redshift)."
   type        = bool
   default     = false
+}
+
+# App Runner is not available in every account: AWS gates CreateService per
+# account and a restricted account fails the whole apply with
+# "Account <id> can't create new App Runner services". Keep it on by default and
+# let such an account opt out with TF_VAR_deploy_apprunner=false.
+variable "deploy_apprunner" {
+  description = "Deploy the App Runner fixture. Set false in accounts where App Runner is not enabled."
+  type        = bool
+  default     = true
 }
 
 # --- ELBv2: internet-facing ALB (positive) + internal ALB (negative) ---
@@ -566,6 +576,7 @@ resource "aws_lb" "internal" {
 
 # --- App Runner: public ingress (positive) ---
 resource "aws_apprunner_service" "public" {
+  count        = var.deploy_apprunner ? 1 : 0
   service_name = "${local.os_prefix}-apprunner"
 
   source_configuration {
@@ -958,4 +969,29 @@ resource "aws_elastic_beanstalk_environment" "public" {
     name      = "AssociatePublicIpAddress"
     value     = "true"
   }
+}
+
+# --- Redshift: publicly accessible cluster (positive) ---
+# LAB-7805: redshift is in the evaluator's SupportedResourceTypes but had no ARN
+# service-map entry, so Guard's by-ARN invocation failed on every cluster.
+resource "aws_redshift_cluster" "public" {
+  count = var.deploy_expensive ? 1 : 0
+
+  cluster_identifier  = "${local.os_prefix}-redshift"
+  database_name       = "aurelian"
+  master_username     = "aurelian"
+  master_password     = "Aur3lian-Test-${random_id.run.hex}"
+  node_type           = "ra3.large"
+  cluster_type        = "single-node"
+  publicly_accessible = true
+  skip_final_snapshot = true
+
+  cluster_subnet_group_name = aws_redshift_subnet_group.public[0].name
+  vpc_security_group_ids    = [aws_security_group.ec2.id]
+}
+
+resource "aws_redshift_subnet_group" "public" {
+  count      = var.deploy_expensive ? 1 : 0
+  name       = "${local.os_prefix}-redshift-subnets"
+  subnet_ids = [aws_subnet.public.id, aws_subnet.public_b.id]
 }
