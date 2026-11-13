@@ -61,6 +61,17 @@ func TestAWSGraphModuleParameters(t *testing.T) {
 	assert.True(t, paramNames["offline"], "should have offline param")
 }
 
+func TestOfflineGraphOptsOutOfRegionDiscoveryWithoutRawArgumentCoupling(t *testing.T) {
+	m := &AWSGraphModule{GraphConfig: GraphConfig{
+		AWSCommonRecon: plugin.AWSCommonRecon{Regions: []string{"all"}},
+		Offline:        true,
+	}}
+
+	err := m.AWSCommonRecon.PostBind(plugin.Config{}, m)
+	require.NoError(t, err)
+	require.Empty(t, m.Regions)
+}
+
 // TestEmitOutputsEmitsStructuralFacts verifies that emitOutputs emits
 // StructuralFact values for collected resources that carry role references.
 // This is the integration-level contract between the graph module and the

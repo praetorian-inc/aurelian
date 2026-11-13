@@ -25,9 +25,16 @@ type AWSCommonRecon struct {
 	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }
 
-func (c *AWSCommonRecon) PostBind(cfg Config, _ Module) error {
+// AWSRegionDiscoveryControl lets a module opt out of the shared online region
+// lookup through a typed module contract.
+type AWSRegionDiscoveryControl interface {
+	SkipAWSRegionDiscovery() bool
+}
+
+func (c *AWSCommonRecon) PostBind(_ Config, m Module) error {
 	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
-		if isOffline(cfg) {
+		control, skipsDiscovery := m.(AWSRegionDiscoveryControl)
+		if skipsDiscovery && control.SkipAWSRegionDiscovery() {
 			c.Regions = nil
 		} else {
 			resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
@@ -40,15 +47,6 @@ func (c *AWSCommonRecon) PostBind(cfg Config, _ Module) error {
 
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
-}
-
-func isOffline(cfg Config) bool {
-	v, ok := cfg.Args["offline"]
-	if !ok {
-		return false
-	}
-	b, _ := v.(bool)
-	return b
 }
 
 type OrgPoliciesParam struct {

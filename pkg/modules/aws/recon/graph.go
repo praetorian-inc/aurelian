@@ -66,6 +66,8 @@ type AWSGraphModule struct {
 	attemptedTypes        []string // resource types that were enumerated
 }
 
+func (m *AWSGraphModule) SkipAWSRegionDiscovery() bool { return m.Offline }
+
 func (m *AWSGraphModule) ID() string                { return "graph" }
 func (m *AWSGraphModule) Name() string              { return "AWS Graph Analysis" }
 func (m *AWSGraphModule) Platform() plugin.Platform { return plugin.PlatformAWS }
