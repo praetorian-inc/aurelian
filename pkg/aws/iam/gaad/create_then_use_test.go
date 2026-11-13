@@ -75,6 +75,18 @@ func TestHasActionOnResource(t *testing.T) {
 	assert.False(t, idx.hasActionOnResource("user-b", "s3:GetObject", "resource-1"))
 }
 
+func TestPermissionIndexTreatsIAMActionNamesCaseInsensitively(t *testing.T) {
+	results := newRelationshipMap([]output.AWSIAMRelationship{{
+		Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "user-a"}},
+		Resource:  output.AWSResource{ARN: "codebuild.amazonaws.com"},
+		Action:    "codebuild:createproject",
+	}})
+	idx := newPermissionIndex(results)
+
+	assert.True(t, idx.hasActionOnResource("user-a", "codebuild:CreateProject", "codebuild.amazonaws.com"))
+	assert.True(t, idx.hasActionOnAnyResource("user-a", "CODEBUILD:CREATEPROJECT"))
+}
+
 // ---------------------------------------------------------------------------
 // hasActionOnAnyResource
 // ---------------------------------------------------------------------------

@@ -25,15 +25,26 @@ type AWSCommonRecon struct {
 	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }
 
-func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
+// AWSRegionDiscoveryControl lets a module opt out of the shared online region
+// lookup through a typed module contract.
+type AWSRegionDiscoveryControl interface {
+	SkipAWSRegionDiscovery() bool
+}
+
+func (c *AWSCommonRecon) PostBind(_ Config, m Module) error {
 	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
-		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
-		if err != nil {
-			return fmt.Errorf("resolving regions: %w", err)
+		control, skipsDiscovery := m.(AWSRegionDiscoveryControl)
+		if skipsDiscovery && control.SkipAWSRegionDiscovery() {
+			c.Regions = nil
+		} else {
+			resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
+			if err != nil {
+				return fmt.Errorf("resolving regions: %w", err)
+			}
+			c.Regions = resolved
 		}
-		c.Regions = resolved
 	}
-	
+
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }

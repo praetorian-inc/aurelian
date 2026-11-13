@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -81,6 +82,21 @@ func GetResourcePatternsFromAction(action Action) []*regexp.Regexp {
 
 	return []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf("arn:aws:%s:*:*:*", service))}
 
+}
+
+// KnownResourceActions returns the deterministic, local set of actions that
+// Aurelian knows how to evaluate against resource types. It is deliberately
+// available to offline analysis so wildcard and NotAction grants relevant to
+// privilege escalation do not require the AWS Policy Generator endpoint.
+func KnownResourceActions() []string {
+	var actions []string
+	for service, serviceMap := range serviceResourceMaps {
+		for action := range serviceMap.ActionResourceMap {
+			actions = append(actions, service+":"+action)
+		}
+	}
+	slices.Sort(actions)
+	return actions
 }
 
 // serviceResourceMaps contains the mappings for each AWS service

@@ -15,11 +15,19 @@ import (
 
 // GaadAnalyzer analyzes GAAD data, cloud resources, and org policies
 // to determine principal→permission→resource paths.
-type GaadAnalyzer struct{}
+type GaadAnalyzer struct {
+	actionExpander *iam.ActionExpander
+}
 
 // NewGaadAnalyzer creates a new GaadAnalyzer.
 func NewGaadAnalyzer() *GaadAnalyzer {
 	return &GaadAnalyzer{}
+}
+
+// NewGaadAnalyzerWithActions creates an analyzer whose wildcard expansion is
+// constrained to a local action catalog and therefore performs no network I/O.
+func NewGaadAnalyzerWithActions(actions []string) *GaadAnalyzer {
+	return &GaadAnalyzer{actionExpander: iam.NewActionExpanderWithActions(actions)}
 }
 
 // Analyze evaluates all principal permissions against resources and org policies,
@@ -31,6 +39,9 @@ func (ga *GaadAnalyzer) Analyze(
 	resources store.Map[output.AWSResource],
 ) (store.Map[output.AWSIAMRelationship], error) {
 	state := NewAnalyzerState(gaad, orgPolicies, resources)
+	if ga.actionExpander != nil {
+		state.SetActionExpander(ga.actionExpander)
+	}
 	policyData := buildPolicyData(gaad, orgPolicies, resources)
 	evaluator := iam.NewPolicyEvaluator(policyData)
 

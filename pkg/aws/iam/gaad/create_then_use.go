@@ -42,7 +42,7 @@ func newPermissionIndex(results store.Map[output.AWSIAMRelationship]) *permissio
 	results.Range(func(_ string, rel output.AWSIAMRelationship) bool {
 		principalArn := rel.Principal.ARN
 		resourceArn := rel.Resource.ARN
-		action := rel.Action
+		action := strings.ToLower(rel.Action)
 
 		if idx.principalResources[principalArn] == nil {
 			idx.principalResources[principalArn] = make(map[string]map[string]bool)
@@ -67,7 +67,7 @@ func (idx *permissionIndex) hasActionOnResource(principalArn, action, resource s
 	if !ok {
 		return false
 	}
-	return actionMap[action]
+	return actionMap[strings.ToLower(action)]
 }
 
 // hasActionOnAnyResource checks whether a principal has a specific action
@@ -78,7 +78,7 @@ func (idx *permissionIndex) hasActionOnAnyResource(principalArn, action string) 
 		return false
 	}
 	for _, actionMap := range resMap {
-		if actionMap[action] {
+		if actionMap[strings.ToLower(action)] {
 			return true
 		}
 	}
