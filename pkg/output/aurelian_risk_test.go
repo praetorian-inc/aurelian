@@ -19,6 +19,8 @@ func TestNormalizeSeverity(t *testing.T) {
 		{"medium", RiskSeverityMedium},
 		{"Low", RiskSeverityLow},
 		{"low", RiskSeverityLow},
+		{"Exposure", RiskSeverityExposure},
+		{"exposure", RiskSeverityExposure},
 		{"Info", RiskSeverityInfo},
 		{"unknown", RiskSeverityInfo},
 		{"", RiskSeverityInfo},

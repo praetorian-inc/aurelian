@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -22,10 +23,17 @@ type Checker struct {
 	appengineSvc *appengine.APIService
 	computeSvc   *compute.Service
 	dnsSvc       *dns.Service
+
+	// projectIDs are the projects resolved for this scan. Cloud DNS zone
+	// ownership is looked up across all of them, because a delegated child
+	// zone frequently lives in a different project than its parent zone.
+	projectIDs []string
 }
 
 // NewChecker creates a Checker with all required GCP service clients.
-func NewChecker(clientOptions []option.ClientOption) (*Checker, error) {
+// projectIDs are the projects resolved for this scan; Cloud DNS zone ownership
+// is looked up across all of them.
+func NewChecker(clientOptions []option.ClientOption, projectIDs []string) (*Checker, error) {
 	ctx := context.Background()
 
 	storageSvc, err := storage.NewService(ctx, clientOptions...)
@@ -55,6 +63,7 @@ func NewChecker(clientOptions []option.ClientOption) (*Checker, error) {
 		appengineSvc: appengineSvc,
 		computeSvc:   computeSvc,
 		dnsSvc:       dnsSvc,
+		projectIDs:   slices.Clone(projectIDs),
 	}, nil
 }
 

@@ -20,37 +20,20 @@ type persistentScanner struct {
 	ruleMap map[string]*types.Rule
 }
 
-// newPersistentScanner creates a new persistent Titus scanner.
-// The caller is responsible for providing a valid dbPath.
-// If rulesetID is non-empty, only rules in that ruleset are loaded.
-// Any rules whose IDs appear in disabledRules are then excluded.
-func newPersistentScanner(dbPath string, rulesetID string, disabledRules []string) (*persistentScanner, error) {
-	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
-		return nil, fmt.Errorf("failed to create database directory: %w", err)
-	}
-
-	s, err := store.New(store.Config{Path: dbPath})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create store: %w", err)
-	}
-
+func loadRules(rulesetID string, disabledRules []string) ([]*types.Rule, error) {
 	loader := rule.NewLoader()
 	allRules, err := loader.LoadBuiltinRules()
 	if err != nil {
-		_ = s.Close()
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
 	}
 
-	// Apply ruleset filter if specified.
 	if rulesetID != "" {
 		rulesets, err := loader.LoadBuiltinRulesets()
 		if err != nil {
-			_ = s.Close()
 			return nil, fmt.Errorf("failed to load builtin rulesets: %w", err)
 		}
 		rs := rule.FindRuleset(rulesets, rulesetID)
 		if rs == nil {
-			_ = s.Close()
 			return nil, fmt.Errorf("ruleset %q not found", rulesetID)
 		}
 		allRules = rule.ApplyRuleset(allRules, rs)
@@ -68,6 +51,19 @@ func newPersistentScanner(dbPath string, rulesetID string, disabledRules []strin
 			continue
 		}
 		rules = append(rules, r)
+	}
+
+	return rules, nil
+}
+
+func newPersistentScannerFromRules(dbPath string, rules []*types.Rule) (*persistentScanner, error) {
+	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	}
+
+	s, err := store.New(store.Config{Path: dbPath})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
 
 	m, err := matcher.New(matcher.Config{

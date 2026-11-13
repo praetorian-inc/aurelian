@@ -18,7 +18,7 @@ func startScanner(t *testing.T) *SecretScanner {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 	var s SecretScanner
-	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
+	require.NoError(t, s.startFromRules(ScannerConfig{DBPath: dbPath}, testRules))
 	t.Cleanup(func() { _ = s.Close() })
 	return &s
 }
@@ -31,7 +31,7 @@ func TestSecretScanner_StartAndClose(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
+	require.NoError(t, s.startFromRules(ScannerConfig{DBPath: dbPath}, testRules))
 
 	assert.Equal(t, dbPath, s.DBPath())
 	_, err := os.Stat(dbPath)
@@ -112,7 +112,7 @@ func TestStart_ExplicitPath(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
+	require.NoError(t, s.startFromRules(ScannerConfig{DBPath: dbPath}, testRules))
 	defer func() { _ = s.Close() }()
 
 	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return the provided path")
@@ -150,7 +150,7 @@ func TestStart_OutputDirectoryCreated(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "output", "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
+	require.NoError(t, s.startFromRules(ScannerConfig{DBPath: dbPath}, testRules))
 	defer func() { _ = s.Close() }()
 
 	_, err := os.Stat(filepath.Join(tmpDir, "output"))
@@ -289,7 +289,7 @@ func TestExplicitPathUsed(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
+	require.NoError(t, s.startFromRules(ScannerConfig{DBPath: dbPath}, testRules))
 	defer func() { _ = s.Close() }()
 
 	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return provided path")

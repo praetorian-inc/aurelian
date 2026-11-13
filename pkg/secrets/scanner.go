@@ -35,8 +35,16 @@ type SecretScanResult struct {
 
 // Start creates a new persistent scanner and stores it as a field.
 func (s *SecretScanner) Start(cfg ScannerConfig) error {
+	rules, err := loadRules(cfg.Ruleset, cfg.DisabledTitusRules)
+	if err != nil {
+		return fmt.Errorf("failed to create Titus scanner: %w", err)
+	}
+	return s.startFromRules(cfg, rules)
+}
+
+func (s *SecretScanner) startFromRules(cfg ScannerConfig, rules []*types.Rule) error {
 	s.failOnError = false
-	ps, err := newPersistentScanner(cfg.DBPath, cfg.Ruleset, cfg.DisabledTitusRules)
+	ps, err := newPersistentScannerFromRules(cfg.DBPath, rules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
