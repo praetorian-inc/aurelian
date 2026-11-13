@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -297,8 +298,20 @@ func convertConditions(cond *types.Condition) []Condition {
 		return nil
 	}
 	var result []Condition
-	for operator, condStmt := range *cond {
-		for key, values := range condStmt {
+	operators := make([]string, 0, len(*cond))
+	for operator := range *cond {
+		operators = append(operators, operator)
+	}
+	slices.Sort(operators)
+	for _, operator := range operators {
+		condStmt := (*cond)[operator]
+		keys := make([]string, 0, len(condStmt))
+		for key := range condStmt {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			values := condStmt[key]
 			result = append(result, Condition{
 				Key:      key,
 				Operator: operator,

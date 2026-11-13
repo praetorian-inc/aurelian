@@ -302,6 +302,7 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 	// resolve EC2 instances through to their roles. Per spec section 3.5,
 	// from = EC2 instance ARN, to = IAM role ARN.
 	ipToRoles := make(map[string][]string)
+	ipNameToARN := make(map[string]string)
 	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
 		for _, ip := range r.InstanceProfileList {
 			for _, ipr := range ip.Roles {
@@ -309,10 +310,13 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 			}
 			// Also index by instance profile name for CloudControl lookups
 			// where the property may be a name or ID rather than a full ARN.
-			ipToRoles[ip.InstanceProfileName] = ipToRoles[ip.Arn]
+			ipNameToARN[ip.InstanceProfileName] = ip.Arn
 		}
 		return true
 	})
+	for name, profileARN := range ipNameToARN {
+		ipToRoles[name] = append([]string(nil), ipToRoles[profileARN]...)
+	}
 
 	// Lambda execution roles, CodeBuild service roles, EC2 instance profiles,
 	// ECS task roles: from resource properties.
