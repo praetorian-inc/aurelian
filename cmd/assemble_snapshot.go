@@ -12,33 +12,55 @@ import (
 
 var assembleSnapshotCmd = &cobra.Command{
 	Use:   "assemble",
-	Short: "Assemble a solver model from an offline collection snapshot",
-	Long: `Assemble converts a versioned, collector-shaped Aurelian snapshot into
-the model consumed by the escalation solver. It does not call AWS or require
-credentials, allowing an authored environment to be replayed locally.`,
+	Short: "Assemble a solver model from an offline collection snapshot or Terraform plan",
+	Long: `Assemble converts a versioned, collector-shaped Aurelian snapshot or
+Terraform plan JSON into the model consumed by the escalation solver. It does
+not call AWS or require credentials, allowing an authored environment to be
+replayed locally.`,
 	RunE: runAssembleSnapshot,
 }
 
 func init() {
 	assembleSnapshotCmd.Flags().String("snapshot", "", "Collection snapshot JSON file")
+	assembleSnapshotCmd.Flags().String("terraform-plan", "", "Terraform plan JSON file (terraform show -json)")
+	assembleSnapshotCmd.Flags().String("account-id", "", "Account ID for plan-derived resources")
+	assembleSnapshotCmd.Flags().String("region", "", "Region for plan-derived resources")
+	assembleSnapshotCmd.Flags().String("partition", "aws", "AWS partition for plan-derived resources")
+	assembleSnapshotCmd.Flags().String("attacker", "", "Starting principal ARN for plan-derived resources")
 	assembleSnapshotCmd.Flags().StringP("output", "o", "", "Output model file (default: stdout)")
-	if err := assembleSnapshotCmd.MarkFlagRequired("snapshot"); err != nil {
-		panic(err)
-	}
 }
 
 func runAssembleSnapshot(cmd *cobra.Command, _ []string) error {
 	log := plugin.NewLogger(os.Stderr, noColorFlag, quietFlag)
 	inputPath, _ := cmd.Flags().GetString("snapshot")
+	planPath, _ := cmd.Flags().GetString("terraform-plan")
 	outputPath, _ := cmd.Flags().GetString("output")
-
-	data, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("reading collection snapshot %q: %w", inputPath, err)
+	if (inputPath == "") == (planPath == "") {
+		return fmt.Errorf("provide exactly one of --snapshot or --terraform-plan")
 	}
-	snapshot, err := escalation.LoadCollectionSnapshot(data)
+
+	readPath := inputPath
+	if planPath != "" {
+		readPath = planPath
+	}
+	data, err := os.ReadFile(readPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading offline input %q: %w", readPath, err)
+	}
+	var snapshot *escalation.CollectionSnapshot
+	if planPath == "" {
+		snapshot, err = escalation.LoadCollectionSnapshot(data)
+	} else {
+		accountID, _ := cmd.Flags().GetString("account-id")
+		region, _ := cmd.Flags().GetString("region")
+		partition, _ := cmd.Flags().GetString("partition")
+		attacker, _ := cmd.Flags().GetString("attacker")
+		snapshot, err = escalation.CollectionSnapshotFromTerraformPlan(data, escalation.TerraformPlanOptions{
+			AccountID: accountID, Region: region, Partition: partition, Attacker: attacker,
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("loading offline input: %w", err)
 	}
 	model, err := snapshot.Assemble()
 	if err != nil {
