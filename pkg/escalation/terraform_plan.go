@@ -164,15 +164,15 @@ func CollectionSnapshotFromTerraformPlan(data []byte, opts TerraformPlanOptions)
 	for _, resource := range planned {
 		switch resource.Type {
 		case "aws_iam_user_policy":
-			if err := appendTerraformInlinePolicy(gaad, resource, "user"); err != nil {
+			if err := appendTerraformInlinePolicy(snapshot, resource, "user"); err != nil {
 				return nil, err
 			}
 		case "aws_iam_role_policy":
-			if err := appendTerraformInlinePolicy(gaad, resource, "role"); err != nil {
+			if err := appendTerraformInlinePolicy(snapshot, resource, "role"); err != nil {
 				return nil, err
 			}
 		case "aws_iam_group_policy":
-			if err := appendTerraformInlinePolicy(gaad, resource, "group"); err != nil {
+			if err := appendTerraformInlinePolicy(snapshot, resource, "group"); err != nil {
 				return nil, err
 			}
 		}
@@ -227,7 +227,8 @@ func flattenTerraformConfigResources(module terraformConfigModule, modulePath st
 	return result
 }
 
-func appendTerraformInlinePolicy(gaad *types.AuthorizationAccountDetails, resource terraformResource, principalType string) error {
+func appendTerraformInlinePolicy(snapshot *CollectionSnapshot, resource terraformResource, principalType string) error {
+	gaad := snapshot.GAAD
 	name := stringValue(resource.Values, "name")
 	principalName := stringValue(resource.Values, principalType)
 	var policy types.Policy
@@ -248,7 +249,7 @@ func appendTerraformInlinePolicy(gaad *types.AuthorizationAccountDetails, resour
 			return true
 		})
 		if found == "" {
-			return fmt.Errorf("%s references missing IAM user %q", resource.Address, principalName)
+			appendUnknownInlinePolicyPrincipal(snapshot, resource, principalType)
 		}
 	case "role":
 		var found string
@@ -262,7 +263,7 @@ func appendTerraformInlinePolicy(gaad *types.AuthorizationAccountDetails, resour
 			return true
 		})
 		if found == "" {
-			return fmt.Errorf("%s references missing IAM role %q", resource.Address, principalName)
+			appendUnknownInlinePolicyPrincipal(snapshot, resource, principalType)
 		}
 	case "group":
 		var found string
@@ -276,10 +277,19 @@ func appendTerraformInlinePolicy(gaad *types.AuthorizationAccountDetails, resour
 			return true
 		})
 		if found == "" {
-			return fmt.Errorf("%s references missing IAM group %q", resource.Address, principalName)
+			appendUnknownInlinePolicyPrincipal(snapshot, resource, principalType)
 		}
 	}
 	return nil
+}
+
+func appendUnknownInlinePolicyPrincipal(snapshot *CollectionSnapshot, resource terraformResource, principalType string) {
+	snapshot.Unknowns = append(snapshot.Unknowns, CollectionUnknown{
+		Address:          resource.Address,
+		Field:            principalType,
+		Reason:           fmt.Sprintf("inline policy %s is unknown after plan", principalType),
+		SecurityCritical: true,
+	})
 }
 
 func resolveTerraformReference(resource terraformResource, config terraformConfigResource, field string, arns map[string]string) (string, bool) {

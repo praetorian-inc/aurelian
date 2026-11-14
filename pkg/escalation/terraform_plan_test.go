@@ -108,6 +108,26 @@ func TestTerraformPlanToCollectionSnapshotResolvesReferencesInsideChildModule(t 
 	require.Equal(t, "arn:aws:iam::111111111111:role/admin", snapshot.Resources[0].Properties["Role"])
 }
 
+func TestTerraformPlanToCollectionSnapshotPreservesUnknownBehindInlinePolicy(t *testing.T) {
+	plan := []byte(`{
+  "format_version":"1.2",
+  "planned_values":{"root_module":{"resources":[
+    {"address":"aws_iam_role.unknown","type":"aws_iam_role","values":{"name":null,"name_prefix":"generated-"}},
+    {"address":"aws_iam_role_policy.downstream","type":"aws_iam_role_policy","values":{"name":"policy","role":"generated-role","policy":"{}"}}
+  ]}},
+  "configuration":{"root_module":{"resources":[]}}
+}`)
+
+	snapshot, err := CollectionSnapshotFromTerraformPlan(plan, TerraformPlanOptions{AccountID: "111111111111", Region: "us-east-1"})
+	require.NoError(t, err)
+	require.Len(t, snapshot.Unknowns, 2)
+	require.Equal(t, "name", snapshot.Unknowns[0].Field)
+	require.Equal(t, "role", snapshot.Unknowns[1].Field)
+	require.True(t, snapshot.Unknowns[1].SecurityCritical)
+	_, err = snapshot.Assemble()
+	require.ErrorContains(t, err, "role")
+}
+
 func TestTerraformPlanToCollectionSnapshotMarksUnknownRoleBearingIdentityCritical(t *testing.T) {
 	plan := []byte(`{
   "format_version": "1.2",
