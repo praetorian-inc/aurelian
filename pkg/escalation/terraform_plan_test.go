@@ -72,7 +72,7 @@ func TestTerraformPlanToCollectionSnapshotNeverGuessesUnknownIAMNames(t *testing
   "configuration": {"root_module": {"resources": []}}
 }`)
 
-	snapshot, err := CollectionSnapshotFromTerraformPlan(plan, TerraformPlanOptions{AccountID: "111111111111"})
+	snapshot, err := CollectionSnapshotFromTerraformPlan(plan, TerraformPlanOptions{AccountID: "111111111111", Region: "us-east-1"})
 	require.NoError(t, err)
 	require.Zero(t, snapshot.GAAD.Users.Len())
 	require.Zero(t, snapshot.GAAD.Roles.Len())
@@ -106,6 +106,28 @@ func TestTerraformPlanToCollectionSnapshotResolvesReferencesInsideChildModule(t 
 	require.NoError(t, err)
 	require.Empty(t, snapshot.Unknowns)
 	require.Equal(t, "arn:aws:iam::111111111111:role/admin", snapshot.Resources[0].Properties["Role"])
+}
+
+func TestTerraformPlanToCollectionSnapshotMarksUnknownRoleBearingIdentityCritical(t *testing.T) {
+	plan := []byte(`{
+  "format_version": "1.2",
+  "planned_values": {"root_module": {"resources": [
+    {"address":"aws_lambda_function.unknown","type":"aws_lambda_function","values":{"function_name":null,"role":"arn:aws:iam::111111111111:role/service"}},
+    {"address":"aws_codebuild_project.unknown","type":"aws_codebuild_project","values":{"name":null,"service_role":"arn:aws:iam::111111111111:role/service"}},
+    {"address":"aws_glue_dev_endpoint.unknown","type":"aws_glue_dev_endpoint","values":{"name":null,"role_arn":"arn:aws:iam::111111111111:role/service"}},
+    {"address":"aws_sagemaker_notebook_instance.unknown","type":"aws_sagemaker_notebook_instance","values":{"name":null,"role_arn":"arn:aws:iam::111111111111:role/service"}}
+  ]}},
+  "configuration": {"root_module": {"resources": []}}
+}`)
+
+	snapshot, err := CollectionSnapshotFromTerraformPlan(plan, TerraformPlanOptions{AccountID: "111111111111", Region: "us-east-1"})
+	require.NoError(t, err)
+	require.Empty(t, snapshot.Resources)
+	require.Len(t, snapshot.Unknowns, 4)
+	for _, unknown := range snapshot.Unknowns {
+		require.Equal(t, "arn", unknown.Field)
+		require.True(t, unknown.SecurityCritical)
+	}
 }
 
 func TestTerraformPlanToCollectionSnapshotConvertsIAMInlinePolicies(t *testing.T) {

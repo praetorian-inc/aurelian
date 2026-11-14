@@ -67,7 +67,7 @@ type roleResourceMapping struct {
 }
 
 var terraformRoleResources = []roleResourceMapping{
-	{"aws_lambda_function", "AWS::Lambda::Function", "function_name", "role", "Role", "function:", func(c *CollectionCoverage) { c.LambdaExecutionRoles, c.LambdaResourcePolicies = true, true }},
+	{"aws_lambda_function", "AWS::Lambda::Function", "function_name", "role", "Role", "function:", func(c *CollectionCoverage) { c.LambdaExecutionRoles = true }},
 	{"aws_codebuild_project", "AWS::CodeBuild::Project", "name", "service_role", "ServiceRole", "project/", func(c *CollectionCoverage) { c.CodeBuildServiceRoles = true }},
 	{"aws_glue_dev_endpoint", "AWS::Glue::DevEndpoint", "name", "role_arn", "RoleArn", "devEndpoint/", func(c *CollectionCoverage) {}},
 	{"aws_sagemaker_notebook_instance", "AWS::SageMaker::NotebookInstance", "name", "role_arn", "RoleArn", "notebook-instance/", func(c *CollectionCoverage) {}},
@@ -186,6 +186,10 @@ func CollectionSnapshotFromTerraformPlan(data []byte, opts TerraformPlanOptions)
 				service := strings.SplitN(strings.TrimPrefix(mapping.AWSResourceType, "AWS::"), "::", 2)[0]
 				service = strings.ToLower(service)
 				resourceARN = fmt.Sprintf("arn:%s:%s:%s:%s:%s%s", opts.Partition, service, opts.Region, opts.AccountID, mapping.ARNResource, name)
+			}
+			if resourceARN == "" {
+				snapshot.Unknowns = append(snapshot.Unknowns, CollectionUnknown{Address: resource.Address, Field: "arn", Reason: "resource identity is unknown after plan", SecurityCritical: true})
+				continue
 			}
 			roleARN, ok := resolveTerraformReference(resource, configured[resource.Address], mapping.RoleField, arnsByAddress)
 			if !ok {
