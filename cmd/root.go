@@ -30,6 +30,7 @@ func initCommands() {
 	rootCmd.AddCommand(listModulesCmd)
 	rootCmd.AddCommand(serveCmd)
 	escalationCmd.AddCommand(mergeCmd)
+	escalationCmd.AddCommand(assembleSnapshotCmd)
 	rootCmd.AddCommand(escalationCmd)
 	generateCommands(rootCmd)
 }

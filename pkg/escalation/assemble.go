@@ -27,6 +27,12 @@ type AssembleInput struct {
 	// Attacker is the goal.attacker value. Default "*" means all non-admin
 	// principals. A specific ARN pins the solver to one starting principal.
 	Attacker string
+
+	// CollectionCoverage and CollectionErrors are the serialized collector
+	// results used by offline snapshot replay. Live collection normally uses
+	// Coverage instead.
+	CollectionCoverage map[string]*CollectionCoverage
+	CollectionErrors   []CollectionError
 }
 
 // Assemble builds a complete model-v1 Model from collected data.
@@ -51,16 +57,26 @@ func Assemble(in AssembleInput) (*Model, error) {
 		},
 	}
 
+	if len(in.CollectionCoverage) > 0 {
+		m.CollectionCoverage = in.CollectionCoverage
+	}
+	if len(in.CollectionErrors) > 0 {
+		m.CollectionErrors = append(m.CollectionErrors, in.CollectionErrors...)
+	}
+
 	if in.Coverage != nil {
 		if cov := in.Coverage.Build(); cov != nil {
 			acctID := in.GAAD.AccountID
 			if acctID == "" {
 				return nil, fmt.Errorf("Assemble: cannot key collection_coverage without an account ID (GAAD.AccountID is empty)")
 			}
-			m.CollectionCoverage = map[string]*CollectionCoverage{acctID: cov}
+			if m.CollectionCoverage == nil {
+				m.CollectionCoverage = make(map[string]*CollectionCoverage)
+			}
+			m.CollectionCoverage[acctID] = cov
 		}
 		if errs := in.Coverage.Errors(); len(errs) > 0 {
-			m.CollectionErrors = errs
+			m.CollectionErrors = append(m.CollectionErrors, errs...)
 		}
 	}
 
