@@ -60,6 +60,33 @@ func TestTerraformPlanToCollectionSnapshotMarksUnresolvedRoleReferenceCritical(t
 	require.ErrorContains(t, err, "role")
 }
 
+func TestTerraformPlanToCollectionSnapshotNeverGuessesUnknownIAMNames(t *testing.T) {
+	plan := []byte(`{
+  "format_version": "1.2",
+  "planned_values": {"root_module": {"resources": [
+    {"address":"aws_iam_user.unknown","type":"aws_iam_user","values":{"name":null,"name_prefix":"user-"}},
+    {"address":"aws_iam_role.unknown","type":"aws_iam_role","values":{"name":null,"name_prefix":"role-"}},
+    {"address":"aws_iam_group.unknown","type":"aws_iam_group","values":{"name":null,"name_prefix":"group-"}},
+    {"address":"aws_iam_policy.unknown","type":"aws_iam_policy","values":{"name":null,"name_prefix":"policy-"}}
+  ]}},
+  "configuration": {"root_module": {"resources": []}}
+}`)
+
+	snapshot, err := CollectionSnapshotFromTerraformPlan(plan, TerraformPlanOptions{AccountID: "111111111111"})
+	require.NoError(t, err)
+	require.Zero(t, snapshot.GAAD.Users.Len())
+	require.Zero(t, snapshot.GAAD.Roles.Len())
+	require.Zero(t, snapshot.GAAD.Groups.Len())
+	require.Zero(t, snapshot.GAAD.Policies.Len())
+	require.Len(t, snapshot.Unknowns, 4)
+	for _, unknown := range snapshot.Unknowns {
+		require.Equal(t, "name", unknown.Field)
+		require.True(t, unknown.SecurityCritical)
+	}
+	_, err = snapshot.Assemble()
+	require.ErrorContains(t, err, "name")
+}
+
 func TestTerraformPlanToCollectionSnapshotResolvesReferencesInsideChildModule(t *testing.T) {
 	plan := []byte(`{
   "format_version": "1.2",

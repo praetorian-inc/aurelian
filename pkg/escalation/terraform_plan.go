@@ -108,13 +108,19 @@ func CollectionSnapshotFromTerraformPlan(data []byte, opts TerraformPlanOptions)
 	for _, resource := range planned {
 		switch resource.Type {
 		case "aws_iam_user":
-			name := stringValue(resource.Values, "name")
+			name, ok := knownTerraformIAMName(snapshot, resource)
+			if !ok {
+				continue
+			}
 			path := normalizedIAMPath(stringValue(resource.Values, "path"))
 			arn := terraformIAMARN(opts.Partition, opts.AccountID, "user", path, name)
 			arnsByAddress[resource.Address] = arn
 			gaad.Users.Set(arn, types.UserDetail{Arn: arn, UserName: name, Path: path})
 		case "aws_iam_role":
-			name := stringValue(resource.Values, "name")
+			name, ok := knownTerraformIAMName(snapshot, resource)
+			if !ok {
+				continue
+			}
 			path := normalizedIAMPath(stringValue(resource.Values, "path"))
 			arn := terraformIAMARN(opts.Partition, opts.AccountID, "role", path, name)
 			arnsByAddress[resource.Address] = arn
@@ -126,13 +132,19 @@ func CollectionSnapshotFromTerraformPlan(data []byte, opts TerraformPlanOptions)
 			}
 			gaad.Roles.Set(arn, role)
 		case "aws_iam_group":
-			name := stringValue(resource.Values, "name")
+			name, ok := knownTerraformIAMName(snapshot, resource)
+			if !ok {
+				continue
+			}
 			path := normalizedIAMPath(stringValue(resource.Values, "path"))
 			arn := terraformIAMARN(opts.Partition, opts.AccountID, "group", path, name)
 			arnsByAddress[resource.Address] = arn
 			gaad.Groups.Set(arn, types.GroupDetail{Arn: arn, GroupName: name, Path: path})
 		case "aws_iam_policy":
-			name := stringValue(resource.Values, "name")
+			name, ok := knownTerraformIAMName(snapshot, resource)
+			if !ok {
+				continue
+			}
 			path := normalizedIAMPath(stringValue(resource.Values, "path"))
 			arn := terraformIAMARN(opts.Partition, opts.AccountID, "policy", path, name)
 			arnsByAddress[resource.Address] = arn
@@ -295,6 +307,18 @@ func normalizedIAMPath(path string) string {
 	return "/" + path + "/"
 }
 
+func knownTerraformIAMName(snapshot *CollectionSnapshot, resource terraformResource) (string, bool) {
+	name := stringValue(resource.Values, "name")
+	if name == "" {
+		snapshot.Unknowns = append(snapshot.Unknowns, CollectionUnknown{
+			Address: resource.Address, Field: "name",
+			Reason: "IAM resource name is unknown after plan", SecurityCritical: true,
+		})
+		return "", false
+	}
+	return name, true
+}
+
 func terraformIAMARN(partition, account, kind, path, name string) string {
-	return fmt.Sprintf("arn:%s:iam::%s:%s/%s%s", partition, account, kind, strings.Trim(path, "/")+map[bool]string{true: "/", false: ""}[strings.Trim(path, "/") != ""], name)
+	return fmt.Sprintf("arn:%s:iam::%s:%s%s%s", partition, account, kind, path, name)
 }
