@@ -29,6 +29,7 @@ var listResourceMap = map[string]resourceTypeInfo{
 	"artifactregistry.googleapis.com/Repository":  {aliases: []string{"artifactrepo"}},
 	"artifactregistry.googleapis.com/DockerImage": {aliases: []string{"dockerimage"}},
 	"firebasehosting.googleapis.com/Site":         {aliases: []string{"firebase", "hostingsite"}},
+	"container.googleapis.com/Cluster":            {aliases: []string{"gke", "cluster"}},
 }
 
 var hierarchyTypes = []string{"organizations", "folders", "projects"}

@@ -104,5 +104,6 @@ func buildDefaultListers(co []option.ClientOption) []ResourceLister {
 		NewAppEngineLister(co),
 		NewArtifactRegistryLister(co),
 		NewHostingLister(co),
+		NewClusterLister(co),
 	}
 }

@@ -56,3 +56,10 @@ func TestResolveAlias_Unknown(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestResolveAlias_GKE(t *testing.T) {
+	for _, alias := range []string{"gke", "cluster", "container.googleapis.com/Cluster"} {
+		got, err := resolveAlias(alias)
+		assert.NoError(t, err)
+		assert.Equal(t, "container.googleapis.com/Cluster", got)
+	}
+}
