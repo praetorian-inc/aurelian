@@ -60,6 +60,27 @@ func TestTerraformPlanToCollectionSnapshotMarksUnresolvedRoleReferenceCritical(t
 	require.ErrorContains(t, err, "role")
 }
 
+func TestTerraformPlanToCollectionSnapshotResolvesReferencesInsideChildModule(t *testing.T) {
+	plan := []byte(`{
+  "format_version": "1.2",
+  "planned_values": {"root_module": {"child_modules": [{"resources": [
+    {"address":"module.workload.aws_iam_role.admin","type":"aws_iam_role","values":{"name":"admin","path":"/"}},
+    {"address":"module.workload.aws_lambda_function.processor","type":"aws_lambda_function","values":{"function_name":"processor","role":null}}
+  ]}]}},
+  "configuration": {"root_module": {"module_calls": {"workload": {"module": {"resources": [
+    {"address":"aws_lambda_function.processor","expressions":{"role":{"references":["aws_iam_role.admin.arn"]}}}
+  ]}}}}}
+}`)
+
+	snapshot, err := CollectionSnapshotFromTerraformPlan(plan, TerraformPlanOptions{
+		AccountID: "111111111111",
+		Region:    "us-east-1",
+	})
+	require.NoError(t, err)
+	require.Empty(t, snapshot.Unknowns)
+	require.Equal(t, "arn:aws:iam::111111111111:role/admin", snapshot.Resources[0].Properties["Role"])
+}
+
 func TestTerraformPlanToCollectionSnapshotConvertsIAMInlinePolicies(t *testing.T) {
 	plan := []byte(`{
   "format_version": "1.2",

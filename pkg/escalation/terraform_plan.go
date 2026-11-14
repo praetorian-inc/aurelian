@@ -49,6 +49,7 @@ type terraformConfigModule struct {
 type terraformConfigResource struct {
 	Address     string                         `json:"address"`
 	Expressions map[string]terraformExpression `json:"expressions"`
+	ModulePath  string                         `json:"-"`
 }
 
 type terraformExpression struct {
@@ -92,7 +93,7 @@ func CollectionSnapshotFromTerraformPlan(data []byte, opts TerraformPlanOptions)
 	}
 
 	planned := flattenTerraformResources(plan.PlannedValues.RootModule)
-	configured := flattenTerraformConfigResources(plan.Configuration.RootModule)
+	configured := flattenTerraformConfigResources(plan.Configuration.RootModule, "")
 	gaad := types.NewAuthorizationAccountDetails(opts.AccountID, nil, nil, nil, nil)
 	snapshot := &CollectionSnapshot{
 		Version:  CollectionSnapshotVersion,
@@ -195,13 +196,15 @@ func flattenTerraformResources(module terraformModule) []terraformResource {
 	return result
 }
 
-func flattenTerraformConfigResources(module terraformConfigModule) map[string]terraformConfigResource {
+func flattenTerraformConfigResources(module terraformConfigModule, modulePath string) map[string]terraformConfigResource {
 	result := make(map[string]terraformConfigResource)
 	for _, resource := range module.Resources {
-		result[resource.Address] = resource
+		resource.ModulePath = modulePath
+		result[modulePath+resource.Address] = resource
 	}
-	for _, call := range module.ModuleCalls {
-		for address, resource := range flattenTerraformConfigResources(call.Module) {
+	for name, call := range module.ModuleCalls {
+		childPath := modulePath + "module." + name + "."
+		for address, resource := range flattenTerraformConfigResources(call.Module, childPath) {
 			result[address] = resource
 		}
 	}
@@ -270,6 +273,9 @@ func resolveTerraformReference(resource terraformResource, config terraformConfi
 	for _, reference := range config.Expressions[field].References {
 		address := strings.TrimSuffix(reference, ".arn")
 		if value := arns[address]; value != "" {
+			return value, true
+		}
+		if value := arns[config.ModulePath+address]; value != "" {
 			return value, true
 		}
 	}
