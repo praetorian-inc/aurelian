@@ -76,6 +76,41 @@ func TestClusterLister_SendCluster_FallsBackWhenSelfLinkMissing(t *testing.T) {
 	)
 }
 
+func TestClusterLister_SendCluster_SurfacesEndpointInIPs(t *testing.T) {
+	cluster := &container.Cluster{
+		Name:     "prod-gke",
+		Location: "us-central1",
+		Endpoint: "203.0.113.10",
+	}
+
+	got := collectGCPResources(t, func(out *pipeline.P[output.GCPResource]) {
+		sendCluster("my-project", cluster, out)
+	})
+
+	require.Len(t, got, 1)
+	r := got[0]
+
+	// The control-plane endpoint must populate the dedicated IPs field that
+	// downstream enrichers/graph edges key off, mirroring InstanceLister.
+	assert.Equal(t, []string{"203.0.113.10"}, r.IPs)
+	// The Properties entry is kept for parity with the prior contract.
+	assert.Equal(t, "203.0.113.10", r.Properties["endpoint"])
+}
+
+func TestClusterLister_SendCluster_EmptyEndpointLeavesIPsUnset(t *testing.T) {
+	cluster := &container.Cluster{
+		Name:     "no-endpoint",
+		Location: "us-central1",
+	}
+
+	got := collectGCPResources(t, func(out *pipeline.P[output.GCPResource]) {
+		sendCluster("my-project", cluster, out)
+	})
+
+	require.Len(t, got, 1)
+	assert.Nil(t, got[0].IPs)
+}
+
 func TestClusterLister_ResourceTypes(t *testing.T) {
 	l := NewClusterLister(nil)
 	assert.Equal(t, []string{"container.googleapis.com/Cluster"}, l.ResourceTypes())

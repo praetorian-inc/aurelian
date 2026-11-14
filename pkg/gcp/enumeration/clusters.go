@@ -42,6 +42,10 @@ func (l *ClusterLister) List(projectID string, out *pipeline.P[output.GCPResourc
 		return fmt.Errorf("listing gke clusters: %w", err)
 	}
 
+	if len(resp.MissingZones) > 0 {
+		slog.Warn("gke clusters may be incomplete; some zones were unreachable", "project", projectID, "missingZones", resp.MissingZones)
+	}
+
 	for _, cluster := range resp.Clusters {
 		sendCluster(projectID, cluster, out)
 	}
@@ -90,6 +94,10 @@ func sendCluster(projectID string, cluster *container.Cluster, out *pipeline.P[o
 	r.DisplayName = cluster.Name
 	r.Location = cluster.Location
 	r.Labels = cluster.ResourceLabels
+
+	if cluster.Endpoint != "" {
+		r.IPs = []string{cluster.Endpoint}
+	}
 
 	r.Properties = map[string]any{
 		"status":               cluster.Status,
