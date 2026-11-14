@@ -108,6 +108,9 @@ func (s *CollectionSnapshot) validate() error {
 		if strings.TrimSpace(resource.ResourceType) == "" {
 			return fmt.Errorf("resource %q requires resource_type", identity)
 		}
+		if _, modeled := awsResourceTypeToSolver[resource.ResourceType]; modeled && strings.TrimSpace(resource.ARN) == "" {
+			return fmt.Errorf("modeled resource %q requires arn", identity)
+		}
 		if strings.TrimSpace(resource.AccountRef) == "" {
 			return fmt.Errorf("resource %q requires account_ref", identity)
 		}

@@ -181,6 +181,21 @@ func TestAssemble_EmptyGAAD_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no IAM principals")
 }
 
+func TestAssemble_AppendsSerializedAndLiveCollectionErrors(t *testing.T) {
+	coverage := NewCoverageTracker()
+	coverage.RecordError("live", "failed")
+	m, err := Assemble(AssembleInput{
+		GAAD:             newTestGAAD(),
+		Resources:        store.NewMap[output.AWSResource](),
+		Coverage:         coverage,
+		CollectionErrors: []CollectionError{{Source: "snapshot", Error: "failed"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, m.CollectionErrors, 2)
+	assert.Equal(t, "snapshot", m.CollectionErrors[0].Source)
+	assert.Equal(t, "live", m.CollectionErrors[1].Source)
+}
+
 func TestAssemble_PreservesRootTrust(t *testing.T) {
 	trustStmt := types.PolicyStatementList{
 		{
@@ -234,9 +249,9 @@ func TestAssemble_SpecificAttacker(t *testing.T) {
 	resources := newTestResources()
 
 	m, err := Assemble(AssembleInput{
-		GAAD:     gaad,
+		GAAD:      gaad,
 		Resources: resources,
-		Attacker: "arn:aws:iam::111111111111:user/Dev",
+		Attacker:  "arn:aws:iam::111111111111:user/Dev",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "arn:aws:iam::111111111111:user/Dev", m.Goal.Attacker)

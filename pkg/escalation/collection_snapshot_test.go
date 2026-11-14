@@ -94,6 +94,27 @@ func TestCollectionSnapshotRejectsDuplicateResourceIdentity(t *testing.T) {
 	require.ErrorContains(t, err, "duplicate resource identity")
 }
 
+func TestCollectionSnapshotRejectsMissingARNForEveryModeledResourceClass(t *testing.T) {
+	for resourceType := range awsResourceTypeToSolver {
+		t.Run(resourceType, func(t *testing.T) {
+			snapshot := CollectionSnapshot{
+				Version: CollectionSnapshotVersion,
+				GAAD: types.NewAuthorizationAccountDetails(
+					"111111111111", []types.UserDetail{{Arn: "attacker", UserName: "attacker"}}, nil, nil, nil,
+				),
+				Resources: []output.AWSResource{{
+					ResourceType: resourceType,
+					ResourceID:   "terraform-resource-name",
+					AccountRef:   "111111111111",
+				}},
+			}
+
+			_, err := snapshot.Assemble()
+			require.ErrorContains(t, err, "requires arn")
+		})
+	}
+}
+
 func TestCollectionSnapshotRejectsUnsupportedVersion(t *testing.T) {
 	snapshot := CollectionSnapshot{Version: "collection-snapshot-v2"}
 	_, err := snapshot.Assemble()

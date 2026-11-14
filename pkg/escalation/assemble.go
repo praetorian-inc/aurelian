@@ -76,7 +76,7 @@ func Assemble(in AssembleInput) (*Model, error) {
 			m.CollectionCoverage[acctID] = cov
 		}
 		if errs := in.Coverage.Errors(); len(errs) > 0 {
-			m.CollectionErrors = errs
+			m.CollectionErrors = append(m.CollectionErrors, errs...)
 		}
 	}
 
