@@ -161,6 +161,26 @@ func TestConvertConditions(t *testing.T) {
 	assert.Equal(t, "aws:SourceIp", byOp["IpAddress"].Key)
 }
 
+func TestConvertConditions_DeterministicOperatorKeyOrder(t *testing.T) {
+	cond := &types.Condition{
+		"StringEquals": types.ConditionStatement{
+			"aws:SourceVpc":       types.DynaString{"vpc-2"},
+			"aws:RequestedRegion": types.DynaString{"us-east-1"},
+		},
+		"IpAddress": types.ConditionStatement{
+			"aws:SourceIp": types.DynaString{"10.0.0.0/8"},
+		},
+	}
+	want := []string{"IpAddress/aws:SourceIp", "StringEquals/aws:RequestedRegion", "StringEquals/aws:SourceVpc"}
+	for i := 0; i < 50; i++ {
+		var got []string
+		for _, condition := range convertConditions(cond) {
+			got = append(got, condition.Operator+"/"+condition.Key)
+		}
+		assert.Equal(t, want, got)
+	}
+}
+
 func TestConvertConditions_Nil(t *testing.T) {
 	result := convertConditions(nil)
 	assert.Nil(t, result)

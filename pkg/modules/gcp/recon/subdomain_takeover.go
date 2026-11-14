@@ -55,21 +55,35 @@ func (m *GCPSubdomainTakeoverModule) SupportedResourceTypes() []string {
 func (m *GCPSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.GCPSubdomainTakeoverConfig
 
-	checker, err := dnstakeover.NewChecker(c.ClientOptions)
-	if err != nil {
-		return err
-	}
-
 	cfg.Info("scanning Cloud DNS for dangling records")
 
-	var records *pipeline.P[dnstakeover.DNSRecord]
+	// The checker needs the scan's full project list to establish Cloud DNS
+	// zone ownership, so the hierarchy is resolved to a slice first and the
+	// same slice feeds both the enumerator and the checker. The direct
+	// --resource-id path resolves no hierarchy, so its scope is the single
+	// --project-id it requires.
+	var (
+		records    *pipeline.P[dnstakeover.DNSRecord]
+		projectIDs []string
+		err        error
+	)
 	if len(c.ResourceID) > 0 {
+		projectIDs = slices.Clone(c.ProjectID)
 		records, err = m.listRecordsByResourceID(c)
 		if err != nil {
 			return err
 		}
 	} else {
-		records = m.listRecordsByHierarchy(cfg, c)
+		projectIDs, err = m.resolveProjects(c)
+		if err != nil {
+			return fmt.Errorf("resolving projects: %w", err)
+		}
+		records = m.listRecords(cfg, c, projectIDs)
+	}
+
+	checker, err := dnstakeover.NewChecker(c.ClientOptions, projectIDs)
+	if err != nil {
+		return err
 	}
 
 	pipeline.Pipe(records, checker.Check, out, &pipeline.PipeOpts{
@@ -84,7 +98,10 @@ func (m *GCPSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[mode
 	return nil
 }
 
-func (m *GCPSubdomainTakeoverModule) listRecordsByHierarchy(cfg plugin.Config, c GCPSubdomainTakeoverConfig) *pipeline.P[dnstakeover.DNSRecord] {
+// resolveProjects materializes the org/folder/project hierarchy into the list
+// of projects in scope for this scan. It is resolved once and reused, so adding
+// the ownership lookup costs no additional hierarchy API traffic.
+func (m *GCPSubdomainTakeoverModule) resolveProjects(c GCPSubdomainTakeoverConfig) ([]string, error) {
 	resolver := hierarchy.NewResolver(c.GCPCommonRecon)
 	input := hierarchy.HierarchyResolverInput{
 		OrgIDs:     c.OrgID,
@@ -99,9 +116,13 @@ func (m *GCPSubdomainTakeoverModule) listRecordsByHierarchy(cfg plugin.Config, c
 	projects := pipeline.New[string]()
 	pipeline.Pipe(resolved, filterProjects, projects)
 
+	return projects.Collect()
+}
+
+func (m *GCPSubdomainTakeoverModule) listRecords(cfg plugin.Config, c GCPSubdomainTakeoverConfig, projectIDs []string) *pipeline.P[dnstakeover.DNSRecord] {
 	enumerator := dnstakeover.NewDNSEnumerator(c.ClientOptions)
 	records := pipeline.New[dnstakeover.DNSRecord]()
-	pipeline.Pipe(projects, enumerator.EnumerateProject, records, &pipeline.PipeOpts{
+	pipeline.Pipe(pipeline.From(projectIDs...), enumerator.EnumerateProject, records, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("enumerating dns records"),
 	})
 	return records

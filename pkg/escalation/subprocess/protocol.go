@@ -137,79 +137,85 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 
 		var req Request
 		if err := json.Unmarshal(line, &req); err != nil {
-			writeJSON(w, ErrorResponse{Error: fmt.Sprintf("invalid JSON: %v", err)})
+			if err := writeJSON(w, ErrorResponse{Error: fmt.Sprintf("invalid JSON: %v", err)}); err != nil {
+				return fmt.Errorf("writing response: %w", err)
+			}
 			continue
 		}
 
+		var response any
 		switch req.Type {
 		case TypeHandshake:
-			writeJSON(w, HandshakeResponse{
+			response = HandshakeResponse{
 				Version:      ProtocolVersion,
 				Capabilities: capabilities,
-			})
+			}
 
 		case TypeCheckSpecific:
 			resp, err := h.CheckSpecific(req.Principal, req.Action, req.Target)
 			if err != nil {
 				slog.Error("check_specific failed", "error", err)
-				writeJSON(w, ErrorResponse{Error: err.Error()})
+				response = ErrorResponse{Error: err.Error()}
 			} else {
-				writeJSON(w, resp)
+				response = resp
 			}
 
 		case TypeCheckAnyTarget:
 			resp, err := h.CheckAnyTarget(req.Principal, req.Action)
 			if err != nil {
 				slog.Error("check_any_target failed", "error", err)
-				writeJSON(w, ErrorResponse{Error: err.Error()})
+				response = ErrorResponse{Error: err.Error()}
 			} else {
-				writeJSON(w, resp)
+				response = resp
 			}
 
 		case TypeCheckCounterfactual:
 			resp, err := h.CheckCounterfactual(req.Principal, req.Action, req.Target, req.RemovedStatements)
 			if err != nil {
 				slog.Error("check_counterfactual failed", "error", err)
-				writeJSON(w, ErrorResponse{Error: err.Error()})
+				response = ErrorResponse{Error: err.Error()}
 			} else {
-				writeJSON(w, resp)
+				response = resp
 			}
 
 		case TypeWhoCanBulk:
 			grants, err := h.WhoCanBulk(req.Action, req.Principals, req.Targets)
 			if err != nil {
 				slog.Error("who_can_bulk failed", "error", err)
-				writeJSON(w, ErrorResponse{Error: err.Error()})
+				response = ErrorResponse{Error: err.Error()}
 			} else {
-				writeJSON(w, WhoCanBulkResponse{Grants: grants})
+				response = WhoCanBulkResponse{Grants: grants}
 			}
 
 		case TypeWhoCan:
 			grants, err := h.WhoCan(req.Action, req.Principals)
 			if err != nil {
 				slog.Error("who_can failed", "error", err)
-				writeJSON(w, ErrorResponse{Error: err.Error()})
+				response = ErrorResponse{Error: err.Error()}
 			} else {
 				if grants == nil {
 					grants = []Grant{}
 				}
-				writeJSON(w, WhoCanBulkResponse{Grants: grants})
+				response = WhoCanBulkResponse{Grants: grants}
 			}
 
 		case TypeListGrants:
 			resp, err := h.ListGrants()
 			if err != nil {
 				slog.Error("list_grants failed", "error", err)
-				writeJSON(w, ErrorResponse{Error: err.Error()})
+				response = ErrorResponse{Error: err.Error()}
 			} else {
-				writeJSON(w, resp)
+				response = resp
 			}
 
 		case TypeShutdown:
 			return nil
 
 		default:
-			writeJSON(w, ErrorResponse{Error: fmt.Sprintf("unknown query type: %q", req.Type)})
+			response = ErrorResponse{Error: fmt.Sprintf("unknown query type: %q", req.Type)}
+		}
+		if err := writeJSON(w, response); err != nil {
+			return fmt.Errorf("writing response: %w", err)
 		}
 	}
 
@@ -217,12 +223,18 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 }
 
 // writeJSON writes a single JSON object followed by a newline.
-func writeJSON(w io.Writer, v any) {
+func writeJSON(w io.Writer, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
-		slog.Error("failed to marshal response", "error", err)
-		return
+		return fmt.Errorf("marshaling response: %w", err)
 	}
 	data = append(data, '\n')
-	_, _ = w.Write(data)
+	n, err := w.Write(data)
+	if err != nil {
+		return err
+	}
+	if n != len(data) {
+		return io.ErrShortWrite
+	}
+	return nil
 }

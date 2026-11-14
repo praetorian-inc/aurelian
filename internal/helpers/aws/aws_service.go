@@ -10,6 +10,32 @@ var GlobalServices = []string{
 	"AWS::Route53::",
 	"AWS::Organizations::",
 	"AWS::ECR::PublicRepository",
+	"AWS::GlobalAccelerator::",
+}
+
+// globalServiceRegions overrides the default control-plane region for global
+// services that are not served from us-east-1. Global Accelerator's API is
+// reachable only in us-west-2.
+var globalServiceRegions = map[string]string{
+	"AWS::GlobalAccelerator::": "us-west-2",
+}
+
+// GlobalServiceControlPlaneRegion returns the region hosting a global service's
+// control plane, and whether the resource type is global at all. Callers that
+// must issue an API call for a resource whose ARN carries no region use this
+// instead of assuming us-east-1.
+func GlobalServiceControlPlaneRegion(resourceType string) (string, bool) {
+	if !IsGlobalService(resourceType) {
+		return "", false
+	}
+
+	for prefix, region := range globalServiceRegions {
+		if strings.HasPrefix(resourceType, prefix) {
+			return region, true
+		}
+	}
+
+	return "us-east-1", true
 }
 
 func IsGlobalService(resourceType string) bool {
@@ -30,8 +56,10 @@ func IsGlobalService(resourceType string) bool {
 // arrive with a genuinely empty region, which is a real bug and should keep
 // triggering the NewAWSConfig warning rather than being silently defaulted.
 func RegionForService(resourceType, resourceRegion string) string {
-	if resourceRegion == "" && IsGlobalService(resourceType) {
-		return "us-east-1"
+	if resourceRegion == "" {
+		if region, ok := GlobalServiceControlPlaneRegion(resourceType); ok {
+			return region
+		}
 	}
 	return resourceRegion
 }

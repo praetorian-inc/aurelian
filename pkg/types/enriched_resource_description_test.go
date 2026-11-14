@@ -83,3 +83,38 @@ func TestResolveResourceType_OpenSearch(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveResourceType_CloudFront locks the by-ARN dispatch for CloudFront
+// (LAB-7805). Guard invokes public-resources in ARN mode exclusively; with no
+// "cloudfront" entry in the service map, every distribution failed with
+// `unsupported arn service "cloudfront"` before any AWS call was made.
+//
+// CloudFront ARNs are path-style under a single service segment, so the
+// distribution rule must not swallow the other CloudFront resource kinds.
+func TestResolveResourceType_CloudFront(t *testing.T) {
+	cases := []struct {
+		name     string
+		resource string
+		wantType string
+		wantOK   bool
+	}{
+		{"distribution", "distribution/E124R3VALIF56C", "AWS::CloudFront::Distribution", true},
+		{"function", "function/my-edge-fn", "AWS::CloudFront::Function", true},
+		{"origin-access-control", "origin-access-control/E2ABCDEF", "AWS::CloudFront::OriginAccessControl", true},
+		{"cache-policy", "cache-policy/4135ea2d-6df8-44a3-9df3-4b5a84be39ad", "AWS::CloudFront::CachePolicy", true},
+		{"response-headers-policy", "response-headers-policy/60669652-455b-4ae9-85a4-c4c02393f86c", "AWS::CloudFront::ResponseHeadersPolicy", true},
+		// Unprefixed resource segments fall back to the dominant kind rather
+		// than failing the job outright.
+		{"bare-id-fallback", "E124R3VALIF56C", "AWS::CloudFront::Distribution", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ResolveResourceType("cloudfront", tc.resource)
+			if got != tc.wantType || ok != tc.wantOK {
+				t.Errorf("ResolveResourceType(cloudfront, %q)\n  got:  (%q, %v)\n  want: (%q, %v)",
+					tc.resource, got, ok, tc.wantType, tc.wantOK)
+			}
+		})
+	}
+}

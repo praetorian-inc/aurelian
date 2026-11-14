@@ -122,6 +122,17 @@ func runProtocol(t *testing.T, input string, h Handler) []string {
 	return lines
 }
 
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, fmt.Errorf("closed response pipe")
+}
+
+func TestServeReturnsResponseWriteFailure(t *testing.T) {
+	err := Serve(strings.NewReader(`{"type":"handshake","version":"1.0"}`+"\n"), failingWriter{}, newAllowHandler())
+	require.ErrorContains(t, err, "writing response")
+}
+
 func TestHandshake(t *testing.T) {
 	lines := runProtocol(t, `{"type":"handshake","version":"1.0"}`+"\n"+`{"type":"shutdown"}`+"\n", newAllowHandler())
 	require.Len(t, lines, 1)

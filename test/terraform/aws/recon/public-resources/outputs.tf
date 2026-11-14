@@ -81,7 +81,8 @@ output "internal_alb_arn" {
 }
 
 output "public_apprunner_arn" {
-  value = aws_apprunner_service.public.arn
+  # Empty when var.deploy_apprunner is false; the ARN-mode test skips empty outputs.
+  value = var.deploy_apprunner ? aws_apprunner_service.public[0].arn : ""
 }
 
 output "public_cloudfront_id" {
@@ -140,4 +141,8 @@ output "public_beanstalk_env" {
   # Full environment ARN (not the e-* id): the scanner emits the
   # environment/<app>/<env> ARN, which the env id would never match.
   value = var.deploy_expensive ? aws_elastic_beanstalk_environment.public[0].arn : ""
+}
+
+output "public_redshift_identifier" {
+  value = var.deploy_expensive ? aws_redshift_cluster.public[0].cluster_identifier : ""
 }

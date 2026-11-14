@@ -400,6 +400,71 @@ var serviceResourcePrefixes = map[string][]resourcePrefixEntry{
 	"ram": {
 		{prefix: "resource-share/", resourceType: "AWS::RAM::ResourceShare"},
 	},
+	// Load balancer ARNs distinguish v2 from Classic by the scheme segment that
+	// follows "loadbalancer/": app|net|gwy means ELBv2, a bare name means Classic.
+	// The bare-name rule must stay last — it is a prefix of the other three.
+	"elasticloadbalancing": {
+		{prefix: "loadbalancer/app/", resourceType: "AWS::ElasticLoadBalancingV2::LoadBalancer"},
+		{prefix: "loadbalancer/net/", resourceType: "AWS::ElasticLoadBalancingV2::LoadBalancer"},
+		{prefix: "loadbalancer/gwy/", resourceType: "AWS::ElasticLoadBalancingV2::LoadBalancer"},
+		{prefix: "targetgroup/", resourceType: "AWS::ElasticLoadBalancingV2::TargetGroup"},
+		{prefix: "loadbalancer/", resourceType: "AWS::ElasticLoadBalancing::LoadBalancer"},
+	},
+	// API Gateway v1 and v2 share the "apigateway" service segment and are told
+	// apart only by the path. Without these rules an HTTP API ARN resolves to
+	// AWS::ApiGateway::RestApi and the lookup fails against the wrong handler.
+	"apigateway": {
+		{prefix: "/restapis/", resourceType: "AWS::ApiGateway::RestApi"},
+		{prefix: "/apis/", resourceType: "AWS::ApiGatewayV2::Api"},
+	},
+	"eks": {
+		{prefix: "cluster/", resourceType: "AWS::EKS::Cluster"},
+		{prefix: "nodegroup/", resourceType: "AWS::EKS::Nodegroup"},
+	},
+	"elasticbeanstalk": {
+		{prefix: "environment/", resourceType: "AWS::ElasticBeanstalk::Environment"},
+		{prefix: "application/", resourceType: "AWS::ElasticBeanstalk::Application"},
+	},
+	"globalaccelerator": {
+		{prefix: "accelerator/", resourceType: "AWS::GlobalAccelerator::Accelerator"},
+	},
+	"apprunner": {
+		{prefix: "service/", resourceType: "AWS::AppRunner::Service"},
+	},
+	"appsync": {
+		{prefix: "apis/", resourceType: "AWS::AppSync::GraphQLApi"},
+	},
+	"transfer": {
+		{prefix: "server/", resourceType: "AWS::Transfer::Server"},
+		{prefix: "user/", resourceType: "AWS::Transfer::User"},
+	},
+	"redshift": {
+		{prefix: "cluster:", resourceType: "AWS::Redshift::Cluster"},
+	},
+	// Both the modern "efs" and the historical "elasticfilesystem" service
+	// segments appear on live file-system ARNs.
+	"efs": {
+		{prefix: "file-system/", resourceType: "AWS::EFS::FileSystem"},
+		{prefix: "access-point/", resourceType: "AWS::EFS::AccessPoint"},
+	},
+	"elasticfilesystem": {
+		{prefix: "file-system/", resourceType: "AWS::EFS::FileSystem"},
+		{prefix: "access-point/", resourceType: "AWS::EFS::AccessPoint"},
+	},
+	// CloudFront packs every resource kind under one service segment and
+	// distinguishes them by path prefix. Without these rules a distribution ARN
+	// resolves to nothing and by-ARN targeting fails before any AWS call.
+	"cloudfront": {
+		{prefix: "distribution/", resourceType: "AWS::CloudFront::Distribution"},
+		{prefix: "streaming-distribution/", resourceType: "AWS::CloudFront::StreamingDistribution"},
+		{prefix: "function/", resourceType: "AWS::CloudFront::Function"},
+		{prefix: "origin-access-control/", resourceType: "AWS::CloudFront::OriginAccessControl"},
+		{prefix: "origin-request-policy/", resourceType: "AWS::CloudFront::OriginRequestPolicy"},
+		{prefix: "response-headers-policy/", resourceType: "AWS::CloudFront::ResponseHeadersPolicy"},
+		{prefix: "cache-policy/", resourceType: "AWS::CloudFront::CachePolicy"},
+		{prefix: "key-group/", resourceType: "AWS::CloudFront::KeyGroup"},
+		{prefix: "public-key/", resourceType: "AWS::CloudFront::PublicKey"},
+	},
 	"ssm": {
 		{prefix: "document/", resourceType: "AWS::SSM::Document"},
 		{prefix: "parameter/", resourceType: "AWS::SSM::Parameter"},
@@ -412,20 +477,30 @@ var serviceResourcePrefixes = map[string][]resourcePrefixEntry{
 
 // serviceDefaultResourceType is the fallback when no prefix rule matches.
 var serviceDefaultResourceType = map[string]string{
-	"amplify":           "AWS::Amplify::App",
-	"ec2":               "AWS::EC2::Instance",
-	"s3":                "AWS::S3::Bucket",
-	"lambda":            "AWS::Lambda::Function",
-	"iam":               "AWS::IAM::Role",
-	"cloudformation":    "AWS::CloudFormation::Stack",
-	"sqs":               "AWS::SQS::Queue",
-	"sns":               "AWS::SNS::Topic",
-	"rds":               "AWS::RDS::DBInstance",
-	"dynamodb":          "AWS::DynamoDB::Table",
-	"ecr":               "AWS::ECR::Repository",
-	"ecs":               "AWS::ECS::Cluster",
-	"elasticache":       "AWS::ElastiCache::CacheCluster",
-	"elasticsearch":     "AWS::Elasticsearch::Domain",
+	"amplify":              "AWS::Amplify::App",
+	"ec2":                  "AWS::EC2::Instance",
+	"s3":                   "AWS::S3::Bucket",
+	"lambda":               "AWS::Lambda::Function",
+	"iam":                  "AWS::IAM::Role",
+	"cloudformation":       "AWS::CloudFormation::Stack",
+	"cloudfront":           "AWS::CloudFront::Distribution",
+	"elasticloadbalancing": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+	"eks":                  "AWS::EKS::Cluster",
+	"efs":                  "AWS::EFS::FileSystem",
+	"appsync":              "AWS::AppSync::GraphQLApi",
+	"transfer":             "AWS::Transfer::Server",
+	"elasticbeanstalk":     "AWS::ElasticBeanstalk::Environment",
+	"globalaccelerator":    "AWS::GlobalAccelerator::Accelerator",
+	"redshift":             "AWS::Redshift::Cluster",
+	"apprunner":            "AWS::AppRunner::Service",
+	"sqs":                  "AWS::SQS::Queue",
+	"sns":                  "AWS::SNS::Topic",
+	"rds":                  "AWS::RDS::DBInstance",
+	"dynamodb":             "AWS::DynamoDB::Table",
+	"ecr":                  "AWS::ECR::Repository",
+	"ecs":                  "AWS::ECS::Cluster",
+	"elasticache":          "AWS::ElastiCache::CacheCluster",
+	"elasticsearch":        "AWS::Elasticsearch::Domain",
 	// OpenSearch and legacy Elasticsearch domain ARNs both use the "es" service
 	// segment (arn:aws:es:...:domain/<name>). Route them to the type the native
 	// OpenSearchDomainEnumerator is registered under so by-ARN targeting works;

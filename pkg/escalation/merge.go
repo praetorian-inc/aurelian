@@ -173,7 +173,6 @@ func MergeModels(models []*Model) (*Model, error) {
 	return merged, nil
 }
 
-
 func findResource(resources []Resource, arn string) *Resource {
 	for i := range resources {
 		if resources[i].ARN == arn {
@@ -221,7 +220,17 @@ func sortedStatements(s []PolicyStatement) []PolicyStatement {
 
 func tripleKey(t *EvaluatedTriple) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%v", t.Principal, t.Action, t.Target, t.Allowed)
+	h.Write([]byte(t.Principal))
+	h.Write([]byte{0})
+	h.Write([]byte(t.Action))
+	h.Write([]byte{0})
+	h.Write([]byte(t.Target))
+	h.Write([]byte{0})
+	if t.Allowed {
+		h.Write([]byte{1})
+	} else {
+		h.Write([]byte{0})
+	}
 	if len(t.Conditions) > 0 {
 		cj, _ := json.Marshal(t.Conditions)
 		h.Write(cj)
@@ -367,4 +376,3 @@ func copyModel(m *Model) *Model {
 	}
 	return &out
 }
-

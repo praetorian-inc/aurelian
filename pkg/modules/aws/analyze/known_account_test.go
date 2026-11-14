@@ -9,7 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-
 func TestThinkstCanaryDetection_NonCanary(t *testing.T) {
 	nonCanary := "123456789012"
 	found := false
