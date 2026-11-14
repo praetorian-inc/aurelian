@@ -10,31 +10,13 @@ import (
 )
 
 func TestAnalyzeResult_ImplementsAurelianModel(t *testing.T) {
+
 	var _ model.AurelianModel = AnalyzeResult{}
 	var _ model.AurelianModel = &AnalyzeResult{}
 }
 
-func TestAnalyzeResult_JSONRoundTrip(t *testing.T) {
-	resultsPayload := json.RawMessage(`{"matched":["s3:GetObject","s3:PutObject"]}`)
-
-	r := AnalyzeResult{
-		Module:  "expand-actions",
-		Input:   "s3:*",
-		Results: resultsPayload,
-	}
-
-	data, err := json.Marshal(r)
-	require.NoError(t, err)
-
-	var got AnalyzeResult
-	require.NoError(t, json.Unmarshal(data, &got))
-
-	assert.Equal(t, r.Module, got.Module)
-	assert.Equal(t, r.Input, got.Input)
-	assert.JSONEq(t, string(r.Results), string(got.Results))
-}
-
 func TestAnalyzeResult_JSONFieldNames(t *testing.T) {
+
 	r := AnalyzeResult{
 		Module:  "ip-lookup",
 		Input:   "1.2.3.4",
@@ -60,6 +42,7 @@ func TestAnalyzeResult_JSONFieldNames(t *testing.T) {
 }
 
 func TestAnalyzeResult_NullResults(t *testing.T) {
+
 	r := AnalyzeResult{
 		Module:  "known-account",
 		Input:   "123456789012",

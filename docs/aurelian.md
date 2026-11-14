@@ -17,6 +17,7 @@ potential security issues in cloud environments.
 
 * [aurelian aws](aurelian_aws.md)	 - aws platform commands
 * [aurelian azure](aurelian_azure.md)	 - azure platform commands
+* [aurelian escalation](aurelian_escalation.md)	 - Escalation model utilities
 * [aurelian gcp](aurelian_gcp.md)	 - gcp platform commands
 * [aurelian help](aurelian_help.md)	 - Help about any command
 * [aurelian list-modules](aurelian_list-modules.md)	 - Display available Aurelian modules in a tree structure

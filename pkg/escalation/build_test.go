@@ -45,8 +45,8 @@ func newTestGAAD() *types.AuthorizationAccountDetails {
 		"111111111111",
 		[]types.UserDetail{
 			{
-				Arn:      "arn:aws:iam::111111111111:user/Dev",
-				UserName: "Dev",
+				Arn:       "arn:aws:iam::111111111111:user/Dev",
+				UserName:  "Dev",
 				GroupList: []string{"Developers"},
 				AttachedManagedPolicies: []types.ManagedPolicy{
 					{PolicyName: "ReadOnly", PolicyArn: "arn:aws:iam::111111111111:policy/ReadOnly"},
@@ -436,6 +436,33 @@ func TestCollectStructuralFacts_EmptyInputs(t *testing.T) {
 	resources := store.NewMap[output.AWSResource]()
 	facts := CollectStructuralFacts(gaad, resources)
 	assert.Empty(t, facts)
+}
+
+func TestCollectStructuralFacts_ProfileNameIndexDoesNotAliasARNIndex(t *testing.T) {
+	roleA := "arn:aws:iam::111111111111:role/A"
+	roleB := "arn:aws:iam::111111111111:role/B"
+	profileARN := "arn:aws:iam::111111111111:instance-profile/shared"
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, []types.RoleDetail{{
+		Arn: roleA,
+		InstanceProfileList: []types.InstanceProfile{
+			{Arn: profileARN, InstanceProfileName: "first-name", Roles: []types.InstanceProfileRole{{Arn: roleA}}},
+			{Arn: profileARN, InstanceProfileName: "second-name", Roles: []types.InstanceProfileRole{{Arn: roleB}}},
+		},
+	}}, nil)
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("instance", output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ARN:          "arn:aws:ec2:us-east-1:111111111111:instance/i-1",
+		Properties:   map[string]any{"IamInstanceProfile": "first-name"},
+	})
+
+	var targets []string
+	for _, fact := range CollectStructuralFacts(gaad, resources) {
+		if fact.Type == FactInstanceProfile {
+			targets = append(targets, fact.To)
+		}
+	}
+	assert.ElementsMatch(t, []string{roleA, roleB}, targets)
 }
 
 func TestCollectResources_EmptyResources(t *testing.T) {
@@ -968,7 +995,7 @@ func TestCollectStructuralFacts_WildcardTrustPrincipal(t *testing.T) {
 	// trust_relationship fact with To="*", not be silently dropped.
 	wildcardTrustStmt := types.PolicyStatementList{
 		{
-			Effect:   "Allow",
+			Effect: "Allow",
 			Principal: &types.Principal{
 				AWS: &types.DynaString{"*"},
 			},
@@ -983,8 +1010,8 @@ func TestCollectStructuralFacts_WildcardTrustPrincipal(t *testing.T) {
 		nil, nil,
 		[]types.RoleDetail{
 			{
-				Arn:                     "arn:aws:iam::111111111111:role/OpenRole",
-				RoleName:                "OpenRole",
+				Arn:                      "arn:aws:iam::111111111111:role/OpenRole",
+				RoleName:                 "OpenRole",
 				AssumeRolePolicyDocument: wildcardTrustPolicy,
 			},
 		},

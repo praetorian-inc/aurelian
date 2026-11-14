@@ -97,7 +97,9 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("writing to stdout: %w", err)
 		}
-		fmt.Fprintln(os.Stdout)
+		if _, err := fmt.Fprintln(os.Stdout); err != nil {
+			return fmt.Errorf("writing trailing newline to stdout: %w", err)
+		}
 		return nil
 	}
 
