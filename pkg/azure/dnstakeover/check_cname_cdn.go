@@ -64,7 +64,7 @@ func checkCDN(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.Aureli
 }
 
 func checkCDNNameAvailability(ctx CheckContext, endpointName string) (bool, error) {
-	client, err := armcdn.NewManagementClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armcdn.NewManagementClient(ctx.SubscriptionID, ctx.Credential, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return false, fmt.Errorf("create cdn client: %w", err)
 	}

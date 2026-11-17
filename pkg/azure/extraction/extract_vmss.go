@@ -26,7 +26,7 @@ func extractVMSSUserData(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no virtualMachineScaleSets segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcompute.NewVirtualMachineScaleSetsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcompute.NewVirtualMachineScaleSetsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create VMSS client: %w", err)
 	}
@@ -77,7 +77,7 @@ func extractVMSSExtensions(ctx extractContext, r output.AzureResource, out *pipe
 		return fmt.Errorf("no virtualMachineScaleSets segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armcompute.NewVirtualMachineScaleSetExtensionsClient(r.SubscriptionID, ctx.Cred, nil)
+	client, err := armcompute.NewVirtualMachineScaleSetExtensionsClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create VMSS extensions client: %w", err)
 	}

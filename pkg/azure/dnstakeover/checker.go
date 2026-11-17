@@ -22,6 +22,7 @@ func NewDNSTakeoverChecker(ctx context.Context, opts plugin.AzureCommonRecon, su
 			Ctx:             ctx,
 			Opts:            opts,
 			Credential:      opts.AzureCredential,
+			Env:             opts.Env,
 			SubscriptionIDs: subscriptionIDs,
 			PublicIPCache:   &publicIPCache{},
 		},

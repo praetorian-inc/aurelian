@@ -30,7 +30,7 @@ func extractSynapseProperties(ctx extractContext, r output.AzureResource, out *p
 		return fmt.Errorf("no workspaces segment in resource ID %s", r.ResourceID)
 	}
 
-	wsClient, err := armsynapse.NewWorkspacesClient(r.SubscriptionID, ctx.Cred, nil)
+	wsClient, err := armsynapse.NewWorkspacesClient(r.SubscriptionID, ctx.Cred, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("failed to create Synapse workspaces client: %w", err)
 	}
