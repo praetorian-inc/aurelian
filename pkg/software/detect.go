@@ -40,7 +40,8 @@ type decoder func(props map[string]any) []finding
 var registry = map[string][]decoder{
 	"AWS::RDS::DBInstance":               {rdsEngine},
 	"AWS::RDS::DBCluster":                {rdsEngine},
-	"AWS::Lambda::Function":              {lambdaRuntime},
+	"AWS::Lambda::Function":              {lambdaRuntime, lambdaImageURI},
+	"AWS::ECS::TaskDefinition":           {ecsImages},
 	"AWS::EKS::Cluster":                  {eksVersion},
 	"AWS::OpenSearchService::Domain":     {opensearchEngine},
 	"AWS::ElastiCache::CacheCluster":     {elasticacheEngine},
