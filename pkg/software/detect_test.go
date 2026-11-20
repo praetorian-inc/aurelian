@@ -6,6 +6,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/software"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDetect_ManagedServiceVersions(t *testing.T) {
@@ -216,11 +217,62 @@ func TestDetect_WrongTypedPropertiesNeverPanic(t *testing.T) {
 func TestDetect_AgainstHarvestedFixtures(t *testing.T) {
 	// For every fixture file from phase 0, Detect must not panic and every CPE
 	// it returns must satisfy guard's key regex.
+	//
+	// The counts are asserted because this test would otherwise be vacuous and
+	// silently so: phase 0's account yielded 13 Lambda property bags whose
+	// listing omits Runtime entirely, and one ECS task definition whose only
+	// image is `alpine:latest` (no parseable version). Detect therefore returns
+	// nothing for all 14, the loop body never runs, and the test would pass
+	// just as well if Detect were `return nil`.
+	//
+	// Pinning the measured zero turns that into a signal: harvest a fixture
+	// that does carry a version and this test fails, which is the moment
+	// someone should look at what it now emits.
 	re := regexp.MustCompile(`^cpe:2\.3(:[^:]+){11}$`)
+
+	bags, techs := 0, 0
 	forEachFixture(t, func(resourceType string, props map[string]any) {
+		bags++
 		for _, tech := range software.Detect(resourceType, props) {
+			techs++
 			assert.Regexp(t, re, tech.CPE)
 			assert.NotEmpty(t, tech.Source)
 		}
 	})
+
+	assert.Equal(t, 14, bags, "fixture count changed; re-check what Detect now emits")
+	assert.Equal(t, 0, techs,
+		"phase 0's fixtures carry no usable version; a non-zero count means new "+
+			"fixtures were harvested and their output needs reviewing")
+}
+
+// The fixtures cannot exercise a successful detection, so the guard's-key-regex
+// property is also asserted against property bags shaped like the ones phase 0
+// failed to find. Without this, no test asserts that a *fixture-shaped* input
+// producing output produces a well-formed one.
+func TestDetect_FixtureShapedInputsProduceWellFormedCPEs(t *testing.T) {
+	re := regexp.MustCompile(`^cpe:2\.3(:[^:]+){11}$`)
+
+	emitted := 0
+	for _, tc := range []struct {
+		resourceType string
+		props        map[string]any
+	}{
+		{"AWS::RDS::DBInstance", map[string]any{"Engine": "postgres", "EngineVersion": "15.4"}},
+		{"AWS::ElastiCache::CacheCluster", map[string]any{"Engine": "redis", "EngineVersion": "7.0.5"}},
+		{"AWS::MSK::Cluster", map[string]any{"KafkaVersion": "3.6.0"}},
+		{"AWS::Lambda::Function", map[string]any{"Runtime": "java21"}},
+		{"AWS::ECS::TaskDefinition", map[string]any{"ContainerDefinitions": []any{
+			map[string]any{"Image": "nginx:1.25.3"},
+			map[string]any{"Image": "public.ecr.aws/docker/library/postgres:15.4"},
+		}}},
+	} {
+		for _, tech := range software.Detect(tc.resourceType, tc.props) {
+			emitted++
+			assert.Regexp(t, re, tech.CPE, tc.resourceType)
+			assert.NotEmpty(t, tech.Source, tc.resourceType)
+			assert.NotEmpty(t, tech.Evidence, tc.resourceType)
+		}
+	}
+	require.NotZero(t, emitted, "assertions above must actually run")
 }
