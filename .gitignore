@@ -28,6 +28,9 @@ debug.log*
 # Committed test fixtures: real CloudControl property bags harvested from a live
 # account (phase 0), which every pkg/software detector is tested against.
 !pkg/software/testdata/properties/**/*.json
+# Committed test fixtures: recorded NVD /cpes/2.0 responses, which share the
+# bulk dictionary feed's schema and drive the generator's tests offline.
+!pkg/cpe/testdata/nvd/*.json
 docker-images
 .claude/*
 .worktrees/
