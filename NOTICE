@@ -1,0 +1,23 @@
+Aurelian
+Copyright Praetorian Security, Inc.
+
+This product includes software developed at Praetorian Security, Inc.
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+--------------------------------------------------------------------------------
+
+National Vulnerability Database (NVD) CPE Dictionary
+
+pkg/cpe/cpemap.json.gz is generated from the NVD CPE dictionary bulk feed:
+
+    https://nvd.nist.gov/feeds/json/cpe/2.0/nvdcpe-2.0.tar.gz
+
+It is a distillation of that dictionary's live application entries into a
+product-to-vendor-to-version mapping. The snapshot date of the feed it was
+generated from is recorded in pkg/cpe/snapshot_gen.go as NVDSnapshot, and the
+file is regenerated with `go generate ./pkg/cpe/...`.
+
+NVD data is produced by the National Institute of Standards and Technology
+(NIST), an agency of the United States government. As a work of the U.S.
+Government it is in the public domain and carries no redistribution
+restriction. NIST does not endorse any product or service that uses this data.

@@ -85,6 +85,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.18.0
 	github.com/hashicorp/terraform-exec v0.24.0
+	github.com/knqyf263/go-cpe v0.0.0-20261105105232-0e8dfa8dd44c
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.96.0
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0
