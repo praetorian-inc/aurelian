@@ -57,6 +57,10 @@ type AWSResource struct {
 
 	// AccessLevel is a typed result of public access evaluation for this resource.
 	AccessLevel AccessLevel `json:"access_level,omitempty"`
+
+	// Technologies are CPE-identifiable software observed on this resource.
+	// Additive: an emit with an empty slice asserts nothing and removes nothing.
+	Technologies []Technology `json:"technologies,omitempty"`
 }
 
 // NewAWSResource constructs an AWSResource with the required core fields.

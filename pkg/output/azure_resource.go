@@ -17,6 +17,10 @@ type AzureResource struct {
 	DisplayName      string            `json:"display_name,omitempty"`
 	Tags             map[string]string `json:"tags,omitempty"`
 	Properties       map[string]any    `json:"properties,omitempty"`
+
+	// Technologies are CPE-identifiable software observed on this resource.
+	// Additive: an emit with an empty slice asserts nothing and removes nothing.
+	Technologies []Technology `json:"technologies,omitempty"`
 }
 
 // NewAzureResource creates an AzureResource with required fields.
