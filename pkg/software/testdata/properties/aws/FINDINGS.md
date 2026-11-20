@@ -74,11 +74,42 @@ reference is `alpine:latest`, a tag carrying no parseable version. Under the
 spec's normalisation rules that emits nothing, which is the intended behaviour
 and the only end-to-end tier-2 case this account exercises.
 
-Consequence for phase 1: the resolution rule stays as the spec writes it —
-minor-only versions that no live dictionary entry carries emit nothing. There is
-no measured evidence here for widening it, and the spec's anti-goal ("emitting a
-confidently wrong CPE") sets the default. Revisit once tier 1 runs against an
-account that actually holds EKS/RDS/OpenSearch.
+Consequence for phase 1: the resolution rule stays as the spec writes it. There
+is no measured evidence here for widening it, and the spec's anti-goal
+("emitting a confidently wrong CPE") sets the default. Revisit once tier 1 runs
+against an account that actually holds EKS/RDS/OpenSearch.
+
+### What "the rule stays as the spec writes it" actually does
+
+The gap is **not** resolved uniformly, and an earlier draft of this document
+said it was. A minor-only version is dropped for a product with several vendors
+(rule 3) and *accepted* for a product with exactly one (rule 2), because rule 2
+takes the sole vendor whatever the version. So the open question is already
+answered — inconsistently, in whichever direction the vendor count falls.
+
+Measured end-to-end through `Detect`, against values AWS actually produces:
+
+| Type | Input | Emits |
+|---|---|---|
+| `AWS::EKS::Cluster` | `1.29` **and** `1.29.0` | nothing, ever (`kubernetes` has 2 vendors) |
+| `AWS::OpenSearchService::Domain` | `OpenSearch_2.11`, `Elasticsearch_7.10` | nothing, ever |
+| `AWS::Redshift::Cluster` | any | nothing, ever (NVD has no `redshift` product) |
+| `AWS::Lambda::Function` | `python3.12`, `nodejs20.x`, `go1.x` | nothing |
+| `AWS::Lambda::Function` | `java21`, `dotnet8`, `ruby3.2` | `oracle:openjdk:21`, `microsoft:.net:8`, `ruby-lang:ruby:3.2` |
+| `AWS::ElasticBeanstalk::Environment` | `running Python 3.11` | nothing |
+| `AWS::ElasticBeanstalk::Environment` | `running PHP 8.1`, `running Ruby 3.2` | `php:php:8.1`, `ruby-lang:ruby:3.2` |
+| `AWS::RDS::*`, `AWS::MSK::Cluster`, `AWS::ElastiCache::*` | patch-level versions | emits normally |
+
+**Three of the ten tier-1 types are dead and two more are half-dead.** That is
+the number the phase-2 decision should be made against, and it is a stronger
+argument for revisiting the rule than anything in the original spec. The
+emissions rule 2 does produce (`php:php:8.1`) name the right vendor and product
+but carry a version no dictionary entry has, so guard's matcher may resolve them
+to no CVEs — a spurious-but-harmless node rather than a wrong one.
+
+Pinned by `TestDetect_Tier1CoverageAgainstRealAWSValues`, so a change to the
+resolution rule shows up as a diff in that test rather than as a silent change
+in customer inventory.
 
 ---
 

@@ -23,15 +23,31 @@ func TestResolveVendors_EmptyWhenUndecidable(t *testing.T) {
 	assert.Empty(t, cpe.ResolveVendors("kubernetes", "1.29.0")) // 2 vendors, neither carries it
 }
 
-func TestResolveVendors_MinorOnlyVersionsDoNotResolve(t *testing.T) {
-	// NVD's dictionary is per-patch. EKS reports 1.29, Lambda python3.12 and
-	// OpenSearch Elasticsearch_7.10, and no live entry carries those two-part
-	// versions, so rule 3 fires. This pins the open "version-granularity gap"
-	// as it actually behaves rather than as an earlier draft assumed.
+// A minor-only version resolves or not according to the *vendor count*, not
+// according to the version's precision. NVD's dictionary is per-patch, so no
+// live entry carries a two-part version; for a multi-vendor product rule 3
+// then fires and nothing is emitted.
+//
+// This is half the picture — see the sole-vendor case below. The two together
+// are the real state of the spec's open "version-granularity gap": it is
+// already resolved, inconsistently, in whichever direction the vendor count
+// happens to fall.
+func TestResolveVendors_MinorOnlyVersionsDoNotResolveForMultiVendorProducts(t *testing.T) {
 	assert.Empty(t, cpe.ResolveVendors("kubernetes", "1.29"))
 	assert.Empty(t, cpe.ResolveVendors("python", "3.12"))
 	assert.Empty(t, cpe.ResolveVendors("elasticsearch", "7.10"))
 	assert.Empty(t, cpe.ResolveVendors("opensearch", "2.11"))
+}
+
+// The other half: for a sole-vendor product, rule 2 accepts *any* version,
+// including an imprecise one NVD does not carry. The identification is sound —
+// it is the right vendor and product — but the version is less precise than a
+// dictionary entry, so guard's matcher may find no CVEs for it.
+func TestResolveVendors_MinorOnlyVersionsDoResolveForSoleVendorProducts(t *testing.T) {
+	assert.Equal(t, []string{"php"}, cpe.ResolveVendors("php", "8.1"))
+	assert.Equal(t, []string{"ruby-lang"}, cpe.ResolveVendors("ruby", "3.2"))
+	assert.Equal(t, []string{"microsoft"}, cpe.ResolveVendors(".net", "8"))
+	assert.Equal(t, []string{"f5"}, cpe.ResolveVendors("nginx", "1.25"))
 }
 
 func TestResolveVendors_SoleVendorFallbackForNewerVersions(t *testing.T) {

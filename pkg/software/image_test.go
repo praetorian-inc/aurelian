@@ -49,6 +49,36 @@ func TestParseImageRef_RetainsDigestForDedup(t *testing.T) {
 	assert.Equal(t, "sha256:deadbeef", d)
 }
 
+// OS base images must emit nothing. CPE files operating systems under part `o`
+// and the distiller keeps only part `a`, so an OS name that happens to exist as
+// an application product resolves to *different software entirely*: the `a`-part
+// `alpine` is alpine_project's Pine-successor email client (versions 2.x), not
+// Alpine Linux (o:alpinelinux:alpine_linux). Because that product has exactly
+// one vendor, the sole-vendor rule fires for every version, so `alpine:3.19`
+// would emit an email client's identity for the most common base image in
+// existence and inherit its CVE set.
+//
+// OS packages are an explicit non-goal of this design — caligula owns them.
+func TestParseImageRef_OSBaseImagesEmitNothing(t *testing.T) {
+	for _, in := range []string{
+		"alpine:3.19", "alpine:3.19.1", "alpine:3",
+		"debian:12", "debian:bookworm-slim",
+		"ubuntu:22.04", "ubuntu:24.04",
+		"public.ecr.aws/docker/library/alpine:3.18",
+	} {
+		p, v, _ := software.ParseImageRef(in)
+		assert.Emptyf(t, p, "input %q must not resolve to an application product", in)
+		assert.Empty(t, v, "input %q", in)
+	}
+}
+
+func TestDetect_ECSAlpineBaseImageEmitsNothing(t *testing.T) {
+	props := map[string]any{"ContainerDefinitions": []any{
+		map[string]any{"Image": "alpine:3.19"},
+	}}
+	assert.Empty(t, software.Detect("AWS::ECS::TaskDefinition", props))
+}
+
 func TestDetect_ECSTaskDefinitionImages(t *testing.T) {
 	props := map[string]any{"ContainerDefinitions": []any{
 		map[string]any{"Image": "nginx:1.25.3"},

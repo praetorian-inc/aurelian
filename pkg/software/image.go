@@ -41,10 +41,21 @@ var imageProducts = map[string]string{
 	"traefik":       "traefik",
 	"grafana":       "grafana",
 	"influxdb":      "influxdb",
-	"alpine":        "alpine",
-	"debian":        "debian_linux",
-	"ubuntu":        "ubuntu_linux",
 }
+
+// Deliberately absent: OS base images (alpine, debian, ubuntu, centos, …).
+//
+// CPE files operating systems under part `o`, and the generator keeps only
+// part `a`, so an OS name is either missing from the table (debian_linux,
+// ubuntu_linux) or — worse — collides with unrelated application software of
+// the same name. The `a`-part `alpine` is alpine_project's Pine-successor
+// email client, and since it has exactly one vendor the sole-vendor rule would
+// fire for every version, tagging the most common base image in existence with
+// an email client's CVE set.
+//
+// OS packages are an explicit non-goal of this design in any case; caligula
+// owns that half. Before adding an entry here, confirm what the `a`-part
+// dictionary actually calls the product — not what the image is named.
 
 // ParseImageRef parses a `[registry[:port]/][namespace/]name[:tag][@digest]`
 // image reference.

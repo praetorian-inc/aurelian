@@ -81,6 +81,62 @@ func TestDetect_PatchLevelVersionsResolve(t *testing.T) {
 	}
 }
 
+// The real tier-1 coverage, pinned against the values AWS actually produces.
+//
+// A minor-only version is NOT uniformly dropped: it is dropped for a
+// multi-vendor product (rule 3) and accepted for a sole-vendor one (rule 2).
+// The upshot, which no prose elsewhere should be trusted to state correctly:
+// EKS, OpenSearch and Redshift emit nothing for any input AWS produces; Lambda
+// emits only for Java/.NET/Ruby, never Python/Node/Go; Beanstalk emits only
+// where the platform's product is sole-vendor.
+//
+// This test exists so that a change to the resolution rule shows up here as a
+// diff rather than as a silent change in customer inventory.
+func TestDetect_Tier1CoverageAgainstRealAWSValues(t *testing.T) {
+	for _, tc := range []struct {
+		name, resourceType string
+		props              map[string]any
+		wantCPEs           []string
+	}{
+		{"eks always emits nothing", "AWS::EKS::Cluster",
+			map[string]any{"Version": "1.29"}, nil},
+		{"eks patch emits nothing either", "AWS::EKS::Cluster",
+			map[string]any{"Version": "1.29.0"}, nil},
+		{"opensearch emits nothing", "AWS::OpenSearchService::Domain",
+			map[string]any{"EngineVersion": "OpenSearch_2.11"}, nil},
+		{"redshift emits nothing", "AWS::Redshift::Cluster",
+			map[string]any{"ClusterVersion": "1.0"}, nil},
+		{"lambda python emits nothing", "AWS::Lambda::Function",
+			map[string]any{"Runtime": "python3.12"}, nil},
+		{"lambda node emits nothing", "AWS::Lambda::Function",
+			map[string]any{"Runtime": "nodejs20.x"}, nil},
+		{"lambda java emits", "AWS::Lambda::Function",
+			map[string]any{"Runtime": "java21"},
+			[]string{"cpe:2.3:a:oracle:openjdk:21:*:*:*:*:*:*:*"}},
+		{"lambda dotnet emits", "AWS::Lambda::Function",
+			map[string]any{"Runtime": "dotnet8"},
+			[]string{"cpe:2.3:a:microsoft:.net:8:*:*:*:*:*:*:*"}},
+		{"lambda ruby emits", "AWS::Lambda::Function",
+			map[string]any{"Runtime": "ruby3.2"},
+			[]string{"cpe:2.3:a:ruby-lang:ruby:3.2:*:*:*:*:*:*:*"}},
+		{"beanstalk python emits nothing", "AWS::ElasticBeanstalk::Environment",
+			map[string]any{"SolutionStackName": "64bit Amazon Linux 2 v3.5.9 running Python 3.11"}, nil},
+		{"beanstalk php emits", "AWS::ElasticBeanstalk::Environment",
+			map[string]any{"SolutionStackName": "64bit Amazon Linux 2 v3.5.9 running PHP 8.1"},
+			[]string{"cpe:2.3:a:php:php:8.1:*:*:*:*:*:*:*"}},
+		{"rds emits", "AWS::RDS::DBInstance",
+			map[string]any{"Engine": "postgres", "EngineVersion": "15.4"},
+			[]string{"cpe:2.3:a:postgresql:postgresql:15.4:*:*:*:*:*:*:*"}},
+		{"msk emits", "AWS::MSK::Cluster",
+			map[string]any{"KafkaVersion": "3.6.0"},
+			[]string{"cpe:2.3:a:apache:kafka:3.6.0:*:*:*:*:*:*:*"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.ElementsMatch(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
+		})
+	}
+}
+
 func TestDetect_SetsSourceAndEvidence(t *testing.T) {
 	techs := software.Detect("AWS::RDS::DBInstance",
 		map[string]any{"Engine": "postgres", "EngineVersion": "15.4"})

@@ -114,6 +114,27 @@ func TestDistillChunk_SkipsNonApplicationParts(t *testing.T) {
 	assert.Equal(t, []string{"widget"}, keys(into))
 }
 
+// Table keys are unescaped literals. NVD publishes `notepad\+\+`; a caller of
+// ResolveVendors spells the product `notepad++` and must not have to know CPE's
+// quoting rules.
+func TestDistillChunk_StoresUnescapedLiterals(t *testing.T) {
+	body := []byte(`{"products":[
+		{"cpe":{"cpeName":"cpe:2.3:a:notepad-plus-plus:notepad\\+\\+:8.9.6.4:*:*:*:*:*:*:*","deprecated":false}},
+		{"cpe":{"cpeName":"cpe:2.3:a:1c:1c\\:enterprise:8.3.13:*:*:*:*:*:*:*","deprecated":false}}
+	]}`)
+	into := table{}
+	require.NoError(t, DistillChunk(body, into))
+
+	assert.Contains(t, into, "notepad++")
+	assert.NotContains(t, into, `notepad\+\+`)
+	assert.Contains(t, into["notepad++"], "notepad-plus-plus")
+	assert.Contains(t, into["notepad++"]["notepad-plus-plus"], "8.9.6.4")
+
+	// A product whose NVD spelling escapes a colon keys on the literal colon.
+	assert.Contains(t, into, "1c:enterprise")
+	assert.Contains(t, into["1c:enterprise"], "1c")
+}
+
 func TestDistillChunk_RejectsMalformedBody(t *testing.T) {
 	into := table{}
 	assert.Error(t, DistillChunk([]byte("not json"), into))

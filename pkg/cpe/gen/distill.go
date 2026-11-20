@@ -175,12 +175,43 @@ func successorsOf(by []struct {
 // splitCPE splits a CPE 2.3 formatted string, honouring backslash escapes, and
 // returns its part, product, vendor and version. ok is false unless the string
 // is a well-formed 13-component application entry.
+//
+// The returned components are **unescaped literals**: NVD publishes
+// `notepad\+\+`, and the table keys on `notepad++`. Callers of ResolveVendors
+// pass a product as they spell it and should never have to know CPE's quoting
+// rules; assemble re-applies the escaping when it binds the formatted string.
+// Storing the escaped spelling would make the literal miss the table and the
+// escaped spelling bind to a double-escaped string NVD never publishes.
 func splitCPE(name string) (part, product, vendor, version string, ok bool) {
 	c := splitEscaped(name)
 	if len(c) != 13 || c[0] != "cpe" || c[1] != "2.3" || c[2] != "a" {
 		return "", "", "", "", false
 	}
-	return c[2], c[4], c[3], c[5], true
+	return c[2], unquote(c[4]), unquote(c[3]), unquote(c[5]), true
+}
+
+// unquote removes CPE 2.3 formatted-string backslash escaping, turning
+// `notepad\+\+` into `notepad++`. A trailing lone backslash is dropped.
+func unquote(s string) string {
+	if !strings.ContainsRune(s, '\\') {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	escaped := false
+	for _, r := range s {
+		if escaped {
+			b.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // splitEscaped splits on ':' but not on a ':' preceded by an odd number of

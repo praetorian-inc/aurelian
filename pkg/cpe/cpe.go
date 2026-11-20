@@ -3,7 +3,6 @@ package cpe
 import (
 	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/knqyf263/go-cpe/common"
 	"github.com/knqyf263/go-cpe/naming"
@@ -86,17 +85,32 @@ func assemble(vendor, product, version string) (string, bool) {
 	return fs, true
 }
 
-// quote backslash-escapes the punctuation a well-formed name requires to be
-// quoted. `_` is permitted bare, and `*`/`?` are wildcards we never want
-// interpreted inside a literal vendor, product or version.
+// quote backslash-escapes every character a well-formed name requires to be
+// quoted: everything outside [a-zA-Z0-9_].
+//
+// This deliberately does not use unicode.IsPunct, which classifies `+` as a
+// symbol rather than punctuation and so left `notepad++` unescaped — NVD
+// publishes `notepad\+\+`. The same gap covers `<=>|~$^`+"`"+`. BindToFS prints
+// `.`, `-` and `_` bare again and keeps the rest escaped, which is what CPE
+// 2.3's formatted string requires.
+//
+// `*` and `?` are escaped too: inside a literal vendor, product or version we
+// never want them read as wildcards.
 func quote(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) * 2)
 	for _, r := range s {
-		if unicode.IsPunct(r) && r != '_' {
+		if !isUnquoted(r) {
 			b.WriteRune('\\')
 		}
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+func isUnquoted(r rune) bool {
+	return r == '_' ||
+		(r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9')
 }
