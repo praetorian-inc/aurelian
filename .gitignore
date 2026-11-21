@@ -25,6 +25,12 @@ debug.log*
 # Committed test fixture: the privesc recon snapshot the AWS-free replay/freshness tests load.
 # Negation must follow the broad *.json ignore above (its parent dir testdata/ is not excluded).
 !pkg/modules/aws/recon/testdata/privesc_recon_snapshot.json
+# Committed test fixtures: real CloudControl property bags harvested from a live
+# account (phase 0), which every pkg/software detector is tested against.
+!pkg/software/testdata/properties/**/*.json
+# Committed test fixtures: recorded NVD /cpes/2.0 responses, which share the
+# bulk dictionary feed's schema and drive the generator's tests offline.
+!pkg/cpe/testdata/nvd/*.json
 docker-images
 .claude/*
 .worktrees/

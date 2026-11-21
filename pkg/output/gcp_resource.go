@@ -16,6 +16,10 @@ type GCPResource struct {
 	URLs         []string          `json:"urls,omitempty"`
 	IPs          []string          `json:"ips,omitempty"`
 	AccessLevel  AccessLevel       `json:"access_level,omitempty"`
+
+	// Technologies are CPE-identifiable software observed on this resource.
+	// Additive: an emit with an empty slice asserts nothing and removes nothing.
+	Technologies []Technology `json:"technologies,omitempty"`
 }
 
 // NewGCPResource creates a GCPResource with required fields.

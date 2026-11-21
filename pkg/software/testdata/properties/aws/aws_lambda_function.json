@@ -1,0 +1,58 @@
+[
+  {
+    "FunctionName": "vuln-apigw-lambda-deputy-func-nyx0",
+    "Role": "arn:aws:iam::411435703965:role/vuln-apigw-lambda-deputy-exec-role-nyx0"
+  },
+  {
+    "FunctionName": "vuln-lambda-eventsourcemapping-target-function-4mjh",
+    "Role": "arn:aws:iam::411435703965:role/vuln-lambda-eventsourcemapping-privileged-role-4mjh"
+  },
+  {
+    "FunctionName": "vuln-lambda-updatefunctioncode-target-function-4mjh",
+    "Role": "arn:aws:iam::411435703965:role/vuln-lambda-updatefunctioncode-privileged-role-4mjh"
+  },
+  {
+    "FunctionName": "vuln-lambda-createfunction-test-function-4mjh",
+    "Role": "arn:aws:iam::411435703965:role/vuln-lambda-createfunction-privileged-role-4mjh"
+  },
+  {
+    "FunctionName": "vuln-apigw-lambda-deputy-func-4mjh",
+    "Role": "arn:aws:iam::411435703965:role/vuln-apigw-lambda-deputy-exec-role-4mjh"
+  },
+  {
+    "FunctionName": "vuln-lambda-createfunction-test-function-nyx0",
+    "Role": "arn:aws:iam::411435703965:role/vuln-lambda-createfunction-privileged-role-nyx0"
+  },
+  {
+    "FunctionName": "vuln-functionurlauthtype-none-5ada75c7",
+    "FunctionUrl": "https://d7xchf7ulcs7jlr4a4kbm36pi40llgha.lambda-url.us-east-2.on.aws/",
+    "FunctionUrlAuthType": "NONE",
+    "Role": "arn:aws:iam::411435703965:role/vuln-lambda-execution-role-5ada75c7"
+  },
+  {
+    "FunctionName": "aurelian-graph-15779db4-function",
+    "Role": "arn:aws:iam::411435703965:role/aurelian-graph-15779db4-lambda-role"
+  },
+  {
+    "FunctionName": "aurelian-partial-6699e1fa-readable",
+    "Role": "arn:aws:iam::411435703965:role/aurelian-partial-6699e1fa-lambda-role"
+  },
+  {
+    "FunctionName": "vuln-lambda-updatefunctioncode-target-function-nyx0",
+    "Role": "arn:aws:iam::411435703965:role/vuln-lambda-updatefunctioncode-privileged-role-nyx0"
+  },
+  {
+    "FunctionName": "aurelian-sec-0df47d1b-secret-lambda",
+    "Role": "arn:aws:iam::411435703965:role/aurelian-sec-0df47d1b-lambda-role"
+  },
+  {
+    "FunctionName": "aurelian-partial-6699e1fa-locked",
+    "Role": "arn:aws:iam::411435703965:role/aurelian-partial-6699e1fa-lambda-role"
+  },
+  {
+    "FunctionName": "CSCD-Lambda",
+    "FunctionUrl": "https://hq6vgfophwjz6rpdkrkd7pg65q0ovilc.lambda-url.us-east-2.on.aws/",
+    "FunctionUrlAuthType": "NONE",
+    "Role": "arn:aws:iam::411435703965:role/Lambda-SQS-Full"
+  }
+]
