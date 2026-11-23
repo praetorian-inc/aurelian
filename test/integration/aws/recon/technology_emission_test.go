@@ -18,20 +18,90 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTechnologyEmission deploys two real resources and asserts that the CPEs
-// aurelian emits for them are exactly the ones the fixture declares.
+const (
+	ecsType    = "AWS::ECS::TaskDefinition"
+	lambdaType = "AWS::Lambda::Function"
+)
+
+// technologyCase pairs a fixture resource with the CPE set it must emit. Both
+// sides are read from Terraform outputs: the identifier so the test can find
+// the resource in a live scan, and the expectation so that the expected CPEs
+// stay hand-written HCL literals rather than anything computed from
+// software.Detect. A test that derived them from the code under test would
+// compare the system to itself and pass regardless of what it emitted.
+type technologyCase struct {
+	name         string
+	resourceType string
+	idOutput     string
+	expectOutput string
+	why          string
+}
+
+var technologyCases = []technologyCase{
+	{
+		name:         "ECS/vendor-correctness controls",
+		resourceType: ecsType,
+		idOutput:     "taskdef_controls_family",
+		expectOutput: "expected_controls_cpes",
+		why:          "nginx:1.25.3 resolves to the live vendor f5; alpine:3.19 emits nothing",
+	},
+	{
+		name:         "ECS/reference parsing",
+		resourceType: ecsType,
+		idOutput:     "taskdef_parsing_family",
+		expectOutput: "expected_parsing_cpes",
+		why:          "registry-qualified name, product name != image name, variant-suffixed tag; nginx:latest emits nothing",
+	},
+	{
+		name:         "ECS/sibling distributions",
+		resourceType: ecsType,
+		idOutput:     "taskdef_siblings_family",
+		expectOutput: "expected_siblings_cpes",
+		why:          "redis:6.2.6 cannot choose between two live vendors and emits both",
+	},
+	{
+		name:         "Lambda/java21",
+		resourceType: lambdaType,
+		idOutput:     "lambda_java_name",
+		expectOutput: "expected_lambda_java_cpes",
+		why:          "Runtime is absent from ListResources, so a non-empty set is also the proof that hydrateIfMissing fired",
+	},
+	{
+		name:         "Lambda/ruby3.2",
+		resourceType: lambdaType,
+		idOutput:     "lambda_ruby_name",
+		expectOutput: "expected_lambda_ruby_cpes",
+		why:          "the runtime table is not java-only",
+	},
+	{
+		name:         "Lambda/dotnet8",
+		resourceType: lambdaType,
+		idOutput:     "lambda_dotnet_name",
+		expectOutput: "expected_lambda_dotnet_cpes",
+		why:          "a CPE product name containing a dot still satisfies guard's key regex",
+	},
+	{
+		name:         "Lambda/python3.12",
+		resourceType: lambdaType,
+		idOutput:     "lambda_python_name",
+		expectOutput: "expected_lambda_python_cpes",
+		why:          "several live vendors for a minor-only version is undecidable; rule 3 drops it",
+	},
+	{
+		name:         "Lambda/nodejs20.x",
+		resourceType: lambdaType,
+		idOutput:     "lambda_node_name",
+		expectOutput: "expected_lambda_node_cpes",
+		why:          `"20.x" is not a resolvable version`,
+	},
+}
+
+// TestTechnologyEmission deploys real AWS resources and asserts that the CPEs
+// aurelian emits for each are exactly the set the fixture declares.
 //
-// The expected CPE strings live in the fixture's outputs.tf as hand-written
-// literals, never computed from software.Detect — comparing the pipeline's
-// output against the decoder's own output would prove nothing.
-//
-// Each resource carries a matched positive and negative control, so the test
-// distinguishes correct resolution from a decoder that emits for everything:
-//
-//	ECS task definition  nginx:1.25.3  -> cpe:2.3:a:f5:nginx:1.25.3:*:...
-//	                     alpine:3.19   -> nothing
-//	Lambda               java21        -> cpe:2.3:a:oracle:openjdk:21:*:...
-//	                     python3.12    -> nothing
+// Scope is list-all. find-secrets emits only risks — no AWSResource leaves the
+// module and it runs no enrichers — so it has no Technologies to assert today;
+// that is phase 3 (content inspection and ECR), which lands independently.
 func TestTechnologyEmission(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/technology-emission")
 	fixture.Setup()
@@ -39,81 +109,67 @@ func TestTechnologyEmission(t *testing.T) {
 	regions := fixture.OutputList("test_regions")
 	require.NotEmpty(t, regions, "fixture must declare at least one region")
 
-	t.Run("ECS task definition emits the live vendor for a versioned image", func(t *testing.T) {
-		results := listAll(t, "AWS::ECS::TaskDefinition", regions)
+	// One scan per resource type, shared across every case for that type.
+	// Scanning once per case would multiply AWS calls for no added coverage.
+	scans := map[string][]model.AurelianModel{}
+	for _, rt := range []string{ecsType, lambdaType} {
+		scans[rt] = listAll(t, rt, regions)
+		t.Logf("%s: %d results", rt, len(scans[rt]))
+	}
 
-		family := fixture.Output("taskdef_family")
-		res := findResource(t, results, family)
-		require.NotNil(t, res, "fixture task definition %s not found in %d results", family, len(results))
+	for _, tc := range technologyCases {
+		t.Run(tc.name, func(t *testing.T) {
+			identifier := fixture.Output(tc.idOutput)
+			expected := fixture.OutputList(tc.expectOutput)
 
-		assert.ElementsMatch(t, fixture.OutputList("expected_taskdef_cpes"), cpesOf(*res),
-			"task definition %s emitted the wrong CPE set", family)
+			res := findResource(t, scans[tc.resourceType], identifier)
+			require.NotNil(t, res, "fixture resource %q not found among %d %s results",
+				identifier, len(scans[tc.resourceType]), tc.resourceType)
 
-		// The second container (alpine:3.19) contributes nothing, so the set
-		// above is already the whole assertion for it. Stated explicitly so a
-		// regression reads as a failure rather than as an extra element.
-		for _, cpe := range cpesOf(*res) {
-			assert.NotContains(t, cpe, "alpine",
-				"alpine:3.19 is an OS base image and must not resolve to the alpine email client")
-		}
-	})
-
-	t.Run("Lambda emits for a resolvable runtime and nothing for an undecidable one", func(t *testing.T) {
-		results := listAll(t, "AWS::Lambda::Function", regions)
-
-		resolvable := fixture.Output("lambda_resolvable_name")
-		res := findResource(t, results, resolvable)
-		require.NotNil(t, res, "fixture function %s not found in %d results", resolvable, len(results))
-
-		// Runtime is absent from the ListResources payload, so a non-empty
-		// result here is also the only end-to-end proof that the enricher's
-		// hydrateIfMissing call fired.
-		assert.ElementsMatch(t, fixture.OutputList("expected_lambda_cpes"), cpesOf(*res),
-			"function %s emitted the wrong CPE set; an empty set means hydration did not fire", resolvable)
-
-		undecidable := fixture.Output("lambda_undecidable_name")
-		other := findResource(t, results, undecidable)
-		require.NotNil(t, other, "fixture function %s not found in %d results", undecidable, len(results))
-		assert.Empty(t, cpesOf(*other),
-			"python3.12 is version-undecidable across several vendors and must emit nothing")
-	})
+			assert.ElementsMatch(t, expected, cpesOf(*res),
+				"%s emitted the wrong CPE set — %s", identifier, tc.why)
+		})
+	}
 
 	t.Run("no forbidden vendor appears anywhere in the scan", func(t *testing.T) {
 		forbidden := fixture.OutputList("forbidden_cpe_substrings")
 		require.NotEmpty(t, forbidden, "fixture must declare forbidden substrings")
 
-		var all []string
-		for _, rt := range []string{"AWS::ECS::TaskDefinition", "AWS::Lambda::Function"} {
-			for _, r := range listAll(t, rt, regions) {
+		checked := 0
+		for _, results := range scans {
+			for _, r := range results {
 				res, ok := r.(output.AWSResource)
 				if !ok {
 					continue
 				}
-				all = append(all, cpesOf(res)...)
+				for _, cpe := range cpesOf(res) {
+					checked++
+					for _, bad := range forbidden {
+						assert.NotContains(t, cpe, bad,
+							"resource %s emitted CPE %q containing forbidden substring %q",
+							res.ResourceID, cpe, bad)
+					}
+				}
 			}
 		}
-
-		for _, cpe := range all {
-			for _, bad := range forbidden {
-				assert.NotContains(t, cpe, bad,
-					"emitted CPE %q contains forbidden substring %q", cpe, bad)
-			}
-		}
-		t.Logf("checked %d emitted CPEs against %d forbidden substrings", len(all), len(forbidden))
+		require.NotZero(t, checked, "no CPEs were emitted at all; the check is vacuous")
+		t.Logf("checked %d emitted CPEs against %d forbidden substrings", checked, len(forbidden))
 	})
 
 	t.Run("every emitted CPE satisfies guard's Technology key regex", func(t *testing.T) {
 		// Guard rejects a Technology whose key does not match
 		// ^#technology#cpe:2\.3(:[^:]+){11}$, dropping the node silently. A CPE
-		// that is well-formed here but not there is invisible in production, so
-		// the shape is asserted against real scan output rather than fixtures.
-		for _, rt := range []string{"AWS::ECS::TaskDefinition", "AWS::Lambda::Function"} {
-			for _, r := range listAll(t, rt, regions) {
+		// well-formed here but not there is invisible in production, so the
+		// shape is asserted against real scan output and not only fixtures.
+		checked := 0
+		for _, results := range scans {
+			for _, r := range results {
 				res, ok := r.(output.AWSResource)
 				if !ok {
 					continue
 				}
 				for _, tech := range res.Technologies {
+					checked++
 					assert.Regexp(t, `^cpe:2\.3(:[^:]+){11}$`, tech.CPE,
 						"resource %s emitted a CPE guard would reject", res.ResourceID)
 					assert.NotEmpty(t, tech.Source, "technology on %s has no Source", res.ResourceID)
@@ -121,6 +177,7 @@ func TestTechnologyEmission(t *testing.T) {
 				}
 			}
 		}
+		require.NotZero(t, checked, "no CPEs were emitted at all; the check is vacuous")
 	})
 }
 
