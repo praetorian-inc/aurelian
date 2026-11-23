@@ -49,7 +49,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer archive.Close()
+	defer func() { _ = archive.Close() }()
 
 	// Two passes over the archive. A rename chain spans chunks — igor_sysoev:nginx
 	// is in chunk 1 while the nginx:nginx records it points at span chunks 1-8,
@@ -105,7 +105,7 @@ func fetchMeta() (feedMeta, error) {
 	if err != nil {
 		return feedMeta{}, err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	raw, err := io.ReadAll(body)
 	if err != nil {
 		return feedMeta{}, fmt.Errorf("read meta: %w", err)
@@ -163,23 +163,23 @@ func cachedArchive(meta feedMeta) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 
 	tmp, err := os.CreateTemp(dir, "nvdcpe-*.part")
 	if err != nil {
 		return nil, fmt.Errorf("create temp: %w", err)
 	}
 	if _, err := io.Copy(tmp, body); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("download archive: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return nil, err
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("install archive: %w", err)
 	}
 	if err := os.WriteFile(keyPath, []byte(meta.sha256+"\n"), 0o644); err != nil {
@@ -196,7 +196,7 @@ func eachChunk(r io.Reader, fn func(body []byte) error) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open archive gzip: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 
 	tr := tar.NewReader(gz)
 	chunks := 0
@@ -245,21 +245,32 @@ func writeTable(path string, table Table) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", path, err)
 	}
-	defer f.Close()
 
 	// Fixed compression level and no gzip header timestamp, so the bytes are a
 	// pure function of the feed.
 	gz, err := gzip.NewWriterLevel(f, gzip.BestCompression)
 	if err != nil {
+		_ = f.Close()
 		return err
 	}
 	gz.ModTime = time.Time{}
 	enc := json.NewEncoder(gz)
 	if err := enc.Encode(out); err != nil {
-		gz.Close()
+		_ = gz.Close()
+		_ = f.Close()
 		return fmt.Errorf("encode table: %w", err)
 	}
-	return gz.Close()
+	if err := gz.Close(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("flush gzip: %w", err)
+	}
+	// Closed explicitly rather than deferred: this is a write path, so a
+	// failed Close means the committed table is short or corrupt and the
+	// generator must not report success.
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", path, err)
+	}
+	return nil
 }
 
 func writeSnapshot(path, lastModified string) error {
@@ -285,7 +296,7 @@ func get(url string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("GET %s: %w", url, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
 	return resp.Body, nil

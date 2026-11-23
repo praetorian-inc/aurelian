@@ -27,7 +27,7 @@ func TestDistillChunk_DropsDeprecated(t *testing.T) {
 	require.NoError(t, DistillChunk(body, into))
 	vendors := keys(into["nginx"])
 	assert.Contains(t, vendors, "f5")
-	assert.NotContains(t, vendors, "nginx")        // deprecated
+	assert.NotContains(t, vendors, "nginx")       // deprecated
 	assert.NotContains(t, vendors, "igor_sysoev") // deprecated
 }
 

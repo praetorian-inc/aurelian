@@ -42,7 +42,7 @@ func load() vendorTable {
 			loadErr = fmt.Errorf("open embedded cpemap: %w", err)
 			return
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		if err := json.NewDecoder(gz).Decode(&table); err != nil {
 			loadErr = fmt.Errorf("decode embedded cpemap: %w", err)
 		}
