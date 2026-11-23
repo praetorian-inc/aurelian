@@ -72,6 +72,35 @@ func load() vendorTable {
 //
 // There is no vendor-count threshold: the version, not the vendor count, is
 // what discriminates.
+// Returning several vendors for one product/version is deliberate, not a gap to
+// close. DECIDED 2026-11-23, after an attempt to alias them away:
+//
+// NVD's deprecated/deprecatedBy metadata is the mechanism for a vendor
+// migration, and the generator already follows it — pivotal_software:redis is
+// dropped that way, all 27 entries flagged. NVD never applied it to redislabs:
+// 368 live redislabs:redis rows sit beside 643 live redis:redis rows, so the
+// dictionary asserts both vendors are current and there is no pointer to follow.
+//
+// It moved the CVE filing without deprecating the dictionary rows. redislabs
+// carries 22 CVEs published 2013 through Sept 2021; redis carries 46 from 2021
+// onward. A redis:6.2.6 container sits on that boundary, so collapsing to one
+// vendor silently drops an era of CVEs. A missing match is invisible; a CPE that
+// matches nothing is inert.
+//
+// Aliasing also needs the table it would justify: a collapse must know that
+// hashicorp:consul and makandra:consul are NOT the same software. Of 31
+// reachable products 14 never collide at all, and the only collisions reaching
+// versions still in production — redis 6.2.6 and MySQL 5.6.36 — are true alias
+// pairs. Every homonym collision (jenkins:kubernetes, makandra:consul,
+// mysqljs:mysql, tibco:vault) is capped at a 2004-2018 version that will not
+// appear in a container tag or a Lambda runtime.
+//
+// That cap is the premise, and it is asserted rather than assumed: see
+// forbidden_cpe_substrings in test/terraform/aws/recon/technology-emission/.
+//
+// Downstream precondition: guard's CPE-to-CVE matcher must key on vendor. One
+// that matched on product and version alone would give both siblings edges and
+// double every finding for that software.
 func ResolveVendors(product, version string) []string {
 	byVendor := load()[product]
 	if len(byVendor) == 0 {

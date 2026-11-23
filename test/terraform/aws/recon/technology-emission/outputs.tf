@@ -106,6 +106,31 @@ output "expected_lambda_node_cpes" {
 #                    the deprecated vendor spelling only.
 #   :a:python        python3.12 must emit nothing at all.
 #   :a:node          nodejs20.x must emit nothing at all.
+#
+# The remainder are homonym vendors: unrelated software that shares a product
+# string with something the decoders look up. Emitting both vendors of a
+# collision is a deliberate decision (see the spec's vendor-aliasing entry), and
+# it is only safe because every homonym collision is capped at a version from
+# 2004-2018 that will not appear in a container tag or a Lambda runtime — while
+# the collisions that do reach current versions (redis 6.2.6, MySQL 5.6.36) are
+# true alias pairs naming the same software.
+#
+# These substrings are what detects that premise breaking. A resolution rule
+# loosened to reach homonyms would fabricate inventory, claiming the customer
+# runs a Jenkins plugin, a Rails gem or a Node driver.
+#
+#   :a:mysqljs    the Node mysql driver, not Oracle MySQL
+#   :a:jenkins    Jenkins plugins sharing kubernetes/mongodb product names
+#   :a:makandra   a Rails gem, not HashiCorp Consul
+#   :a:tibco      TIBCO Vault, not HashiCorp Vault
+#   :a:tdengine   a Grafana plugin, not Grafana
+#   :a:eficode    not InfluxData's InfluxDB
+#   :a:voxpupuli  a Puppet module, not RabbitMQ
+#   :a:anynines   a service broker, not the upstream datastores
 output "forbidden_cpe_substrings" {
-  value = [":a:alpine", ":a:nginx:", ":a:python", ":a:node"]
+  value = [
+    ":a:alpine", ":a:nginx:", ":a:python", ":a:node",
+    ":a:mysqljs", ":a:jenkins", ":a:makandra", ":a:tibco",
+    ":a:tdengine", ":a:eficode", ":a:voxpupuli", ":a:anynines",
+  ]
 }
