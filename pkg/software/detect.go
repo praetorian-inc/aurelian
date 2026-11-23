@@ -11,6 +11,7 @@ package software
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
@@ -319,3 +320,15 @@ func stringProp(props map[string]any, key string) (string, bool) {
 }
 
 func isDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// RegisteredTypes returns the resource types Detect can decode, sorted. It
+// exists so a caller can register itself for exactly those types without
+// restating the list — a second copy would drift the moment a decoder is added.
+func RegisteredTypes() []string {
+	out := make([]string, 0, len(registry))
+	for rt := range registry {
+		out = append(out, rt)
+	}
+	sort.Strings(out)
+	return out
+}
