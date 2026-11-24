@@ -22,6 +22,49 @@ func BuildGroupsByName(gaad *types.AuthorizationAccountDetails) map[string]types
 	return groups
 }
 
+// roleTrustsService requires a concrete Allow for the service principal before
+// emitting a resource-to-runtime-role fact. A role ARN in service configuration
+// is only an association; an incompatible trust policy makes it unusable.
+func roleTrustsService(gaad *types.AuthorizationAccountDetails, roleARN, service string) bool {
+	allowed := false
+	denied := false
+	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
+		if role.Arn != roleARN || role.AssumeRolePolicyDocument.Statement == nil {
+			return true
+		}
+		for _, statement := range *role.AssumeRolePolicyDocument.Statement {
+			if statement.Condition != nil || !actionMatchesPattern(statement.Action, "sts:AssumeRole") || !principalIncludesService(statement.Principal, service) {
+				continue
+			}
+			if strings.EqualFold(statement.Effect, "Deny") {
+				denied = true
+			}
+			if strings.EqualFold(statement.Effect, "Allow") {
+				allowed = true
+			}
+		}
+		return false
+	})
+	return allowed && !denied
+}
+
+func principalIncludesService(principal *types.Principal, service string) bool {
+	if principal == nil {
+		return false
+	}
+	for _, values := range []*types.DynaString{principal.Service, principal.AWS} {
+		if values == nil {
+			continue
+		}
+		for _, value := range *values {
+			if strings.EqualFold(value, service) || value == "*" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // awsResourceTypeToSolver maps Aurelian CloudControl resource types to the
 // solver's resource type enum.
 var awsResourceTypeToSolver = map[string]ResourceType{
@@ -323,7 +366,7 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 	resources.Range(func(_ string, r output.AWSResource) bool {
 		switch r.ResourceType {
 		case "AWS::Lambda::Function":
-			if roleARN, ok := extractProperty(r, "Role"); ok {
+			if roleARN, ok := extractProperty(r, "Role"); ok && roleTrustsService(gaad, roleARN, "lambda.amazonaws.com") {
 				facts = append(facts, StructuralFact{
 					Type:       FactLambdaExecutionRole,
 					From:       r.ARN,
