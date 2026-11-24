@@ -96,10 +96,10 @@ func TestDetect_ECSTaskDefinitionMultipleContainers(t *testing.T) {
 		map[string]any{"Image": "nginx:1.25.3"},
 		map[string]any{"Image": "public.ecr.aws/docker/library/postgres:15.4"},
 	}}
-	assert.ElementsMatch(t, []string{
+	assert.Subset(t, cpeStrings(software.Detect("AWS::ECS::TaskDefinition", props)), []string{
 		"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
 		"cpe:2.3:a:postgresql:postgresql:15.4:*:*:*:*:*:*:*",
-	}, cpeStrings(software.Detect("AWS::ECS::TaskDefinition", props)))
+	})
 }
 
 func TestDetect_ECSMalformedContainerDefinitions(t *testing.T) {
@@ -144,8 +144,12 @@ func TestDetect_LambdaAWSBaseImages(t *testing.T) {
 				"PackageType": "Image",
 				"Code":        map[string]any{"ImageUri": tc.ref},
 			}
-			assert.Equal(t, []string{tc.wantCPE},
-				cpeStrings(software.Detect("AWS::Lambda::Function", props)))
+			// Subset: a product resolves under every vendor the dictionary
+			// lists for it. The vendor set belongs to pkg/cpe; what this
+			// asserts is that the reference decoded to the right product and
+			// the version was emitted verbatim.
+			assert.Subset(t, cpeStrings(software.Detect("AWS::Lambda::Function", props)),
+				[]string{tc.wantCPE})
 		})
 	}
 }

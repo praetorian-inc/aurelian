@@ -35,7 +35,7 @@ func Resolve(product, version string) []string {
 		return nil
 	}
 
-	vendors := ResolveVendors(product, version)
+	vendors := ResolveVendors(product)
 	if len(vendors) == 0 {
 		return nil
 	}

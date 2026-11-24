@@ -28,13 +28,6 @@ type finding struct {
 	source   string
 	evidence string
 
-	// bestEffort allows the resolver to truncate the observed version to the
-	// nearest prefix the CPE dictionary carries. Set by the image-config
-	// decoder, whose markers report exact patch versions that NVD's dictionary
-	// routinely lags; left false for tier 1 and tier 2, whose versions come
-	// from a control plane or a tag and are already as coarse as they get.
-	bestEffort bool
-
 	// primary marks the software the image's entrypoint runs, as opposed to
 	// the runtime beneath it. Ordering only — it never suppresses a finding.
 	primary bool
@@ -95,32 +88,19 @@ func resolveFindings(findings []finding) []output.Technology {
 			continue
 		}
 
-		cpes, precision := f.resolve()
-		source := f.source
-		if precision != "" && precision != f.version {
-			// The emitted version is coarser than the observed one. Say so:
-			// cpe:2.3:a:python:python:3.11 matches every 3.11.x CVE, including
-			// ones the observed 3.11.18 has already been patched for, and a
-			// consumer cannot tell that from the CPE alone.
-			source += "-truncated"
-		}
-
-		for _, c := range cpes {
+		// The observed version is emitted verbatim. It is never rewritten to
+		// find a dictionary entry: NVD attaches CVEs to version ranges, so a
+		// version absent from the dictionary still matches, and rewriting it
+		// attributes CVEs that do not apply.
+		for _, c := range cpe.Resolve(f.product, f.version) {
 			out = append(out, output.Technology{
 				CPE:      c,
-				Source:   source,
+				Source:   f.source,
 				Evidence: f.evidence,
 			})
 		}
 	}
 	return out
-}
-
-func (f finding) resolve() (cpes []string, precision string) {
-	if f.bestEffort {
-		return cpe.ResolveBestEffort(f.product, f.version)
-	}
-	return cpe.Resolve(f.product, f.version), f.version
 }
 
 // decode runs a type's decoders in order and returns the first product and

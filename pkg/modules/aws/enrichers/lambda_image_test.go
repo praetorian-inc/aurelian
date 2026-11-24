@@ -150,9 +150,15 @@ func TestFetchFunctionImage_ProducesAPropertyBagDetectCanDecode(t *testing.T) {
 	require.NoError(t, enrichers.FetchFunctionImage(enricherCfg, r, client))
 
 	got := software.Detect(r.ResourceType, r.Properties)
-	require.Len(t, got, 1)
-	assert.Equal(t, "cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*", got[0].CPE)
-	assert.Equal(t, "lambda-image-uri", got[0].Source)
+	require.NotEmpty(t, got)
+	// One technology per vendor the dictionary lists for the product; what
+	// this test owns is that the write-only ImageUri reached Detect at all.
+	var cpes []string
+	for _, tech := range got {
+		cpes = append(cpes, tech.CPE)
+		assert.Equal(t, "lambda-image-uri", tech.Source)
+	}
+	assert.Contains(t, cpes, "cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*")
 }
 
 // A customer's own application image is not CPE-identifiable software, and

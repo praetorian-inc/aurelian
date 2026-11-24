@@ -36,17 +36,19 @@ func TestDetect_ManagedServiceVersions(t *testing.T) {
 		{"beanstalk version is minor-only", "AWS::ElasticBeanstalk::Environment",
 			map[string]any{"SolutionStackName": "64bit Amazon Linux 2 v3.5.9 running Python 3.11"},
 			[]string{"cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*"}},
-		// EKS stays empty, but for a different reason: NVD carries no
-		// kubernetes 1.29 row at any granularity yet. Snapshot lag, not a
-		// resolution rule.
-		{"eks 1.29 is not yet in the dictionary", "AWS::EKS::Cluster",
-			map[string]any{"Version": "1.29"}, nil},
+		// EKS 1.29 has no kubernetes row in the dictionary at any
+		// granularity. It is emitted anyway, since 2026-11-24: NVD attaches
+		// CVEs to version RANGES, so a version the dictionary does not list
+		// still matches. Withholding it only lost recall.
+		{"eks 1.29 is emitted though the dictionary lacks it", "AWS::EKS::Cluster",
+			map[string]any{"Version": "1.29"},
+			[]string{"cpe:2.3:a:kubernetes:kubernetes:1.29:*:*:*:*:*:*:*"}},
 		{"eks 1.28 resolves", "AWS::EKS::Cluster",
 			map[string]any{"Version": "1.28"},
 			[]string{"cpe:2.3:a:kubernetes:kubernetes:1.28:*:*:*:*:*:*:*"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.ElementsMatch(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
+			assertEmits(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
 		})
 	}
 }
@@ -76,7 +78,11 @@ func TestDetect_PatchLevelVersionsResolve(t *testing.T) {
 			map[string]any{"Engine": "aurora-postgresql", "EngineVersion": "15.4"},
 			[]string{"cpe:2.3:a:postgresql:postgresql:15.4:*:*:*:*:*:*:*"}},
 		{"eks patch version", "AWS::EKS::Cluster",
-			map[string]any{"Version": "1.29.0"}, nil}, // kubernetes has 2 vendors, neither carries it
+			map[string]any{"Version": "1.29.0"},
+			// Neither kubernetes vendor carries 1.29.0 in the dictionary. It
+			// is emitted regardless, since 2026-11-24: NVD matches CVEs on
+			// version ranges, so dictionary presence is not a precondition.
+			[]string{"cpe:2.3:a:kubernetes:kubernetes:1.29.0:*:*:*:*:*:*:*"}},
 		{"opensearch patch version", "AWS::OpenSearchService::Domain",
 			map[string]any{"EngineVersion": "OpenSearch_2.11.0"},
 			[]string{"cpe:2.3:a:amazon:opensearch:2.11.0:*:*:*:*:*:*:*"}},
@@ -85,7 +91,7 @@ func TestDetect_PatchLevelVersionsResolve(t *testing.T) {
 			[]string{"cpe:2.3:a:python:python:3.12.1:*:*:*:*:*:*:*"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.ElementsMatch(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
+			assertEmits(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
 		})
 	}
 }
@@ -112,10 +118,12 @@ func TestDetect_Tier1CoverageAgainstRealAWSValues(t *testing.T) {
 		{"eks emits for an indexed release line", "AWS::EKS::Cluster",
 			map[string]any{"Version": "1.28"},
 			[]string{"cpe:2.3:a:kubernetes:kubernetes:1.28:*:*:*:*:*:*:*"}},
-		{"eks stays silent ahead of the snapshot", "AWS::EKS::Cluster",
-			map[string]any{"Version": "1.29"}, nil},
-		{"eks patch ahead of the snapshot too", "AWS::EKS::Cluster",
-			map[string]any{"Version": "1.29.0"}, nil},
+		{"eks emits ahead of the snapshot", "AWS::EKS::Cluster",
+			map[string]any{"Version": "1.29"},
+			[]string{"cpe:2.3:a:kubernetes:kubernetes:1.29:*:*:*:*:*:*:*"}},
+		{"eks patch ahead of the snapshot emits too", "AWS::EKS::Cluster",
+			map[string]any{"Version": "1.29.0"},
+			[]string{"cpe:2.3:a:kubernetes:kubernetes:1.29.0:*:*:*:*:*:*:*"}},
 		{"opensearch emits", "AWS::OpenSearchService::Domain",
 			map[string]any{"EngineVersion": "OpenSearch_2.11"},
 			[]string{"cpe:2.3:a:amazon:opensearch:2.11:*:*:*:*:*:*:*"}},
@@ -150,7 +158,7 @@ func TestDetect_Tier1CoverageAgainstRealAWSValues(t *testing.T) {
 			[]string{"cpe:2.3:a:apache:kafka:3.6.0:*:*:*:*:*:*:*"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.ElementsMatch(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
+			assertEmits(t, tc.wantCPEs, cpeStrings(software.Detect(tc.resourceType, tc.props)))
 		})
 	}
 }
@@ -158,11 +166,15 @@ func TestDetect_Tier1CoverageAgainstRealAWSValues(t *testing.T) {
 func TestDetect_SetsSourceAndEvidence(t *testing.T) {
 	techs := software.Detect("AWS::RDS::DBInstance",
 		map[string]any{"Engine": "postgres", "EngineVersion": "15.4"})
-	assert.Len(t, techs, 1)
-	assert.Equal(t, "rds-engine", techs[0].Source)
-	assert.Contains(t, techs[0].Evidence, "15.4")
-	assert.Contains(t, techs[0].Evidence, "postgres")
-	assert.Empty(t, techs[0].Name, "Name is advisory; guard overwrites it on ingest")
+	// One technology per vendor the dictionary lists for postgresql; every one
+	// of them carries the same provenance, which is what this test is about.
+	assert.NotEmpty(t, techs)
+	for _, tech := range techs {
+		assert.Equal(t, "rds-engine", tech.Source)
+		assert.Contains(t, tech.Evidence, "15.4")
+		assert.Contains(t, tech.Evidence, "postgres")
+		assert.Empty(t, tech.Name, "Name is advisory; guard overwrites it on ingest")
+	}
 }
 
 // The decoders must still extract product and version correctly even where the
@@ -292,4 +304,22 @@ func TestDetect_FixtureShapedInputsProduceWellFormedCPEs(t *testing.T) {
 		}
 	}
 	require.NotZero(t, emitted, "assertions above must actually run")
+}
+
+// assertEmits asserts that the canonical CPEs are among those emitted.
+//
+// A subset rather than an exact match, since 2026-11-24: vendor selection no
+// longer narrows by version, so a product resolves under every vendor the CPE
+// dictionary lists for it. That vendor list is snapshot data, not behaviour —
+// pkg/cpe owns it and tests it. What this file owns is decoding: that a
+// property bag yields the right product and the right version, verbatim.
+//
+// An empty want still means "must emit nothing at all".
+func assertEmits(t *testing.T, want, got []string) {
+	t.Helper()
+	if len(want) == 0 {
+		assert.Empty(t, got)
+		return
+	}
+	assert.Subset(t, got, want)
 }

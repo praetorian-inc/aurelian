@@ -98,12 +98,11 @@ func stackFindings(cfg imageconfig.Config) []finding {
 		}
 
 		out = append(out, finding{
-			product:    product,
-			version:    version,
-			source:     "image-config-env",
-			evidence:   strings.TrimSpace("image " + cfg.Ref + " " + entry),
-			bestEffort: true,
-			primary:    markerNamesTheCommand(key, command),
+			product:  product,
+			version:  version,
+			source:   "image-config-env",
+			evidence: strings.TrimSpace("image " + cfg.Ref + " " + entry),
+			primary:  markerNamesTheCommand(key, command),
 		})
 	}
 

@@ -68,14 +68,39 @@ const (
 // Expected CPEs, written out rather than computed. A test that derived these
 // by calling software.Detect would compare the system to itself and pass no
 // matter what it emitted.
-const (
-	cpeTomcat   = "cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*"
-	cpeOpenJDK  = "cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*"
-	cpePHP      = "cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*"
-	cpePython11 = "cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*"
-	cpePython12 = "cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*"
-	cpeNode     = "cpe:2.3:a:nodejs:node.js:20.20:*:*:*:*:*:*:*"
+//
+// A product resolves under EVERY vendor the CPE dictionary lists for it, and
+// the observed version is emitted verbatim — see pkg/cpe.ResolveVendors for
+// the NVD CVE measurement behind that. So the expected set for one piece of
+// software is one CPE per vendor, all at the observed version.
+var (
+	cpeTomcat = []string{
+		"cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*",
+		"cpe:2.3:a:apache_software_foundation:tomcat:10.1.62:*:*:*:*:*:*:*",
+	}
+	cpeOpenJDK = []string{"cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*"}
+	cpePHP     = []string{"cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*"}
+	cpePython  = []string{
+		"cpe:2.3:a:microsoft:python:3.11.18:*:*:*:*:*:*:*",
+		"cpe:2.3:a:python:python:3.11.18:*:*:*:*:*:*:*",
+	}
+	cpePython312 = []string{
+		"cpe:2.3:a:microsoft:python:3.12:*:*:*:*:*:*:*",
+		"cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*",
+	}
+	cpeNode = []string{
+		"cpe:2.3:a:joyent:node.js:20.20.2:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nodejs:node.js:20.20.2:*:*:*:*:*:*:*",
+	}
 )
+
+func union(sets ...[]string) []string {
+	var out []string
+	for _, s := range sets {
+		out = append(out, s...)
+	}
+	return out
+}
 
 // TestImageConfigTechnologyEmission proves the phase-3 capability end to end
 // against live AWS and live Docker Hub, for all three resource shapes that can
@@ -144,13 +169,13 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 		{
 			name:    "ECS/flag off — only what a tag can identify",
 			results: ecsOff, id: taskFamily,
-			expect: []string{cpeTomcat},
+			expect: cpeTomcat,
 			why:    "tomcat is the only image whose base name is in the tier-2 table; the ECR image and wordpress emit nothing from a tag",
 		},
 		{
 			name:    "ECS/flag on — the config identifies what the tag cannot",
 			results: ecsOn, id: taskFamily,
-			expect: []string{cpeTomcat, cpeOpenJDK, cpePHP, cpePython11},
+			expect: union(cpeTomcat, cpeOpenJDK, cpePHP, cpePython),
 			why:    "openjdk is the runtime beneath tomcat's entrypoint, php is inherited by wordpress from its base, python comes from a private ECR image whose tag says nothing; tomcat is found by both paths and must appear once",
 		},
 		{
@@ -162,19 +187,19 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 		{
 			name:    "Lambda/image-packaged, flag on — identified from the image config",
 			results: lambdaOn, id: imageFnName,
-			expect: []string{cpeNode},
+			expect: cpeNode,
 			why:    "Code.ImageUri is write-only in the CloudFormation schema, so this proves the FetchFunctionImage enricher ran before the technology enricher and the config was read from ECR",
 		},
 		{
 			name:    "Lambda/zip-packaged — runtime, unaffected by the flag",
 			results: lambdaOn, id: zipFnName,
-			expect: []string{cpePython12},
+			expect: cpePython312,
 			why:    "tier 1 reads Runtime=python3.12 directly; no registry call is involved",
 		},
 		{
 			name:    "Lambda/zip-packaged, flag off — same answer",
 			results: lambdaOff, id: zipFnName,
-			expect: []string{cpePython12},
+			expect: cpePython312,
 			why:    "the flag must not change what tier 1 emits",
 		},
 	} {
@@ -186,7 +211,7 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 		})
 	}
 
-	t.Run("provenance distinguishes observed from truncated", func(t *testing.T) {
+	t.Run("provenance and verbatim versions", func(t *testing.T) {
 		res := findResource(t, ecsOn, taskFamily)
 		require.NotNil(t, res)
 
@@ -197,16 +222,23 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 			evidence[tech.CPE] = tech.Evidence
 		}
 
-		// PYTHON_VERSION=3.11.18 has no dictionary row; 3.11 does. The emitted
-		// criteria matches 3.11.x CVEs that 3.11.18 is already patched for, and
-		// a consumer cannot see that from the CPE alone.
-		assert.Equal(t, "image-config-env-truncated", source[cpePython11])
-		assert.Contains(t, evidence[cpePython11], "PYTHON_VERSION=3.11.18",
-			"evidence must carry what was observed, not what was emitted")
+		// The observed marker value is emitted unchanged. An earlier revision
+		// truncated PYTHON_VERSION=3.11.18 to 3.11 to find a dictionary entry
+		// and marked it "-truncated"; measured against the live NVD CVE
+		// corpus, 3.11.18 matches 15 CVEs through version ranges while the
+		// 3.11 substituted for it matched 10 of those plus 1 that does not
+		// apply. There is no truncated provenance any more.
+		assert.Equal(t, "image-config-env", source[cpePython[1]])
+		assert.Contains(t, evidence[cpePython[1]], "PYTHON_VERSION=3.11.18")
 
-		assert.Equal(t, "image-config-env", source[cpePHP], "PHP_VERSION=8.2.31 resolves exactly")
-		assert.Equal(t, "image-config-env", source[cpeOpenJDK], "JAVA_VERSION normalises to an exact match")
-		assert.Equal(t, "ecs-image-tag", source[cpeTomcat], "the tag observed tomcat first and keeps that provenance")
+		assert.Equal(t, "image-config-env", source[cpePHP[0]])
+		assert.Equal(t, "image-config-env", source[cpeOpenJDK[0]])
+		assert.Equal(t, "ecs-image-tag", source[cpeTomcat[0]],
+			"the tag observed tomcat first and keeps that provenance")
+
+		for _, tech := range res.Technologies {
+			assert.NotContains(t, tech.Source, "truncated")
+		}
 	})
 
 	t.Run("no marker junk reaches the output", func(t *testing.T) {
@@ -276,7 +308,7 @@ func TestImageConfigUnreachableImageDoesNotFailTheScan(t *testing.T) {
 	// The exact set. openjdk is the load-bearing member: it is reachable ONLY
 	// through the config path, so its presence proves the two failures above
 	// did not abort the read for the image that worked.
-	assert.ElementsMatch(t, []string{cpeTomcat, cpeOpenJDK}, cpesOf(*res))
+	assert.ElementsMatch(t, union(cpeTomcat, cpeOpenJDK), cpesOf(*res))
 }
 
 // --- provisioning -----------------------------------------------------------

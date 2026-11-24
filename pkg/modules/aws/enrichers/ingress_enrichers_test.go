@@ -19,7 +19,7 @@ import (
 )
 
 func strPtr(s string) *string { return &s }
-func boolPtr(b bool) *bool     { return &b }
+func boolPtr(b bool) *bool    { return &b }
 
 // --- Flatten enrichers (no AWS calls) ---
 
@@ -91,8 +91,8 @@ func TestEnrichCloudFront(t *testing.T) {
 
 func TestEnrichOpenSearch(t *testing.T) {
 	cases := []struct {
-		name    string
-		options any
+		name     string
+		options  any
 		wantFGAC bool
 	}{
 		{"FGAC on", map[string]any{"Enabled": true}, true},
@@ -144,10 +144,10 @@ func TestEnrichOpenSearch_WildcardPolicy(t *testing.T) {
 
 func TestEnrichEKS(t *testing.T) {
 	cases := []struct {
-		name           string
-		vpcConfig      any
-		wantPublic     bool
-		wantOpenToNet  bool
+		name          string
+		vpcConfig     any
+		wantPublic    bool
+		wantOpenToNet bool
 	}{
 		{"public open to internet", map[string]any{"EndpointPublicAccess": true, "PublicAccessCidrs": []any{"0.0.0.0/0"}}, true, true},
 		{"public scoped", map[string]any{"EndpointPublicAccess": true, "PublicAccessCidrs": []any{"203.0.113.0/24"}}, true, false},
@@ -239,9 +239,9 @@ func TestEnrichAPIGatewayRest_MixedMethods(t *testing.T) {
 	mock := &mockAPIGatewayClient{pages: []*apigateway.GetResourcesOutput{{
 		Items: []apigwtypes.Resource{{
 			ResourceMethods: map[string]apigwtypes.Method{
-				"GET":  {AuthorizationType: strPtr("NONE"), ApiKeyRequired: boolPtr(false)},
-				"POST": {AuthorizationType: strPtr("NONE")},
-				"PUT":  {AuthorizationType: strPtr("AWS_IAM")},
+				"GET":    {AuthorizationType: strPtr("NONE"), ApiKeyRequired: boolPtr(false)},
+				"POST":   {AuthorizationType: strPtr("NONE")},
+				"PUT":    {AuthorizationType: strPtr("AWS_IAM")},
 				"DELETE": {AuthorizationType: strPtr("NONE"), ApiKeyRequired: boolPtr(true)},
 			},
 		}},

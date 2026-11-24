@@ -83,8 +83,14 @@ func TestEnrichTechnologies_FlagOnReadsTheConfigOfAPrivateImage(t *testing.T) {
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, 1, *calls)
-	assert.Equal(t, []string{"cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*"}, cpeSet(r))
-	assert.Equal(t, "image-config-env-truncated", r.Technologies[0].Source)
+	// The observed version, verbatim. Never rewritten to find a dictionary
+	// entry — NVD matches CVEs on version ranges, so a version the dictionary
+	// does not list still matches, and rewriting it only loses precision.
+	assert.Contains(t, cpeSet(r), "cpe:2.3:a:python:python:3.11.18:*:*:*:*:*:*:*")
+	for _, tech := range r.Technologies {
+		assert.Equal(t, "image-config-env", tech.Source)
+		assert.Contains(t, tech.CPE, ":3.11.18:")
+	}
 }
 
 func TestEnrichTechnologies_TagAndConfigAgreeingIsOneTechnology(t *testing.T) {
@@ -96,7 +102,8 @@ func TestEnrichTechnologies_TagAndConfigAgreeingIsOneTechnology(t *testing.T) {
 	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
-	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*"}, cpeSet(r))
+	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*"}, cpeSet(r),
+		"nginx has exactly one dictionary vendor, so this stays an exact set")
 	assert.Equal(t, "ecs-image-tag", r.Technologies[0].Source,
 		"the tag observed it first; its provenance is the more precise one")
 }
@@ -110,10 +117,10 @@ func TestEnrichTechnologies_ConfigAddsToWhatTheTagFound(t *testing.T) {
 	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
-	assert.ElementsMatch(t, []string{
+	assert.Subset(t, cpeSet(r), []string{
 		"cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*",
 		"cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*",
-	}, cpeSet(r))
+	})
 }
 
 func TestEnrichTechnologies_UnreachableRegistryKeepsWhatTheTagFound(t *testing.T) {
@@ -171,5 +178,5 @@ func TestEnrichTechnologies_ResourcesWithNoImageMakeNoCall(t *testing.T) {
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Zero(t, *calls)
-	assert.Equal(t, []string{"cpe:2.3:a:postgresql:postgresql:15.4:*:*:*:*:*:*:*"}, cpeSet(r))
+	assert.Contains(t, cpeSet(r), "cpe:2.3:a:postgresql:postgresql:15.4:*:*:*:*:*:*:*")
 }

@@ -5,144 +5,96 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// The resolution rule: the observed version selects the vendor.
-//  1. live vendors carrying exactly that version win;
-//  2. else, if the product has exactly one vendor, use it;
-//  3. else emit nothing — guessing produces a confidently wrong CPE.
-func TestResolveVendors_VersionSelectsTheVendor(t *testing.T) {
-	assert.Equal(t, []string{"apache"}, cpe.ResolveVendors("http_server", "2.4.50"))
-	assert.Equal(t, []string{"redis"}, cpe.ResolveVendors("redis", "7.0.5"))
-	assert.Equal(t, []string{"f5"}, cpe.ResolveVendors("nginx", "1.25.3"))
-	assert.Equal(t, []string{"postgresql"}, cpe.ResolveVendors("postgresql", "15.4"))
-}
-
-func TestResolveVendors_EmptyWhenUndecidable(t *testing.T) {
-	assert.Empty(t, cpe.ResolveVendors("server", "3.2.1"))      // many vendors, none carry it
-	assert.Empty(t, cpe.ResolveVendors("kubernetes", "1.29.0")) // 2 vendors, neither carries it
-}
-
-// A minor-only version resolves on the strength of the *version*, not the
-// vendor count. NVD's dictionary is per-patch, so no live entry carries a
-// two-part version exactly — but a vendor shipping 3.12.0 through 3.12.7 is
-// evidence that an observed "3.12" is theirs, and rule 1's dotted-prefix arm
-// says so.
+// These tests replaced a suite that encoded "the observed version selects the
+// vendor" — vendors carrying the version win, else a sole vendor, else
+// nothing, with a dotted-prefix version match behind it.
 //
-// Before that arm existed these all returned nothing, which meant the two
-// commonest Lambda runtimes in existence (Python and Node.js) and every
-// OpenSearch domain emitted no technology at all. The sole-vendor case below
-// is the other half; the two are now consistent rather than falling in
-// whichever direction the vendor count happened to land.
-func TestResolveVendors_MinorOnlyVersionsResolveForMultiVendorProducts(t *testing.T) {
-	assert.Equal(t, []string{"python"}, cpe.ResolveVendors("python", "3.12"))
-	assert.Equal(t, []string{"nodejs"}, cpe.ResolveVendors("node.js", "20"))
-	assert.Equal(t, []string{"elastic"}, cpe.ResolveVendors("elasticsearch", "7.10"))
-	assert.Equal(t, []string{"amazon"}, cpe.ResolveVendors("opensearch", "2.11"))
+// That rule was measured against the live NVD CVE corpus on 2026-11-24 and
+// retired: it missed CVEs filed under a product's other vendors, and the
+// truncation it forced on callers fabricated CVEs. See ResolveVendors' doc
+// comment for the numbers. Vendor selection no longer looks at the version.
+
+func TestResolveVendors_ReturnsEveryVendorForTheProduct(t *testing.T) {
+	// http_server is the measured case: its CVEs are filed under several
+	// vendors, and emitting only apache matched 11 of 15.
+	got := cpe.ResolveVendors("http_server")
+	assert.Contains(t, got, "apache")
+	assert.Greater(t, len(got), 1, "http_server has several dictionary vendors")
 }
 
-// Widening rule 1 did not turn rule 3's silence into a guess. NVD carries no
-// kubernetes 1.29 row at any granularity, so the correct answer stays empty —
-// a snapshot-lag result, distinct from a release line NVD has indexed.
-func TestResolveVendors_UnshippedReleaseLinesStayEmpty(t *testing.T) {
-	assert.Empty(t, cpe.ResolveVendors("kubernetes", "1.29"))
-	assert.Equal(t, []string{"kubernetes"}, cpe.ResolveVendors("kubernetes", "1.28"))
-}
-
-// Prefix matching widens rule 1, so it can surface a homonym the exact-match
-// arm never reached. Measured instances, kept here so the cost is visible:
-//
-//   - `go 1` — a Lambda go1.x runtime or a public.ecr.aws/lambda/go:1 base
-//     image. A bare major is the coarsest version this design can observe, and
-//     it reaches both golang (correct) and ecies (a Go ECIES library). This is
-//     the same accepted trade as mysql:mysql and redislabs:redis documented on
-//     ResolveVendors: an inert extra node, against silently losing the real one.
-//   - `influxdb 1.8` — before prefix matching this emitted eficode (a Jenkins
-//     plugin that happens to publish the literal string "1.8") and *only*
-//     eficode, because influxdata indexes 1.8.0-1.8.10 and never bare 1.8. The
-//     widened rule restores influxdata alongside it, so the database is no
-//     longer dropped in favour of the plugin.
-func TestResolveVendors_PrefixMatchWidensToHomonyms(t *testing.T) {
-	assert.Equal(t, []string{"ecies", "golang"}, cpe.ResolveVendors("go", "1"))
-	assert.Equal(t, []string{"golang"}, cpe.ResolveVendors("go", "1.21"))
-
-	assert.Equal(t, []string{"eficode", "influxdata"}, cpe.ResolveVendors("influxdb", "1.8"))
-}
-
-// The other half: for a sole-vendor product, rule 2 accepts *any* version,
-// including an imprecise one NVD does not carry. The identification is sound —
-// it is the right vendor and product — but the version is less precise than a
-// dictionary entry, so guard's matcher may find no CVEs for it.
-func TestResolveVendors_MinorOnlyVersionsDoResolveForSoleVendorProducts(t *testing.T) {
-	assert.Equal(t, []string{"php"}, cpe.ResolveVendors("php", "8.1"))
-	assert.Equal(t, []string{"ruby-lang"}, cpe.ResolveVendors("ruby", "3.2"))
-	assert.Equal(t, []string{"microsoft"}, cpe.ResolveVendors(".net", "8"))
-	assert.Equal(t, []string{"f5"}, cpe.ResolveVendors("nginx", "1.25"))
-}
-
-func TestResolveVendors_SoleVendorFallbackForNewerVersions(t *testing.T) {
-	// A version newer than the snapshot still resolves when the product has
-	// exactly one vendor. Verified against the generated table: nginx carries
-	// only f5 once the deprecatedBy chain is followed across chunks.
-	assert.Equal(t, []string{"f5"}, cpe.ResolveVendors("nginx", "99.99.99"))
-	assert.Equal(t, []string{"apache"}, cpe.ResolveVendors("kafka", "99.99.99"))
+func TestResolveVendors_IgnoresTheVersionEntirely(t *testing.T) {
+	// There is no version parameter, and that is the point: a version absent
+	// from the dictionary still matches CVEs through NVD's version ranges, so
+	// gating vendor choice on dictionary version presence only lost recall.
+	assert.NotEmpty(t, cpe.ResolveVendors("python"))
+	assert.NotEmpty(t, cpe.ResolveVendors("postgresql"))
+	assert.NotEmpty(t, cpe.ResolveVendors("openjdk"))
 }
 
 func TestResolveVendors_UnknownProductResolvesToNothing(t *testing.T) {
-	assert.Empty(t, cpe.ResolveVendors("this-product-does-not-exist", "1.0.0"))
-	assert.Empty(t, cpe.ResolveVendors("", ""))
+	assert.Empty(t, cpe.ResolveVendors("not_a_real_product_anywhere"))
+	assert.Empty(t, cpe.ResolveVendors(""))
 }
 
-func TestResolveVendors_DeprecatedVendorsAreNeverReturned(t *testing.T) {
-	// nginx:nginx and igor_sysoev:nginx are fully deprecated in favour of
-	// f5:nginx. Returning either is the mis-vendoring the design forbids.
-	assert.NotContains(t, cpe.ResolveVendors("nginx", "1.25.3"), "nginx")
-	assert.NotContains(t, cpe.ResolveVendors("nginx", "1.25.3"), "igor_sysoev")
+func TestResolveVendors_SiblingVendorsAreBothReturned(t *testing.T) {
+	// DECIDED 2026-11-23 and unchanged: emit both, alias neither. NVD moved
+	// redis CVE filing from redislabs to redis without deprecating the
+	// redislabs dictionary rows, and the two vendors' CVE sets do not
+	// intersect, so collapsing to one silently drops an era of real CVEs.
+	got := cpe.ResolveVendors("redis")
+	assert.Contains(t, got, "redis")
+	assert.Contains(t, got, "redislabs")
 }
 
-func TestResolveVendors_SiblingVendorsAreBothEmitted(t *testing.T) {
-	// redis:redis and redislabs:redis are both live in the dictionary at 6.2.6,
-	// so resolution cannot choose and returns both. Pinned because narrowing it
-	// is a product decision, not a refactor: redislabs:redis:6.2.6 matches 0
-	// CVEs while redis:redis:6.2.6 matches 22, and the two vendors' whole-product
-	// CVE sets do not intersect — so collapsing either way drops real findings.
-	assert.Equal(t, []string{"redis", "redislabs"}, cpe.ResolveVendors("redis", "6.2.6"))
-}
-
-func TestResolveVendors_MySQLHomonymReachesAProductionVersion(t *testing.T) {
-	// A KNOWN LEAK, pinned so it is visible rather than assumed away.
+func TestResolveVendors_HomonymVendorsAreReturnedAndAreInert(t *testing.T) {
+	// A homonym is unrelated software sharing a product string —
+	// voxpupuli:rabbitmq is a Puppet module, makandra:consul a Rails gem.
 	//
-	// The emit-both decision rests on homonym collisions being capped at
-	// versions no real deployment runs. mysql:mysql breaks that cap: it carries
-	// exactly one version, 5.6.36, which an RDS engine version or a container
-	// tag can genuinely be. Its CVEs at that version are CVE-2009-2942 (the
-	// mysql-ocaml bindings) and CVE-2017-12419 (MantisBT) — unrelated software
-	// that merely mentions MySQL — so a matcher hangs two fabricated findings on
-	// an asset running Oracle MySQL.
+	// The old rule worked hard to keep these out. Measured, that was the wrong
+	// target: a homonym never shipped the observed version, so its CPE matches
+	// no CVE. rabbitmq 3.13.7 under all five vendors yields exactly the one
+	// CVE that truly applies. The version is the filter.
 	//
-	// This is NOT asserted in the integration fixture's forbidden_cpe_substrings:
-	// nothing in that fixture deploys MySQL, so the assertion would be vacuous,
-	// and the behaviour it would forbid is the behaviour shipping today. When a
-	// narrowing rule lands, this test is the one that should change.
-	assert.Equal(t, []string{"mysql", "oracle"}, cpe.ResolveVendors("mysql", "5.6.36"),
-		"if this changed, a narrowing rule landed — update the decision record on ResolveVendors")
-	assert.Equal(t, []string{"oracle"}, cpe.ResolveVendors("mysql", "8.0.35"),
-		"the leak is confined to the single version mysql:mysql carries")
+	// They are not free — each is a Technology node — but they are not a
+	// correctness problem, and excluding them cost real CVEs.
+	got := cpe.ResolveVendors("rabbitmq")
+	assert.Contains(t, got, "voxpupuli", "a homonym vendor is returned, and is inert at a version it never shipped")
+	assert.Greater(t, len(got), 1)
+}
+
+func TestResolveVendors_DeprecatedVendorsAreAbsent_KnownRecallGap(t *testing.T) {
+	// A KNOWN GAP, pinned so it is visible rather than forgotten.
+	//
+	// The generator keeps a deprecated record's successor and drops its own
+	// vendor name. But CVE configurations still cite the old names: measured,
+	// sun:openjdk has zero dictionary entries yet appears in 11 live CVEs, and
+	// nginx:nginx, php_group:php, python_software_foundation:python and
+	// yukihiro_matsumoto:ruby are the same shape.
+	//
+	// Retaining both names takes measured recall from 0.906 to 1.000. The fix
+	// belongs in pkg/cpe/gen/distill.go and needs a feed regeneration.
+	assert.NotContains(t, cpe.ResolveVendors("openjdk"), "sun",
+		"if this starts failing the generator was fixed — delete this test and update the recall figures")
+	assert.NotContains(t, cpe.ResolveVendors("nginx"), "nginx")
 }
 
 func TestResolveVendors_SortedAndStable(t *testing.T) {
-	got := cpe.ResolveVendors("http_server", "2.4.50")
-	again := cpe.ResolveVendors("http_server", "2.4.50")
-	assert.Equal(t, got, again)
-	for i := 1; i < len(got); i++ {
-		assert.Less(t, got[i-1], got[i], "vendors must be sorted")
+	first := cpe.ResolveVendors("redis")
+	require.NotEmpty(t, first)
+	for range 20 {
+		assert.Equal(t, first, cpe.ResolveVendors("redis"), "map iteration order must not reach the output")
+	}
+	for i := 1; i < len(first); i++ {
+		assert.Less(t, first[i-1], first[i], "vendors must be sorted")
 	}
 }
 
 func TestTableSize_CoversTheWholeDictionary(t *testing.T) {
-	// The generator fails below 40,000; assert the shipped table clears it, so
-	// a truncated commit breaks the build rather than silently shrinking.
-	assert.GreaterOrEqual(t, cpe.TableSize(), 40000)
+	assert.Greater(t, cpe.TableSize(), 40_000,
+		"the table covers the whole dictionary; there is no curated product allowlist")
 }
 
 func TestNVDSnapshot_RecordsTheFeedDate(t *testing.T) {

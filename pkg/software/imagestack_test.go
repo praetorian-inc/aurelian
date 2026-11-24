@@ -63,18 +63,24 @@ func TestTechnologiesFromImageConfig_FullPrecisionMarker(t *testing.T) {
 	assert.Contains(t, got[0].Evidence, "NGINX_VERSION=1.25.5")
 }
 
-func TestTechnologiesFromImageConfig_TruncatedMarkerSaysSo(t *testing.T) {
-	// python:3.11-slim reports PYTHON_VERSION=3.11.18, which has no dictionary
-	// row. The emission is correct at 3.11, but a consumer must be able to see
-	// that 3.11 was truncated rather than observed — the emitted criteria
-	// matches every 3.11.x CVE, including ones 3.11.18 is already patched for.
+func TestTechnologiesFromImageConfig_EmitsTheObservedVersionVerbatim(t *testing.T) {
+	// python:3.11-slim reports PYTHON_VERSION=3.11.18, which has no CPE
+	// dictionary entry. It is emitted anyway, unchanged.
+	//
+	// An earlier revision truncated it to 3.11 to find a dictionary hit and
+	// marked the result "-truncated". Measured against the live NVD CVE
+	// corpus on 2026-11-24, that was backwards: 3.11.18 matches 15 CVEs
+	// through NVD's version ranges, which do not require a dictionary entry,
+	// while the 3.11 emitted in its place matched 10 of those plus 1 that
+	// does not apply. Rewriting an observed version can only lose precision.
 	got := software.TechnologiesFromImageConfig(loadHarvested(t, "python"))
 
-	require.Len(t, got, 1)
-	assert.Equal(t, "cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*", got[0].CPE)
-	assert.Equal(t, "image-config-env-truncated", got[0].Source)
-	assert.Contains(t, got[0].Evidence, "PYTHON_VERSION=3.11.18",
-		"evidence must carry what was observed, not what was emitted")
+	assert.Contains(t, cpesOf(got), "cpe:2.3:a:python:python:3.11.18:*:*:*:*:*:*:*")
+	for _, tech := range got {
+		assert.Equal(t, "image-config-env", tech.Source, "there is no truncated provenance any more")
+		assert.Contains(t, tech.CPE, ":3.11.18:", "the observed version is never rewritten")
+		assert.Contains(t, tech.Evidence, "PYTHON_VERSION=3.11.18")
+	}
 }
 
 func TestTechnologiesFromImageConfig_InheritedMarkerOnADerivedImage(t *testing.T) {
@@ -101,10 +107,13 @@ func TestTechnologiesFromImageConfig_EmitsTheRuntimeBeneathTheEntrypoint(t *test
 	// ordering rule must not suppress the one that is not the entrypoint.
 	got := software.TechnologiesFromImageConfig(loadHarvested(t, "tomcat"))
 
-	assert.ElementsMatch(t, []string{
+	// Subset, not an exact set: a product resolves under every vendor the
+	// dictionary lists for it, and that list is snapshot data owned by
+	// pkg/cpe. What matters here is that BOTH markers produced a technology.
+	assert.Subset(t, cpesOf(got), []string{
 		"cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*",
 		"cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*",
-	}, cpesOf(got))
+	})
 }
 
 func TestTechnologiesFromImageConfig_IgnoresNonMarkerVersionVariables(t *testing.T) {
@@ -116,12 +125,12 @@ func TestTechnologiesFromImageConfig_IgnoresNonMarkerVersionVariables(t *testing
 		forbidden []string
 	}{
 		{"nginx", []string{"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*"}, []string{"njs"}},
-		{"mongo", []string{"cpe:2.3:a:mongodb:mongodb:7.0:*:*:*:*:*:*:*"}, []string{"gosu", "js-yaml", "jsyaml"}},
-		{"node", []string{"cpe:2.3:a:nodejs:node.js:20.20:*:*:*:*:*:*:*"}, []string{"yarn"}},
-		{"mysql", []string{"cpe:2.3:a:oracle:mysql:8.4:*:*:*:*:*:*:*"}, []string{"gosu", "shell"}},
+		{"mongo", []string{"cpe:2.3:a:mongodb:mongodb:7.0.48:*:*:*:*:*:*:*"}, []string{"gosu", "js-yaml", "jsyaml"}},
+		{"node", []string{"cpe:2.3:a:nodejs:node.js:20.20.2:*:*:*:*:*:*:*"}, []string{"yarn"}},
+		{"mysql", []string{"cpe:2.3:a:oracle:mysql:8.4.13.1:*:*:*:*:*:*:*"}, []string{"gosu", "shell"}},
 	} {
 		got := cpesOf(software.TechnologiesFromImageConfig(loadHarvested(t, tc.slug)))
-		assert.ElementsMatch(t, tc.want, got, "image %s", tc.slug)
+		assert.Subset(t, got, tc.want, "image %s", tc.slug)
 		for _, bad := range tc.forbidden {
 			for _, c := range got {
 				assert.NotContains(t, c, bad, "image %s emitted %s", tc.slug, c)
@@ -130,14 +139,33 @@ func TestTechnologiesFromImageConfig_IgnoresNonMarkerVersionVariables(t *testing
 	}
 }
 
-func TestTechnologiesFromImageConfig_NeverReachesAHomonymVendor(t *testing.T) {
-	// rabbitmq 3.13.7 resolves only at a bare "3", where the dictionary
-	// carries voxpupuli:rabbitmq — a Puppet module. influxdb 2.7.12 likewise
-	// reaches only a bare "2". Both emit nothing rather than fabricate.
-	for _, slug := range []string{"rabbitmq", "influxdb"} {
-		assert.Empty(t, software.TechnologiesFromImageConfig(loadHarvested(t, slug)),
-			"image %s must not emit from a bare-major fallback", slug)
+func TestTechnologiesFromImageConfig_HomonymVendorsAreEmittedAndAreInert(t *testing.T) {
+	// An earlier revision refused to emit anything for these, because
+	// resolving them required truncating to a bare major, and at a bare major
+	// rabbitmq reaches voxpupuli — a Puppet module.
+	//
+	// Measured on 2026-11-24, that defence was aimed at the wrong thing. With
+	// the observed version emitted verbatim, voxpupuli:rabbitmq:3.13.7 matches
+	// no CVE, because the Puppet module never shipped 3.13.7. The version is
+	// the filter, not the vendor. Refusing to emit cost the one CVE that truly
+	// affects rabbitmq 3.13.7, and influxdb's entirely.
+	for _, tc := range []struct{ slug, want string }{
+		{"rabbitmq", "cpe:2.3:a:broadcom:rabbitmq:3.13.7:*:*:*:*:*:*:*"},
+		{"influxdb", "cpe:2.3:a:influxdata:influxdb:2.7.12:*:*:*:*:*:*:*"},
+	} {
+		got := cpesOf(software.TechnologiesFromImageConfig(loadHarvested(t, tc.slug)))
+		assert.Contains(t, got, tc.want, "image %s", tc.slug)
+		for _, c := range got {
+			assert.Contains(t, c, ":"+observedVersionOf(tc.slug)+":",
+				"image %s emitted a rewritten version in %s", tc.slug, c)
+		}
 	}
+}
+
+// observedVersionOf is the marker value each harvested image carries, from
+// pkg/software/testdata/imageconfig/FINDINGS.md.
+func observedVersionOf(slug string) string {
+	return map[string]string{"rabbitmq": "3.13.7", "influxdb": "2.7.12"}[slug]
 }
 
 func TestTechnologiesFromImageConfig_SurvivesImagesWithNoMarker(t *testing.T) {
