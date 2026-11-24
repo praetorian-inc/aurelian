@@ -30,7 +30,39 @@ jobs:
       build-binary-name: aurelian
       golangci-lint-version: v2.14.0
       golangci-lint-timeout: 10m
-      test-flags: ${{ github.event_name == 'pull_request' && '-coverprofile=coverage.out' || '-race -coverprofile=coverage.out -covermode=atomic' }}
+      test-flags: ${{ github.event_name == 'pull_request' && '-coverprofile=coverage.out' || '-race -coverprofile=coverage.out -covermode=atomic -tags static_analysis' }}
       build-matrix-os: ${{ github.event_name == 'pull_request' && '["linux"]' || '["linux","darwin","windows"]' }}
       build-matrix-arch: ${{ github.event_name == 'pull_request' && '["amd64"]' || '["amd64","arm64"]' }}
+    secrets: inherit
+
+  detect-changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      aws-changed: ${{ steps.filter.outputs.aws }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            aws:
+              - 'pkg/aws/**'
+
+  static-analysis:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.aws-changed == 'true'
+    uses: praetorian-inc/public-workflows/.github/workflows/go-ci.yml@0c602372f3d0d038912dd08e159ecc83954a4995  # v2.9.3
+    permissions:
+      contents: read
+    with:
+      build-cmd-path: .
+      build-binary-name: aurelian
+      enable-lint: false
+      enable-build: false
+      test-flags: '-tags static_analysis'
+      test-packages: ./pkg/aws/enumeration/...
     secrets: inherit

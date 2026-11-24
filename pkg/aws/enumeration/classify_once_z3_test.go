@@ -1,3 +1,5 @@
+//go:build static_analysis
+
 package enumeration_test
 
 import (
