@@ -69,27 +69,42 @@ const (
 // by calling software.Detect would compare the system to itself and pass no
 // matter what it emitted.
 //
-// A product resolves under EVERY vendor the CPE dictionary lists for it, and
-// the observed version is emitted verbatim — see pkg/cpe.ResolveVendors for
-// the NVD CVE measurement behind that. So the expected set for one piece of
+// A product resolves under EVERY vendor NVD publishes it under, and the
+// observed version is emitted verbatim — see pkg/cpe.ResolveVendors for the
+// NVD CVE measurement behind that. So the expected set for one piece of
 // software is one CPE per vendor, all at the observed version.
+//
+// "Every vendor" means the union of two corpora since 2026-11-24: the CPE
+// dictionary (names that exist) and the CVE feeds' applicability criteria
+// (names that are used). sun:openjdk and php_group:php below come only from
+// the second — they have no dictionary record at all, and between them are
+// cited by 20 live CVEs that were unreachable before.
 var (
 	cpeTomcat = []string{
 		"cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*",
 		"cpe:2.3:a:apache_software_foundation:tomcat:10.1.62:*:*:*:*:*:*:*",
 	}
-	cpeOpenJDK = []string{"cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*"}
-	cpePHP     = []string{"cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*"}
-	cpePython  = []string{
+	cpeOpenJDK = []string{
+		"cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*",
+		"cpe:2.3:a:sun:openjdk:25.0.5.1:*:*:*:*:*:*:*",
+	}
+	cpePHP = []string{
+		"cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*",
+		"cpe:2.3:a:php_group:php:8.2.31:*:*:*:*:*:*:*",
+	}
+	cpePython = []string{
 		"cpe:2.3:a:microsoft:python:3.11.18:*:*:*:*:*:*:*",
 		"cpe:2.3:a:python:python:3.11.18:*:*:*:*:*:*:*",
+		"cpe:2.3:a:python_software_foundation:python:3.11.18:*:*:*:*:*:*:*",
 	}
 	cpePython312 = []string{
 		"cpe:2.3:a:microsoft:python:3.12:*:*:*:*:*:*:*",
 		"cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*",
+		"cpe:2.3:a:python_software_foundation:python:3.12:*:*:*:*:*:*:*",
 	}
 	cpeNode = []string{
 		"cpe:2.3:a:joyent:node.js:20.20.2:*:*:*:*:*:*:*",
+		"cpe:2.3:a:mongodb:node.js:20.20.2:*:*:*:*:*:*:*",
 		"cpe:2.3:a:nodejs:node.js:20.20.2:*:*:*:*:*:*:*",
 	}
 )
@@ -290,12 +305,10 @@ func TestImageConfigUnreachableImageDoesNotFailTheScan(t *testing.T) {
 
 	// Both unreachable references must also be unidentifiable from their tag,
 	// or this test measures the wrong thing. An earlier revision used
-	// "library/nginx:0.0.0-does-not-exist" and found that it emits
-	// cpe:2.3:a:f5:nginx:0.0.0 — correctly, under the shipped sole-vendor rule
-	// ("if no vendor carries the version and the product has exactly one
-	// vendor, use it"), since nginx has exactly one live vendor. That is a
-	// real property worth knowing, but it is tier 2's rule and not fail-soft,
-	// so it does not belong here.
+	// "library/nginx:0.0.0-does-not-exist" and found that it emits nginx CPEs
+	// at 0.0.0 from the tag alone — correctly, since tier 2 reads the tag and
+	// never needs the registry. That is a real property worth knowing, but it
+	// is tier 2's and not fail-soft, so it does not belong here.
 	t.Cleanup(registerTaskDefinition(t, ecs.NewFromConfig(awsCfg), family, []string{
 		fmt.Sprintf("000000000000.dkr.ecr.%s.amazonaws.com/no-such-repo:v1", imageConfigRegion),
 		"aurelian-no-such-org/no-such-app:v1",

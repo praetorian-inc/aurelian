@@ -86,7 +86,13 @@ func TestDetect_ECSTaskDefinitionImages(t *testing.T) {
 		map[string]any{"NotImage": "x"},
 	}}
 	got := software.Detect("AWS::ECS::TaskDefinition", props)
-	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"}, cpeStrings(got))
+	// Two vendors: f5 from the dictionary, nginx from CVE configurations that
+	// were never back-filled after the acquisition. Both are real, and the
+	// version filters either way.
+	assert.Equal(t, []string{
+		"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nginx:nginx:1.25.3:*:*:*:*:*:*:*",
+	}, cpeStrings(got))
 	assert.Equal(t, "ecs-image-tag", got[0].Source)
 	assert.Contains(t, got[0].Evidence, "nginx:1.25.3")
 }
@@ -122,7 +128,10 @@ func TestDetect_LambdaImageURI(t *testing.T) {
 		"Code":        map[string]any{"ImageUri": "public.ecr.aws/docker/library/nginx:1.25.3"},
 	}
 	got := software.Detect("AWS::Lambda::Function", props)
-	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"}, cpeStrings(got))
+	assert.Equal(t, []string{
+		"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nginx:nginx:1.25.3:*:*:*:*:*:*:*",
+	}, cpeStrings(got))
 	assert.Equal(t, "lambda-image-uri", got[0].Source)
 }
 
@@ -192,10 +201,13 @@ func TestDetect_LambdaCarriesBothRuntimeAndImageDecoders(t *testing.T) {
 		"Code":        map[string]any{"ImageUri": "nginx:1.25.3"},
 	}
 	got := software.Detect("AWS::Lambda::Function", props)
-	sources := map[string]string{}
+	// Each decoder emits one technology per vendor, so collect sets rather
+	// than a single CPE per source: what this test owns is that BOTH decoders
+	// ran on one resource, not how many vendors each product has.
+	sources := map[string][]string{}
 	for _, tech := range got {
-		sources[tech.Source] = tech.CPE
+		sources[tech.Source] = append(sources[tech.Source], tech.CPE)
 	}
-	assert.Equal(t, "cpe:2.3:a:python:python:3.12.1:*:*:*:*:*:*:*", sources["lambda-runtime"])
-	assert.Equal(t, "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*", sources["lambda-image-uri"])
+	assert.Contains(t, sources["lambda-runtime"], "cpe:2.3:a:python:python:3.12.1:*:*:*:*:*:*:*")
+	assert.Contains(t, sources["lambda-image-uri"], "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*")
 }

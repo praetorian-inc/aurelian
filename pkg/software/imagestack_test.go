@@ -57,10 +57,15 @@ func cpesOf(techs []output.Technology) []string {
 func TestTechnologiesFromImageConfig_FullPrecisionMarker(t *testing.T) {
 	got := software.TechnologiesFromImageConfig(loadHarvested(t, "nginx"))
 
-	require.Len(t, got, 1)
-	assert.Equal(t, "cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*", got[0].CPE)
-	assert.Equal(t, "image-config-env", got[0].Source)
-	assert.Contains(t, got[0].Evidence, "NGINX_VERSION=1.25.5")
+	// One marker, one product, every vendor NVD publishes it under.
+	assert.Equal(t, []string{
+		"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nginx:nginx:1.25.5:*:*:*:*:*:*:*",
+	}, cpesOf(got))
+	for _, tech := range got {
+		assert.Equal(t, "image-config-env", tech.Source)
+		assert.Contains(t, tech.Evidence, "NGINX_VERSION=1.25.5")
+	}
 }
 
 func TestTechnologiesFromImageConfig_EmitsTheObservedVersionVerbatim(t *testing.T) {

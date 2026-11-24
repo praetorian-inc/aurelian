@@ -17,29 +17,36 @@ output "taskdef_controls_family" {
   value = aws_ecs_task_definition.controls.family
 }
 
-# nginx:1.25.3 -> live vendor f5 (nginx has exactly one dictionary vendor).
+# nginx:1.25.3 -> f5 (the dictionary's live vendor) and nginx (cited by CVE
+# configurations NVD never back-filled after the F5 acquisition).
 # alpine:3.19 -> nothing: the OS-base-image guard still holds.
 output "expected_controls_cpes" {
-  value = ["cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"]
+  value = [
+    "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
+    "cpe:2.3:a:nginx:nginx:1.25.3:*:*:*:*:*:*:*",
+  ]
 }
 
 output "taskdef_parsing_family" {
   value = aws_ecs_task_definition.parsing.family
 }
 
-# Four images, three CPEs: registry-qualified postgres, httpd -> http_server,
-# nginx with a variant-suffixed tag. nginx:latest -> nothing.
-# One CPE per vendor the dictionary lists for each product, all at the observed
-# version. Since 2026-11-24 vendor selection no longer narrows by version — see
-# pkg/cpe.ResolveVendors for the NVD CVE measurement behind that — so a product
-# with nine dictionary vendors emits nine CPEs. The extra vendors match no CVE
-# at a version they never shipped; they are inert.
+# Four images, three products: registry-qualified postgres, httpd ->
+# http_server, nginx with a variant-suffixed tag. nginx:latest -> nothing.
+#
+# One CPE per vendor NVD publishes the product under, all at the observed
+# version. Vendor selection no longer narrows by version (2026-11-24), and the
+# vendor list is now the union of the CPE dictionary and the CVE corpus
+# (2026-11-24) — see pkg/cpe.ResolveVendors. So http_server emits twelve. The
+# extra vendors match no CVE at a version they never shipped; they are inert.
 output "expected_parsing_cpes" {
   value = [
     "cpe:2.3:a:anynines:postgresql:15.4:*:*:*:*:*:*:*",
     "cpe:2.3:a:postgresql:postgresql:15.4:*:*:*:*:*:*:*",
+    "cpe:2.3:a:a1webserver:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:akka:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:apache:http_server:2.4.58:*:*:*:*:*:*:*",
+    "cpe:2.3:a:bughunter:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:dart:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:hp:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:http_server_project:http_server:2.4.58:*:*:*:*:*:*:*",
@@ -47,7 +54,9 @@ output "expected_parsing_cpes" {
     "cpe:2.3:a:novell:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:oracle:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:treck:http_server:2.4.58:*:*:*:*:*:*:*",
+    "cpe:2.3:a:zeroo:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
+    "cpe:2.3:a:nginx:nginx:1.25.3:*:*:*:*:*:*:*",
   ]
 }
 
@@ -72,8 +81,13 @@ output "lambda_java_name" {
   value = aws_lambda_function.runtime["java"].function_name
 }
 
+# sun:openjdk carries no CPE dictionary record at all, yet is cited by 17 live
+# CVEs. Only the CVE-corpus half of the table supplies it.
 output "expected_lambda_java_cpes" {
-  value = ["cpe:2.3:a:oracle:openjdk:21:*:*:*:*:*:*:*"]
+  value = [
+    "cpe:2.3:a:oracle:openjdk:21:*:*:*:*:*:*:*",
+    "cpe:2.3:a:sun:openjdk:21:*:*:*:*:*:*:*",
+  ]
 }
 
 output "lambda_ruby_name" {
@@ -81,7 +95,10 @@ output "lambda_ruby_name" {
 }
 
 output "expected_lambda_ruby_cpes" {
-  value = ["cpe:2.3:a:ruby-lang:ruby:3.2:*:*:*:*:*:*:*"]
+  value = [
+    "cpe:2.3:a:ruby-lang:ruby:3.2:*:*:*:*:*:*:*",
+    "cpe:2.3:a:yukihiro_matsumoto:ruby:3.2:*:*:*:*:*:*:*",
+  ]
 }
 
 output "lambda_dotnet_name" {
@@ -103,6 +120,7 @@ output "expected_lambda_python_cpes" {
   value = [
     "cpe:2.3:a:microsoft:python:3.12:*:*:*:*:*:*:*",
     "cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*",
+    "cpe:2.3:a:python_software_foundation:python:3.12:*:*:*:*:*:*:*",
   ]
 }
 
@@ -110,10 +128,11 @@ output "lambda_node_name" {
   value = aws_lambda_function.runtime["node"].function_name
 }
 
-# "20.x" normalises to "20", which is emitted under both node.js vendors.
+# "20.x" normalises to "20", emitted under every node.js vendor.
 output "expected_lambda_node_cpes" {
   value = [
     "cpe:2.3:a:joyent:node.js:20:*:*:*:*:*:*:*",
+    "cpe:2.3:a:mongodb:node.js:20:*:*:*:*:*:*:*",
     "cpe:2.3:a:nodejs:node.js:20:*:*:*:*:*:*:*",
   ]
 }
@@ -141,9 +160,12 @@ output "expected_lambda_node_cpes" {
 #               alpine_project:alpine, the Pine-successor EMAIL CLIENT. CPE
 #               files operating systems under part "o" and the generator keeps
 #               only part "a", so this is the one "a"-part alpine there is.
-#   :a:nginx:   the VENDOR position. The correct CPE has nginx as the product
-#               (:a:f5:nginx:), so the trailing colon pins this to the
-#               deprecated vendor spelling only.
+# The second control, ":a:nginx:", was RETIRED on 2026-11-24. It forbade the
+# vendor spelling nginx:nginx as a mis-vendoring. Measured, that spelling is
+# cited by live CVE configurations NVD never back-filled after the F5
+# acquisition, so forbidding it forbade real CVE reachability. The table is now
+# the union of the CPE dictionary and the CVE corpus, and nginx:nginx is a
+# deliberate emission.
 #
 # The invariant that replaced the rest is asserted directly in
 # technology_emission_test.go: every emitted CPE must carry the version that
@@ -151,5 +173,5 @@ output "expected_lambda_node_cpes" {
 # now — a wrong version attributes wrong CVEs, while an extra vendor at the
 # right version attributes none.
 output "forbidden_cpe_substrings" {
-  value = [":a:alpine", ":a:nginx:"]
+  value = [":a:alpine"]
 }

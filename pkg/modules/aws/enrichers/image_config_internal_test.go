@@ -102,8 +102,11 @@ func TestEnrichTechnologies_TagAndConfigAgreeingIsOneTechnology(t *testing.T) {
 	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
-	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*"}, cpeSet(r),
-		"nginx has exactly one dictionary vendor, so this stays an exact set")
+	assert.Equal(t, []string{
+		"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nginx:nginx:1.25.5:*:*:*:*:*:*:*",
+	}, cpeSet(r),
+		"each CPE appears once, though the tag and the marker both produced it")
 	assert.Equal(t, "ecs-image-tag", r.Technologies[0].Source,
 		"the tag observed it first; its provenance is the more precise one")
 }
@@ -132,7 +135,10 @@ func TestEnrichTechnologies_UnreachableRegistryKeepsWhatTheTagFound(t *testing.T
 	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
-	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*"}, cpeSet(r))
+	assert.Equal(t, []string{
+		"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nginx:nginx:1.25.5:*:*:*:*:*:*:*",
+	}, cpeSet(r))
 }
 
 func TestEnrichTechnologies_RunningTwiceDoesNotDoubleTheField(t *testing.T) {
