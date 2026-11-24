@@ -27,6 +27,17 @@ type finding struct {
 	version  string
 	source   string
 	evidence string
+
+	// bestEffort allows the resolver to truncate the observed version to the
+	// nearest prefix the CPE dictionary carries. Set by the image-config
+	// decoder, whose markers report exact patch versions that NVD's dictionary
+	// routinely lags; left false for tier 1 and tier 2, whose versions come
+	// from a control plane or a tag and are already as coarse as they get.
+	bestEffort bool
+
+	// primary marks the software the image's entrypoint runs, as opposed to
+	// the runtime beneath it. Ordering only — it never suppresses a finding.
+	primary bool
 }
 
 // decoder reads one resource type's property bag. It returns one finding per
@@ -67,22 +78,49 @@ func Detect(resourceType string, props map[string]any) []output.Technology {
 		return nil
 	}
 
-	var out []output.Technology
+	var findings []finding
 	for _, decode := range registry[resourceType] {
-		for _, f := range decode(props) {
-			if f.product == "" || f.version == "" {
-				continue
-			}
-			for _, c := range cpe.Resolve(f.product, f.version) {
-				out = append(out, output.Technology{
-					CPE:      c,
-					Source:   f.source,
-					Evidence: f.evidence,
-				})
-			}
+		findings = append(findings, decode(props)...)
+	}
+	return resolveFindings(findings)
+}
+
+// resolveFindings turns extracted findings into technologies. It is shared by
+// every decoder — property-bag and image-config alike — so resolution, CPE
+// wrapping and provenance are decided in exactly one place.
+func resolveFindings(findings []finding) []output.Technology {
+	var out []output.Technology
+	for _, f := range findings {
+		if f.product == "" || f.version == "" {
+			continue
+		}
+
+		cpes, precision := f.resolve()
+		source := f.source
+		if precision != "" && precision != f.version {
+			// The emitted version is coarser than the observed one. Say so:
+			// cpe:2.3:a:python:python:3.11 matches every 3.11.x CVE, including
+			// ones the observed 3.11.18 has already been patched for, and a
+			// consumer cannot tell that from the CPE alone.
+			source += "-truncated"
+		}
+
+		for _, c := range cpes {
+			out = append(out, output.Technology{
+				CPE:      c,
+				Source:   source,
+				Evidence: f.evidence,
+			})
 		}
 	}
 	return out
+}
+
+func (f finding) resolve() (cpes []string, precision string) {
+	if f.bestEffort {
+		return cpe.ResolveBestEffort(f.product, f.version)
+	}
+	return cpe.Resolve(f.product, f.version), f.version
 }
 
 // decode runs a type's decoders in order and returns the first product and

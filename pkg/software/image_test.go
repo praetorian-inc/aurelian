@@ -126,6 +126,50 @@ func TestDetect_LambdaImageURI(t *testing.T) {
 	assert.Equal(t, "lambda-image-uri", got[0].Source)
 }
 
+// The base images AWS publishes for image-packaged Lambdas. Their ECR
+// repository names are not Docker Hub's for the same software — AWS says
+// `nodejs`, `java` and `go` where Hub says `node`, `openjdk` and `golang` —
+// so the Hub spellings alone left every Lambda built on an AWS base image
+// resolving to nothing, which is most of them.
+func TestDetect_LambdaAWSBaseImages(t *testing.T) {
+	for _, tc := range []struct{ ref, wantCPE string }{
+		{"public.ecr.aws/lambda/python:3.12", "cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*"},
+		{"public.ecr.aws/lambda/nodejs:20", "cpe:2.3:a:nodejs:node.js:20:*:*:*:*:*:*:*"},
+		{"public.ecr.aws/lambda/java:21", "cpe:2.3:a:oracle:openjdk:21:*:*:*:*:*:*:*"},
+		{"public.ecr.aws/lambda/ruby:3.3", "cpe:2.3:a:ruby-lang:ruby:3.3:*:*:*:*:*:*:*"},
+		{"public.ecr.aws/lambda/dotnet:8", "cpe:2.3:a:microsoft:.net:8:*:*:*:*:*:*:*"},
+	} {
+		t.Run(tc.ref, func(t *testing.T) {
+			props := map[string]any{
+				"PackageType": "Image",
+				"Code":        map[string]any{"ImageUri": tc.ref},
+			}
+			assert.Equal(t, []string{tc.wantCPE},
+				cpeStrings(software.Detect("AWS::Lambda::Function", props)))
+		})
+	}
+}
+
+// provided.al2023 is an OS shim with no language runtime to identify — the
+// same reason lambdaRuntimeProducts omits the provided.* runtimes. A customer's
+// own application image is not CPE-identifiable software either.
+func TestDetect_LambdaImagesThatMustEmitNothing(t *testing.T) {
+	for _, ref := range []string{
+		"public.ecr.aws/lambda/provided:al2023",
+		"123456789012.dkr.ecr.us-east-2.amazonaws.com/my-app:1.0.0",
+		"123456789012.dkr.ecr.us-east-2.amazonaws.com/internal/billing-api:v2",
+		"public.ecr.aws/lambda/python:latest",
+	} {
+		t.Run(ref, func(t *testing.T) {
+			props := map[string]any{
+				"PackageType": "Image",
+				"Code":        map[string]any{"ImageUri": ref},
+			}
+			assert.Empty(t, software.Detect("AWS::Lambda::Function", props))
+		})
+	}
+}
+
 func TestDetect_LambdaImageURIIgnoredForZipPackages(t *testing.T) {
 	// Code.ImageUri is only meaningful when PackageType is Image.
 	props := map[string]any{

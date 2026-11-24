@@ -41,6 +41,21 @@ var imageProducts = map[string]string{
 	"traefik":       "traefik",
 	"grafana":       "grafana",
 	"influxdb":      "influxdb",
+
+	// AWS Lambda base images, published as public.ecr.aws/lambda/<name>:<tag>.
+	// The repository names differ from Docker Hub's for the same software —
+	// Docker Hub calls them `node`, `openjdk` and `golang`, AWS calls them
+	// `nodejs`, `java` and `go` — so the Hub spellings above do not cover them
+	// and an image-packaged function built on a Lambda base image resolved to
+	// nothing. `python` and `ruby` happen to agree and are already above.
+	//
+	// `provided` is deliberately absent: provided.al2023 is an OS shim with no
+	// language runtime to identify, the same reason lambdaRuntimeProducts omits
+	// the provided.* runtimes.
+	"nodejs": "node.js",
+	"java":   "openjdk",
+	"dotnet": ".net",
+	"go":     "go",
 }
 
 // Deliberately absent: OS base images (alpine, debian, ubuntu, centos, …).

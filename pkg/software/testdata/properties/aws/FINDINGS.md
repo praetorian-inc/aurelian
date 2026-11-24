@@ -46,6 +46,32 @@ FunctionName, FunctionUrl, FunctionUrlAuthType, Role
 decoder (`Code.ImageUri`) will see nothing without a `GetResource`. Lambda
 therefore needs `hydrateIfMissing` in phase 2 — this is measured, not assumed.
 
+> **Correction, 2026-11-24.** The measurement above is right; the diagnosis
+> drawn from it was wrong, and the `hydrateIfMissing` conclusion with it.
+>
+> This key set is not CloudControl's. **Lambda is not enumerated through
+> CloudControl at all** — `pkg/aws/enumeration/lambda_function_enumerator.go`
+> lists it with the native `lambda:ListFunctions` paginator. The union above is
+> the signature of that enumerator's own struct literal (`FunctionName`,
+> `Role`) plus the URL enricher (`FunctionUrl`, `FunctionUrlAuthType`). It
+> describes what aurelian chose to copy, not what AWS declined to return.
+>
+> `ListFunctions` returns the whole `FunctionConfiguration`, which carries
+> `Runtime` and `PackageType`. Both were in memory and discarded.
+> `buildLambdaFunctionResource` now surfaces them, so **tier 1 on Lambda costs
+> zero additional API calls** and the hydration is gone.
+>
+> `Code/ImageUri` is a separate case and went the other way: it is a
+> **write-only** property in the `AWS::Lambda::Function` CloudFormation schema
+> (`writeOnlyProperties` includes `/properties/Code/ImageUri`), so CloudControl
+> `GetResource` can *never* return it. The proposed hydration could not have
+> delivered tier 2 at any price. The image reference now comes from
+> `lambda:GetFunction`, called only where `PackageType == Image` — a filter
+> that is free because `ListFunctions` already reports `PackageType`.
+>
+> Net: the hydration bought one value that was already free and one that was
+> unobtainable, for a `GetResource` per function on both hot paths.
+
 ECS is the opposite case: `ContainerDefinitions` arrives complete and inline,
 with each container's `Image` populated, so tier 2 on ECS is genuinely free.
 
