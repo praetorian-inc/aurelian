@@ -26,25 +26,23 @@ func BuildGroupsByName(gaad *types.AuthorizationAccountDetails) map[string]types
 // emitting a resource-to-runtime-role fact. A role ARN in service configuration
 // is only an association; an incompatible trust policy makes it unusable.
 func roleTrustsService(gaad *types.AuthorizationAccountDetails, roleARN, service string) bool {
+	role, ok := gaad.Roles.Get(roleARN)
+	if !ok || role.AssumeRolePolicyDocument.Statement == nil {
+		return false
+	}
 	allowed := false
 	denied := false
-	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
-		if role.Arn != roleARN || role.AssumeRolePolicyDocument.Statement == nil {
-			return true
+	for _, statement := range *role.AssumeRolePolicyDocument.Statement {
+		if statement.Condition != nil || !actionMatchesPattern(statement.Action, "sts:AssumeRole") || !principalIncludesService(statement.Principal, service) {
+			continue
 		}
-		for _, statement := range *role.AssumeRolePolicyDocument.Statement {
-			if statement.Condition != nil || !actionMatchesPattern(statement.Action, "sts:AssumeRole") || !principalIncludesService(statement.Principal, service) {
-				continue
-			}
-			if strings.EqualFold(statement.Effect, "Deny") {
-				denied = true
-			}
-			if strings.EqualFold(statement.Effect, "Allow") {
-				allowed = true
-			}
+		if strings.EqualFold(statement.Effect, "Deny") {
+			denied = true
 		}
-		return false
-	})
+		if strings.EqualFold(statement.Effect, "Allow") {
+			allowed = true
+		}
+	}
 	return allowed && !denied
 }
 
@@ -52,14 +50,12 @@ func principalIncludesService(principal *types.Principal, service string) bool {
 	if principal == nil {
 		return false
 	}
-	for _, values := range []*types.DynaString{principal.Service, principal.AWS} {
-		if values == nil {
-			continue
-		}
-		for _, value := range *values {
-			if strings.EqualFold(value, service) || value == "*" {
-				return true
-			}
+	if principal.Service == nil {
+		return false
+	}
+	for _, value := range *principal.Service {
+		if strings.EqualFold(value, service) || value == "*" {
+			return true
 		}
 	}
 	return false

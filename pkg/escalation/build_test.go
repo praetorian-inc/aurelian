@@ -530,6 +530,13 @@ func TestCollectStructuralFacts_LambdaRequiresCompatibleServiceTrust(t *testing.
 			Action: &types.DynaString{"sts:AssumeRole"},
 		}
 	}
+	awsTrustStatement := func(effect string, principals ...string) types.PolicyStatement {
+		awsPrincipals := types.DynaString(principals)
+		return types.PolicyStatement{
+			Effect: effect, Principal: &types.Principal{AWS: &awsPrincipals},
+			Action: &types.DynaString{"sts:AssumeRole"},
+		}
+	}
 	gaadWithTrust := func(effect string, services ...string) *types.AuthorizationAccountDetails {
 		trustStatements := types.PolicyStatementList{trustStatement(effect, services...)}
 		return types.NewAuthorizationAccountDetails("111111111111", nil, nil, []types.RoleDetail{{
@@ -553,6 +560,9 @@ func TestCollectStructuralFacts_LambdaRequiresCompatibleServiceTrust(t *testing.
 			trustStatement("Allow", "lambda.amazonaws.com"),
 			trustStatement("Deny", "lambda.amazonaws.com"),
 		),
+		"AWS principal wildcard is not service trust": gaadWithStatements(
+			awsTrustStatement("Allow", "*"),
+		),
 	} {
 		facts := CollectStructuralFacts(gaad, resources)
 		for _, fact := range facts {
@@ -560,7 +570,10 @@ func TestCollectStructuralFacts_LambdaRequiresCompatibleServiceTrust(t *testing.
 		}
 	}
 
-	facts := CollectStructuralFacts(gaadWithTrust("Allow", "ec2.amazonaws.com", "LaMbDa.AmAzOnAwS.CoM"), resources)
+	facts := CollectStructuralFacts(gaadWithStatements(
+		trustStatement("Allow", "ec2.amazonaws.com", "LaMbDa.AmAzOnAwS.CoM"),
+		awsTrustStatement("Deny", "*"),
+	), resources)
 	require.Len(t, facts, 1)
 	assert.Equal(t, StructuralFact{Type: FactLambdaExecutionRole, From: functionARN, To: roleARN, Confidence: 1.0}, facts[0])
 }
