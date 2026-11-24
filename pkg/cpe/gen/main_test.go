@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"sort"
 	"testing"
 
@@ -19,10 +18,8 @@ func keys[V any](m map[string]V) []string {
 }
 
 func TestDistillChunk_DropsDeprecated(t *testing.T) {
-	body, err := os.ReadFile("../testdata/nvd/nginx.json")
-	require.NoError(t, err)
 	into := Table{}
-	require.NoError(t, DistillChunk(body, into))
+	require.NoError(t, DistillChunk([]byte(nginxChunk), into))
 	vendors := keys(into["nginx"])
 	assert.Contains(t, vendors, "f5")
 	assert.NotContains(t, vendors, "nginx")       // deprecated
@@ -35,10 +32,8 @@ func TestDistillChunk_DropsDeprecated(t *testing.T) {
 // CVE pass has no dictionary version set to contribute for the vendors only it
 // knows about. The table is a product -> vendors index and nothing else.
 func TestDistillChunk_CarriesNoVersions(t *testing.T) {
-	body, err := os.ReadFile("../testdata/nvd/nginx.json")
-	require.NoError(t, err)
 	into := Table{}
-	require.NoError(t, DistillChunk(body, into))
+	require.NoError(t, DistillChunk([]byte(nginxChunk), into))
 
 	require.Contains(t, into["nginx"], "f5")
 	// The vendor's value is a set membership marker, not a version set.
@@ -47,10 +42,8 @@ func TestDistillChunk_CarriesNoVersions(t *testing.T) {
 
 func TestDistillChunk_AccumulatesAcrossChunks(t *testing.T) {
 	into := Table{}
-	for _, f := range []string{"nginx.json", "redis.json"} {
-		body, err := os.ReadFile("../testdata/nvd/" + f)
-		require.NoError(t, err)
-		require.NoError(t, DistillChunk(body, into))
+	for _, chunk := range []string{nginxChunk, redisChunk} {
+		require.NoError(t, DistillChunk([]byte(chunk), into))
 	}
 	assert.Contains(t, into, "nginx")
 	assert.Contains(t, into, "redis")
@@ -59,10 +52,8 @@ func TestDistillChunk_AccumulatesAcrossChunks(t *testing.T) {
 func TestDistillChunk_FollowsDeprecatedByChain(t *testing.T) {
 	// nginx traces igor_sysoev -> nginx -> f5 via deprecatedBy. Given only
 	// deprecated records, the resolver must land on the live successor.
-	body, err := os.ReadFile("../testdata/nvd/nginx-deprecated-only.json")
-	require.NoError(t, err)
 	into := Table{}
-	require.NoError(t, DistillChunk(body, into))
+	require.NoError(t, DistillChunk([]byte(nginxDeprecatedOnlyChunk), into))
 	assert.Equal(t, []string{"f5"}, keys(into["nginx"]))
 }
 
@@ -98,10 +89,8 @@ func TestDistill_FollowsDeprecatedByAcrossChunks(t *testing.T) {
 func TestDistillChunk_KeepsEveryLiveVendorForAProduct(t *testing.T) {
 	// redis is carried by several simultaneously live vendors; the generator
 	// keeps all of them, and the resolution rule discriminates on version.
-	body, err := os.ReadFile("../testdata/nvd/redis.json")
-	require.NoError(t, err)
 	into := Table{}
-	require.NoError(t, DistillChunk(body, into))
+	require.NoError(t, DistillChunk([]byte(redisChunk), into))
 	vendors := keys(into["redis"])
 	assert.Contains(t, vendors, "redis")
 	assert.Contains(t, vendors, "redislabs")

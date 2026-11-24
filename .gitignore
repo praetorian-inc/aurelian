@@ -30,10 +30,6 @@ debug.log*
 !pkg/software/testdata/properties/**/*.json
 # Committed test fixtures: recorded NVD /cpes/2.0 responses, which share the
 # bulk dictionary feed's schema and drive the generator's tests offline.
-!pkg/cpe/testdata/nvd/*.json
-# Committed test fixtures: OCI config blobs harvested from live registries,
-# which every image-stack detector is tested against.
-!pkg/software/testdata/imageconfig/*.json
 docker-images
 .claude/*
 .worktrees/

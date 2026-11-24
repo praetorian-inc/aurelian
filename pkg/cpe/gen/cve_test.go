@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,11 +15,8 @@ import (
 // A table distilled from the dictionary alone can never emit it, so those CVEs
 // were unreachable no matter what the resolution rule did.
 func TestHarvestCVEChunk_RecordsVendorSpellingsTheDictionaryLacks(t *testing.T) {
-	body, err := os.ReadFile("../testdata/nvd/cve-openjdk.json")
-	require.NoError(t, err)
-
 	into := Table{}
-	require.NoError(t, HarvestCVEChunk(body, into))
+	require.NoError(t, HarvestCVEChunk([]byte(cveOpenJDKChunk), into))
 
 	assert.Contains(t, keys(into["openjdk"]), "sun")
 }
@@ -28,11 +24,8 @@ func TestHarvestCVEChunk_RecordsVendorSpellingsTheDictionaryLacks(t *testing.T) 
 // A CVE configuration names every product it applies to, not only the one that
 // prompted the lookup. All of them are legitimate (product, vendor) evidence.
 func TestHarvestCVEChunk_RecordsEveryApplicationCriteria(t *testing.T) {
-	body, err := os.ReadFile("../testdata/nvd/cve-openjdk.json")
-	require.NoError(t, err)
-
 	into := Table{}
-	require.NoError(t, HarvestCVEChunk(body, into))
+	require.NoError(t, HarvestCVEChunk([]byte(cveOpenJDKChunk), into))
 
 	assert.Contains(t, keys(into["gimp"]), "gimp")
 	assert.Contains(t, keys(into["firefox"]), "mozilla")
@@ -107,9 +100,7 @@ func TestHarvestCVEChunk_StoresUnescapedLiterals(t *testing.T) {
 func TestHarvestCVEChunk_UnionsWithTheDictionaryPass(t *testing.T) {
 	into := Table{}
 
-	dict, err := os.ReadFile("../testdata/nvd/nginx.json")
-	require.NoError(t, err)
-	require.NoError(t, DistillChunk(dict, into))
+	require.NoError(t, DistillChunk([]byte(nginxChunk), into))
 
 	cve := []byte(`{"vulnerabilities":[{"cve":{"id":"CVE-0000-0005","configurations":[{
 		"nodes":[{"operator":"OR","cpeMatch":[{"vulnerable":true,
