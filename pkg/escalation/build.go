@@ -33,13 +33,16 @@ func roleTrustsService(gaad *types.AuthorizationAccountDetails, roleARN, service
 	allowed := false
 	denied := false
 	for _, statement := range *role.AssumeRolePolicyDocument.Statement {
-		if statement.Condition != nil || !actionMatchesPattern(statement.Action, "sts:AssumeRole") || !principalIncludesService(statement.Principal, service) {
+		if !actionMatchesPattern(statement.Action, "sts:AssumeRole") || !principalIncludesService(statement.Principal, service) {
 			continue
 		}
 		if strings.EqualFold(statement.Effect, "Deny") {
+			// The structural model cannot evaluate a trust condition against
+			// service invocation context. Conservatively retain possible Deny;
+			// ignoring it could assert an execution-role relationship that AWS denies.
 			denied = true
 		}
-		if strings.EqualFold(statement.Effect, "Allow") {
+		if statement.Condition == nil && strings.EqualFold(statement.Effect, "Allow") {
 			allowed = true
 		}
 	}

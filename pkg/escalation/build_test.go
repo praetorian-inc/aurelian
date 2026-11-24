@@ -551,6 +551,14 @@ func TestCollectStructuralFacts_LambdaRequiresCompatibleServiceTrust(t *testing.
 			AssumeRolePolicyDocument: types.Policy{Statement: &trustStatements},
 		}}, nil)
 	}
+	conditionalTrustStatement := func(effect string) types.PolicyStatement {
+		statement := trustStatement(effect, "lambda.amazonaws.com")
+		condition := types.Condition{
+			"ArnLike": types.ConditionStatement{"aws:SourceArn": types.DynaString{functionARN}},
+		}
+		statement.Condition = &condition
+		return statement
+	}
 
 	for name, gaad := range map[string]*types.AuthorizationAccountDetails{
 		"missing role":         types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil),
@@ -559,6 +567,10 @@ func TestCollectStructuralFacts_LambdaRequiresCompatibleServiceTrust(t *testing.
 		"explicit deny overrides allow": gaadWithStatements(
 			trustStatement("Allow", "lambda.amazonaws.com"),
 			trustStatement("Deny", "lambda.amazonaws.com"),
+		),
+		"conditional deny is not assumed inapplicable": gaadWithStatements(
+			trustStatement("Allow", "lambda.amazonaws.com"),
+			conditionalTrustStatement("Deny"),
 		),
 		"AWS principal wildcard is not service trust": gaadWithStatements(
 			awsTrustStatement("Allow", "*"),
