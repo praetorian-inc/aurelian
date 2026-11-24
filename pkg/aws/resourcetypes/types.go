@@ -28,6 +28,10 @@ import "fmt"
 // Adding to baseline: add types you want listed by default (network primitives,
 // IAM, security inventory, etc.). Types declared by a consumer module's
 // SupportedResourceTypes() do NOT need to be added — they are auto-included.
+//
+// Each entry costs one CloudControl ListResources call per region, per account,
+// on every list-all run, for every customer. That is the whole price of being
+// here, so an entry must be worth it to a scan that asked for nothing specific.
 var baseline = []string{
 	"AWS::ApiGateway::RestApi",
 	"AWS::ApiGatewayV2::Api",
@@ -41,11 +45,13 @@ var baseline = []string{
 	"AWS::ECS::Cluster",
 	"AWS::ECS::Service",
 	"AWS::EKS::Cluster",
+	"AWS::ElastiCache::CacheCluster",
 	"AWS::ElasticLoadBalancingV2::LoadBalancer",
 	"AWS::IAM::Policy",
 	"AWS::IAM::Role",
 	"AWS::IAM::User",
 	"AWS::KMS::Key",
+	"AWS::MSK::Cluster",
 	"AWS::RAM::ResourceShare",
 	"AWS::RDS::DBCluster",
 	"AWS::SecretsManager::Secret",
