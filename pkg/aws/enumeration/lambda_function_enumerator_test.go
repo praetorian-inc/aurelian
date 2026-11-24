@@ -46,3 +46,38 @@ func TestBuildLambdaFunctionResourceNoRole(t *testing.T) {
 	assert.Equal(t, "pl-norole", r.ResourceID)
 	assert.Equal(t, "", r.Properties["Role"])
 }
+
+// Runtime and PackageType are the tier-1 inputs pkg/software decodes, and
+// ListFunctions returns both inside the FunctionConfiguration this builder
+// already receives. They were dropped on the floor, which made Runtime look
+// like a sparse-CloudControl problem and bought a GetResource per function to
+// fetch back a value that was already in memory.
+func TestBuildLambdaFunctionResourceSurfacesRuntimeAndPackageType(t *testing.T) {
+	fn := lambdatypes.FunctionConfiguration{
+		FunctionName: aws.String("pl-zip"),
+		FunctionArn:  aws.String("arn:aws:lambda:us-east-1:123456789012:function:pl-zip"),
+		Runtime:      lambdatypes.RuntimePython312,
+		PackageType:  lambdatypes.PackageTypeZip,
+	}
+
+	r := buildLambdaFunctionResource(fn, "123456789012", "us-east-1")
+
+	assert.Equal(t, "python3.12", r.Properties["Runtime"])
+	assert.Equal(t, "Zip", r.Properties["PackageType"])
+}
+
+// An image-packaged function reports no managed runtime. Writing an empty
+// Runtime would make the tier-1 decoder see a present-but-useless key, so the
+// absent value stays absent.
+func TestBuildLambdaFunctionResourceOmitsEmptyRuntime(t *testing.T) {
+	fn := lambdatypes.FunctionConfiguration{
+		FunctionName: aws.String("pl-image"),
+		FunctionArn:  aws.String("arn:aws:lambda:us-east-1:123456789012:function:pl-image"),
+		PackageType:  lambdatypes.PackageTypeImage,
+	}
+
+	r := buildLambdaFunctionResource(fn, "123456789012", "us-east-1")
+
+	assert.NotContains(t, r.Properties, "Runtime")
+	assert.Equal(t, "Image", r.Properties["PackageType"])
+}

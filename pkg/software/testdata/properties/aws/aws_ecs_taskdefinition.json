@@ -1,0 +1,102 @@
+[
+  {
+    "Compatibilities": [
+      "EC2",
+      "FARGATE",
+      "MANAGED_INSTANCES"
+    ],
+    "ContainerDefinitions": [
+      {
+        "Command": null,
+        "Cpu": 0,
+        "CredentialSpecs": null,
+        "DependsOn": null,
+        "DisableNetworking": null,
+        "DnsSearchDomains": null,
+        "DnsServers": null,
+        "DockerLabels": null,
+        "DockerSecurityOptions": null,
+        "EntryPoint": null,
+        "Environment": [
+          {
+            "Name": "AWS_ACCESS_KEY_ID",
+            "Value": "REDACTED"
+          },
+          {
+            "Name": "AWS_SECRET_ACCESS_KEY",
+            "Value": "REDACTED"
+          }
+        ],
+        "EnvironmentFiles": null,
+        "Essential": true,
+        "ExtraHosts": null,
+        "FirelensConfiguration": null,
+        "HealthCheck": null,
+        "Hostname": null,
+        "Image": "alpine:latest",
+        "Interactive": null,
+        "Links": null,
+        "LinuxParameters": null,
+        "LogConfiguration": null,
+        "Memory": null,
+        "MemoryReservation": null,
+        "MountPoints": [],
+        "Name": "secret-container",
+        "PortMappings": [],
+        "Privileged": null,
+        "PseudoTerminal": null,
+        "ReadonlyRootFilesystem": null,
+        "RepositoryCredentials": null,
+        "ResourceRequirements": null,
+        "RestartPolicy": null,
+        "Secrets": "REDACTED",
+        "StartTimeout": null,
+        "StopTimeout": null,
+        "SystemControls": [],
+        "Ulimits": null,
+        "User": null,
+        "VersionConsistency": "",
+        "VolumesFrom": [],
+        "WorkingDirectory": null
+      }
+    ],
+    "Cpu": "256",
+    "DeregisteredAt": null,
+    "EnableFaultInjection": null,
+    "EphemeralStorage": null,
+    "ExecutionRoleArn": "arn:aws:iam::411435703965:role/aurelian-sec-0df47d1b-ecs-exec-role",
+    "Family": "aurelian-sec-0df47d1b-secret-task",
+    "InferenceAccelerators": null,
+    "IpcMode": "",
+    "Memory": "512",
+    "NetworkMode": "awsvpc",
+    "PidMode": "",
+    "PlacementConstraints": [],
+    "ProxyConfiguration": null,
+    "RegisteredAt": "2026-11-13T19:46:28.606Z",
+    "RegisteredBy": "arn:aws:iam::411435703965:user/terraform",
+    "RequiresAttributes": [
+      {
+        "Name": "com.amazonaws.ecs.capability.docker-remote-api.1.18",
+        "TargetId": null,
+        "TargetType": "",
+        "Value": null
+      },
+      {
+        "Name": "ecs.capability.task-eni",
+        "TargetId": null,
+        "TargetType": "",
+        "Value": null
+      }
+    ],
+    "RequiresCompatibilities": [
+      "FARGATE"
+    ],
+    "Revision": 1,
+    "RuntimePlatform": null,
+    "Status": "ACTIVE",
+    "TaskDefinitionArn": "arn:aws:ecs:us-east-2:411435703965:task-definition/aurelian-sec-0df47d1b-secret-task:1",
+    "TaskRoleArn": null,
+    "Volumes": []
+  }
+]

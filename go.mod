@@ -40,7 +40,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/synapse/armsynapse v0.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/trafficmanager/armtrafficmanager v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
-	github.com/aws/aws-sdk-go-v2 v1.45.1
+	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
@@ -59,6 +59,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.63.5
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.69.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.74.0
 	github.com/aws/aws-sdk-go-v2/service/efs v1.41.10
 	github.com/aws/aws-sdk-go-v2/service/elasticbeanstalk v1.34.0
@@ -80,11 +81,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6
 	github.com/aws/aws-sdk-go-v2/service/timestreamquery v1.36.13
-	github.com/aws/smithy-go v1.28.1
+	github.com/aws/smithy-go v1.28.9
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.18.0
+	github.com/google/go-containerregistry v0.21.5
 	github.com/hashicorp/terraform-exec v0.24.0
+	github.com/knqyf263/go-cpe v0.0.0-20261105105232-0e8dfa8dd44c
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.96.0
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0
@@ -115,10 +118,10 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.27 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.17 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.1 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.1 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.22 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.7 // indirect
@@ -146,12 +149,15 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
+	github.com/containerd/stargz-snapshotter/estargz v0.18.2 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
+	github.com/docker/cli v29.4.0+incompatible // indirect
 	github.com/docker/docker v28.5.1+incompatible // indirect
+	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -190,6 +196,7 @@ require (
 	github.com/microsoft/kiota-serialization-json-go v1.1.2 // indirect
 	github.com/microsoft/kiota-serialization-multipart-go v1.1.2 // indirect
 	github.com/microsoft/kiota-serialization-text-go v1.1.3 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
@@ -217,6 +224,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.40.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/vbatts/tar-split v0.12.2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zclconf/go-cty v1.16.4 // indirect
