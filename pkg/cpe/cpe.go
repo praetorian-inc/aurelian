@@ -79,6 +79,13 @@ func assemble(vendor, product, version string) (string, bool) {
 		// string guard will reject.
 		return "", false
 	}
+	if strings.Contains(fs, `\\`) {
+		// A component that was already escaped gets quoted a second time: a
+		// literal backslash in a version binds to `\\`. NVD publishes no such
+		// name, so the key would satisfy guard's regex and still match no CVE.
+		// keyRegex cannot catch this — a double backslash carries no colon.
+		return "", false
+	}
 	if _, err := naming.UnbindFS(fs); err != nil {
 		return "", false
 	}
