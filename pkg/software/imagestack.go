@@ -10,9 +10,8 @@ import (
 )
 
 // markerProducts maps an image config environment variable to the product NVD
-// indexes. Every row was observed in a real config blob — see
-// pkg/software/testdata/imageconfig/FINDINGS.md, which records the image each
-// one came from and whether it resolves today.
+// indexes. Every row was observed in a real config blob; the harvest and what
+// each yields is pinned by `harvested` in imagestack_test.go.
 //
 // This is an allowlist, deliberately, and not a `*_VERSION` sweep. The same
 // harvest found GOSU_VERSION, NJS_VERSION, YARN_VERSION, MYSQL_SHELL_VERSION,

@@ -15,7 +15,7 @@ import (
 var keyRegex = regexp.MustCompile(`^cpe:2\.3(:[^:]+){11}$`)
 
 // Resolve returns the CPE 2.3 strings identifying the given product at the
-// given version — zero, one, or one per vendor that carries that version.
+// given version — one per vendor NVD publishes the product under, or none.
 //
 // The output is *criteria-shaped*, matching NVD's own applicability statements:
 // `part:vendor:product:<observed version>` with `*` in all seven remaining

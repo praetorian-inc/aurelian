@@ -6,22 +6,15 @@ import (
 	"strings"
 )
 
-// Table accumulates product -> set(vendor) across feed chunks, from both
-// sources: the CPE dictionary (names that exist) and the CVE corpus (names
-// that are used). It is a union — see HarvestCVEChunk for why neither source
-// alone is sufficient.
+// Table accumulates product -> set(vendor) across feed chunks, unioned from
+// the CPE dictionary and the CVE corpus (see HarvestCVEChunk).
 //
-// Versions are deliberately not recorded. They were, until the resolution rule
-// was measured against the live CVE corpus on 2026-11-24: NVD attaches CVEs to
-// version RANGES, so a dictionary version set can neither confirm nor exclude
-// an observed version, and ResolveVendors no longer takes a version at all.
-// Carrying them made the artifact ten times larger than its only consumer
-// needs, and would have forced this file to invent version data for every
-// vendor the CVE pass contributes.
+// Versions are not recorded. NVD attaches CVEs to version ranges, so a
+// dictionary version set can neither confirm nor exclude an observed version,
+// and ResolveVendors no longer takes one.
 type Table = map[string]map[string]struct{}
 
-// record notes that `product` is published under `vendor`. Both sources funnel
-// through it so the table can never acquire two spellings of the same entry.
+// record notes that `product` is published under `vendor`.
 func record(into Table, product, vendor string) {
 	vendors, ok := into[product]
 	if !ok {
@@ -146,7 +139,7 @@ func DistillChunkWithIndex(body []byte, into Table, idx DeprecationIndex) error 
 	}
 
 	for _, p := range chunk.Products {
-		_, product, _, _, ok := splitCPE(p.CPE.CPEName)
+		product, _, ok := splitCPE(p.CPE.CPEName)
 		if !ok {
 			continue
 		}
@@ -157,7 +150,7 @@ func DistillChunkWithIndex(body []byte, into Table, idx DeprecationIndex) error 
 		}
 
 		for _, name := range names {
-			_, _, vendor, _, ok := splitCPE(name)
+			_, vendor, ok := splitCPE(name)
 			if !ok {
 				continue
 			}
@@ -179,22 +172,16 @@ func successorsOf(by []struct {
 	return out
 }
 
-// splitCPE splits a CPE 2.3 formatted string, honouring backslash escapes, and
-// returns its part, product, vendor and version. ok is false unless the string
-// is a well-formed 13-component application entry.
-//
-// The returned components are **unescaped literals**: NVD publishes
-// `notepad\+\+`, and the table keys on `notepad++`. Callers of ResolveVendors
-// pass a product as they spell it and should never have to know CPE's quoting
-// rules; assemble re-applies the escaping when it binds the formatted string.
-// Storing the escaped spelling would make the literal miss the table and the
-// escaped spelling bind to a double-escaped string NVD never publishes.
-func splitCPE(name string) (part, product, vendor, version string, ok bool) {
+// splitCPE returns the product and vendor of a well-formed 13-component CPE
+// 2.3 application entry, as **unescaped literals**: NVD publishes
+// `notepad\+\+` and the table keys on `notepad++`, because callers spell a
+// product the plain way and assemble re-applies the escaping on the way out.
+func splitCPE(name string) (product, vendor string, ok bool) {
 	c := splitEscaped(name)
 	if len(c) != 13 || c[0] != "cpe" || c[1] != "2.3" || c[2] != "a" {
-		return "", "", "", "", false
+		return "", "", false
 	}
-	return c[2], unquote(c[4]), unquote(c[3]), unquote(c[5]), true
+	return unquote(c[4]), unquote(c[3]), true
 }
 
 // unquote removes CPE 2.3 formatted-string backslash escaping, turning

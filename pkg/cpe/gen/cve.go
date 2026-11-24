@@ -18,7 +18,6 @@ import (
 type cveChunk struct {
 	Vulnerabilities []struct {
 		CVE struct {
-			ID             string      `json:"id"`
 			Configurations []cveConfig `json:"configurations"`
 		} `json:"cve"`
 	} `json:"vulnerabilities"`
@@ -43,30 +42,14 @@ const maxNodeDepth = 32
 // HarvestCVEChunk accumulates the (product, vendor) pairs cited by one CVE 2.0
 // feed file into `into`, alongside whatever the dictionary pass recorded.
 //
-// This source exists because the CPE dictionary and the CVE corpus disagree
-// about which names exist, and the CVE corpus is the one that decides whether
-// an emission matches. Measured 2026-11-24 over 19 products, ten vendor
-// spellings are cited by live CVE configurations and carry no dictionary
-// record at all — not a deprecated one, not any:
-//
-//	sun:openjdk                      17 CVEs
-//	yukihiro_matsumoto:ruby           8
-//	memcachedb:memcached              4
-//	php_group:php                     3
-//	a1webserver:http_server           2
-//	bughunter:http_server             2
-//	nginx:nginx                       2
-//	python_software_foundation:python 2
-//	mongodb:node.js                   1
-//	zeroo:http_server                 1
-//
-// Most are historical vendor renames NVD never back-filled into old
-// configurations (Sun -> Oracle, PHP Group -> PHP, Matsumoto -> ruby-lang).
-// The rest are unrelated software that happens to share a product name. Both
-// are harmless to record and necessary to emit: a table built from the
-// dictionary alone can never reach those CVEs, and the homonyms are inert
-// because the version does the filtering at resolution time
-// (see pkg/cpe/cpemap.go).
+// The two corpora disagree, and the CVE one decides whether an emission
+// matches. Measured 2026-11-24 over 19 products, ten vendor spellings are
+// cited by live CVE configurations and carry no dictionary record at all —
+// sun:openjdk (17 CVEs), yukihiro_matsumoto:ruby (8), memcachedb:memcached
+// (4), php_group:php (3), nginx:nginx (2), python_software_foundation:python
+// (2) and four more. Most are vendor renames NVD never back-filled into old
+// configurations; the rest are unrelated software sharing a product name,
+// which is inert because the version filters (see pkg/cpe/cpemap.go).
 //
 // Only `part == "a"` entries are kept, matching the dictionary pass.
 func HarvestCVEChunk(body []byte, into Table) error {
@@ -90,11 +73,7 @@ func harvestNode(node cveNode, into Table, depth int) {
 		return
 	}
 	for _, m := range node.CPEMatch {
-		// A criteria string is a CPE 2.3 formatted name whose version
-		// components may be wildcards bounded by the sibling
-		// versionStartIncluding/versionEndExcluding fields. Only the vendor
-		// and product are read here, so those bounds are irrelevant.
-		_, product, vendor, _, ok := splitCPE(m.Criteria)
+		product, vendor, ok := splitCPE(m.Criteria)
 		if !ok {
 			continue
 		}
@@ -105,17 +84,12 @@ func harvestNode(node cveNode, into Table, depth int) {
 	}
 }
 
-// harvestCVEFeeds streams every yearly NVD CVE 2.0 feed into `into`.
+// harvestCVEFeeds streams every yearly NVD CVE 2.0 feed into `into`. The feeds
+// are anonymous gzipped JSON, ~250 MB in total, each cached on its sibling
+// .meta sha256 as the CPE archive is.
 //
-// The feeds are plain gzipped JSON (nvdcve-2.0-YYYY.json.gz), anonymous and
-// unauthenticated, about 250 MB compressed in total. Each is cached under
-// os.UserCacheDir() keyed on its sibling .meta sha256, exactly as the CPE
-// archive is, so a regeneration after a dictionary-only change re-downloads
-// nothing but the current year.
-//
-// The year range ends at the current year rather than at a constant: a feed
-// for a year NVD has not published yet 404s, and a hardcoded end would stop
-// harvesting on New Year's Day without failing anything.
+// The range ends at the current year, not a constant: a feed NVD has not
+// published yet 404s, and a hardcoded end would quietly stop harvesting.
 func harvestCVEFeeds(into Table) error {
 	last := time.Now().UTC().Year()
 	for year := firstCVEYear; year <= last; year++ {
@@ -132,12 +106,10 @@ func harvestCVEFeeds(into Table) error {
 }
 
 // cachedCVEYear returns one year's decompressed feed, downloading it only when
-// the published sha256 differs from the cached copy's key.
-//
-// As with the CPE archive, the sha256 is a cache *key*, not an integrity
-// check: NVD's published digest covers neither downloadable artifact. What
-// guards the content is HTTPS transport integrity to nvd.nist.gov plus the
-// minCVEVendorProducts floor in main.
+// the published sha256 differs from the cached copy's key. As with the CPE
+// archive the sha256 is a cache *key*, not an integrity check — NVD's digest
+// covers neither downloadable artifact — so what guards the content is HTTPS
+// to nvd.nist.gov plus the minCVEVendorProducts floor in main.
 func cachedCVEYear(year int) ([]byte, error) {
 	base, err := os.UserCacheDir()
 	if err != nil {
@@ -197,8 +169,8 @@ func cveMetaSHA(url string) (string, error) {
 	return "", fmt.Errorf("meta %s carries no sha256", url)
 }
 
-// downloadTo writes url to path through a temporary file, so an interrupted
-// download never leaves a short file that the next run would read as cached.
+// downloadTo writes through a temporary file, so an interrupted download never
+// leaves a short file the next run reads as cached.
 func downloadTo(url, path string) error {
 	log.Printf("downloading %s", url)
 	body, err := get(url)

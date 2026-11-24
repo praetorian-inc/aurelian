@@ -1,0 +1,185 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "AttachStderr": false,
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "Cmd": null,
+      "Domainname": "",
+      "Entrypoint": [
+        "/lambda-entrypoint.sh"
+      ],
+      "Env": [
+        "LANG=en_US.UTF-8",
+        "TZ=:/etc/localtime",
+        "PATH=/var/lang/bin:/usr/local/bin:/usr/bin/:/bin:/opt/bin",
+        "LD_LIBRARY_PATH=/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib",
+        "LAMBDA_TASK_ROOT=/var/task",
+        "LAMBDA_RUNTIME_DIR=/var/runtime"
+      ],
+      "Hostname": "",
+      "Image": "sha256:6b020989ae4cfb5af6e1c26be1e43d9a08c0b1820e040200213aa26cfc8682f3",
+      "Labels": {
+        "com.amazonaws.lambda.platform.kernel": "k510ga",
+        "com.amazonaws.lambda.platform.version": "sbxv2ga"
+      },
+      "OnBuild": null,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "",
+      "Volumes": null,
+      "WorkingDir": "/var/task"
+    },
+    "container": "fc1c7164a137de1f2bdbcde1ce21bbc5785b8292d55d5403cb0f57f761f00970",
+    "container_config": {
+      "AttachStderr": false,
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "Cmd": [
+        "/bin/sh",
+        "-c",
+        "#(nop) ",
+        "LABEL com.amazonaws.lambda.platform.version=sbxv2ga"
+      ],
+      "Domainname": "",
+      "Entrypoint": [
+        "/lambda-entrypoint.sh"
+      ],
+      "Env": [
+        "LANG=en_US.UTF-8",
+        "TZ=:/etc/localtime",
+        "PATH=/var/lang/bin:/usr/local/bin:/usr/bin/:/bin:/opt/bin",
+        "LD_LIBRARY_PATH=/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib",
+        "LAMBDA_TASK_ROOT=/var/task",
+        "LAMBDA_RUNTIME_DIR=/var/runtime"
+      ],
+      "Hostname": "fc1c7164a137",
+      "Image": "sha256:6b020989ae4cfb5af6e1c26be1e43d9a08c0b1820e040200213aa26cfc8682f3",
+      "Labels": {
+        "com.amazonaws.lambda.platform.kernel": "k510ga",
+        "com.amazonaws.lambda.platform.version": "sbxv2ga"
+      },
+      "OnBuild": null,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "",
+      "Volumes": null,
+      "WorkingDir": "/var/task"
+    },
+    "created": "2026-04-12T14:39:17.855664301Z",
+    "docker_version": "20.10.22",
+    "history": [
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ARCHITECTURE amd64",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ADD file:69adec8720a98032b603185db4a93cca7adcb27b2e34843e9741b4837b528810 /"
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ADD file:fee28591ce9e55d7dfd06f1ef542367d4d2822a8d9d056df3b66f1fb4cfb6dc2 /"
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ADD file:371a919736832bb391432a17d11217cc509ec96434a6c60ad74464123b9a4874 /"
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ADD file:0119c5de7337d750727a1cc63f1bda22eb88d64bf31e9698fc3be0874c9b4b80 /"
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ADD file:5e3efb11c932c29094d3ae1c1ab56570d177236459bf576b1fbe8b3640c9c0be /"
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ADD file:f85dd66feac0e96c7e6c5e12fe48cdd183af4b5fb070f5ccbe3052b90b03eaa2 /"
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "WORKDIR /var/task",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENV LANG=en_US.UTF-8",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENV TZ=:/etc/localtime",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENV PATH=/var/lang/bin:/usr/local/bin:/usr/bin/:/bin:/opt/bin",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENV LD_LIBRARY_PATH=/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENV LAMBDA_TASK_ROOT=/var/task",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENV LAMBDA_RUNTIME_DIR=/var/runtime",
+        "empty_layer": true
+      },
+      {
+        "author": "AWS Lambda",
+        "created": "2026-04-12T14:30:50Z",
+        "created_by": "ENTRYPOINT [ \"/lambda-entrypoint.sh\" ]",
+        "empty_layer": true
+      },
+      {
+        "created": "2026-04-12T14:39:17.667876184Z",
+        "created_by": "/bin/sh -c #(nop)  LABEL com.amazonaws.lambda.platform.kernel=k510ga",
+        "empty_layer": true
+      },
+      {
+        "created": "2026-04-12T14:39:17.855664301Z",
+        "created_by": "/bin/sh -c #(nop)  LABEL com.amazonaws.lambda.platform.version=sbxv2ga",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:40c41abed7356ff5727f06311aac43b63f34cd257b9012d891d0ffb8c3aff237",
+        "sha256:e067575e1d4952072577a7d736b2f705d1dc36716ac49854c06bc2a8a95e232e",
+        "sha256:40e58bab3b0ad0671e97d7558add9cc55ceb78989f21f484a9713a4b618ebf5d",
+        "sha256:469d4c319823d49436e988cf50b1ca6f3e71f520c43946f90b2666fd964c03ba",
+        "sha256:4f12131ecae8732a46cb81be181c4bf9553d5df02448a873a3a68b5d3bfb0cd8",
+        "sha256:0fb9f194810c4b4bd766e47aa47aeeb889654411bf05a2943f5ae44064fe66ab"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:7113432fbe93b701792a659c515a9501822b95b0c3070d27565f22b8422aee3d",
+  "image": "public.ecr.aws/lambda/nodejs:20"
+}

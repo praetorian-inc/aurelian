@@ -1,0 +1,181 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "Cmd": [
+        "mariadbd"
+      ],
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "GOSU_VERSION=1.19",
+        "LANG=C.UTF-8",
+        "MARIADB_VERSION=1:11.8.9+maria~ubu2404"
+      ],
+      "ExposedPorts": {
+        "3306/tcp": {}
+      },
+      "Labels": {
+        "org.opencontainers.image.authors": "MariaDB Community",
+        "org.opencontainers.image.base.name": "docker.io/library/ubuntu:noble",
+        "org.opencontainers.image.description": "MariaDB Database for relational SQL",
+        "org.opencontainers.image.documentation": "https://hub.docker.com/_/mariadb/",
+        "org.opencontainers.image.licenses": "GPL-2.0",
+        "org.opencontainers.image.source": "https://github.com/MariaDB/mariadb-docker",
+        "org.opencontainers.image.title": "MariaDB Database",
+        "org.opencontainers.image.url": "https://github.com/MariaDB/mariadb-docker",
+        "org.opencontainers.image.vendor": "MariaDB Community",
+        "org.opencontainers.image.version": "11.8.9"
+      },
+      "Volumes": {
+        "/var/lib/mysql": {}
+      }
+    },
+    "created": "2026-11-20T03:29:08.434626657Z",
+    "history": [
+      {
+        "created": "2026-11-10T18:35:15.667031359Z",
+        "created_by": "/bin/sh -c #(nop)  ARG RELEASE",
+        "empty_layer": true
+      },
+      {
+        "created": "2026-11-10T18:35:15.703656098Z",
+        "created_by": "/bin/sh -c #(nop)  ARG LAUNCHPAD_BUILD_ARCH",
+        "empty_layer": true
+      },
+      {
+        "created": "2026-11-10T18:35:15.731719067Z",
+        "created_by": "/bin/sh -c #(nop)  LABEL org.opencontainers.image.version=24.04",
+        "empty_layer": true
+      },
+      {
+        "created": "2026-11-10T18:35:17.946991561Z",
+        "created_by": "/bin/sh -c #(nop) ADD file:54dafd97985c3ec227e2c96be9290657cf2ab456885b5fc8a24c9278bca65e60 in / "
+      },
+      {
+        "created": "2026-11-10T18:35:18.402877569Z",
+        "created_by": "/bin/sh -c #(nop)  CMD [\"/bin/bash\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:23:52.517139316Z",
+        "created_by": "RUN /bin/sh -c groupadd -r mysql && useradd -r -g mysql mysql --home-dir /var/lib/mysql && userdel --remove ubuntu # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.547773296Z",
+        "created_by": "ENV GOSU_VERSION=1.19",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.547773296Z",
+        "created_by": "ARG GPG_KEYS=177F4010FE56CA3336300305F1656F24C74CD1D8",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.547773296Z",
+        "created_by": "RUN |1 GPG_KEYS=177F4010FE56CA3336300305F1656F24C74CD1D8 /bin/sh -c set -eux; \tapt-get update; \tDEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \t\tca-certificates \t\tgpg \t\tgpgv \t\tlibjemalloc2 \t\tlibtcmalloc-minimal4t64 \t\tpwgen \t\ttzdata \t\txz-utils \t\tzstd ; \tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get install -y --no-install-recommends \t\tdirmngr \t\tgpg-agent \t\twget; \trm -rf /var/lib/apt/lists/*; \tdpkgArch=\"$(dpkg --print-architecture | awk -F- '{ print $NF }')\"; \twget -q -O /usr/local/bin/gosu \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch\"; \twget -q -O /usr/local/bin/gosu.asc \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc\"; \tGNUPGHOME=\"$(mktemp -d)\"; \texport GNUPGHOME; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \tfor key in $GPG_KEYS; do \t\tgpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\"; \tdone; \tgpg --batch --export \"$GPG_KEYS\" > /etc/apt/trusted.gpg.d/mariadb.gpg; \tif command -v gpgconf >/dev/null; then \t\tgpgconf --kill all; \tfi; \tgpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" /usr/local/bin/gosu.asc; \tapt-mark auto '.*' > /dev/null; \t[ -z \"$savedAptMark\" ] ||\tapt-mark manual $savedAptMark >/dev/null; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \tchmod +x /usr/local/bin/gosu; \tgosu --version; \tgosu nobody true # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.631895198Z",
+        "created_by": "RUN |1 GPG_KEYS=177F4010FE56CA3336300305F1656F24C74CD1D8 /bin/sh -c mkdir /docker-entrypoint-initdb.d # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.631895198Z",
+        "created_by": "ENV LANG=C.UTF-8",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.631895198Z",
+        "created_by": "LABEL org.opencontainers.image.authors=MariaDB Community org.opencontainers.image.title=MariaDB Database org.opencontainers.image.description=MariaDB Database for relational SQL org.opencontainers.image.documentation=https://hub.docker.com/_/mariadb/ org.opencontainers.image.base.name=docker.io/library/ubuntu:noble org.opencontainers.image.licenses=GPL-2.0 org.opencontainers.image.source=https://github.com/MariaDB/mariadb-docker org.opencontainers.image.vendor=MariaDB Community org.opencontainers.image.version=11.8.9 org.opencontainers.image.url=https://github.com/MariaDB/mariadb-docker",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.631895198Z",
+        "created_by": "ARG MARIADB_VERSION=1:11.8.9+maria~ubu2404",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.631895198Z",
+        "created_by": "ENV MARIADB_VERSION=1:11.8.9+maria~ubu2404",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.631895198Z",
+        "created_by": "ARG REPOSITORY=http://archive.mariadb.org/mariadb-11.8.9/repo/ubuntu/ noble main main/debug",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:24:05.73262417Z",
+        "created_by": "RUN |3 GPG_KEYS=177F4010FE56CA3336300305F1656F24C74CD1D8 MARIADB_VERSION=1:11.8.9+maria~ubu2404 REPOSITORY=http://archive.mariadb.org/mariadb-11.8.9/repo/ubuntu/ noble main main/debug /bin/sh -c set -e;\techo \"deb ${REPOSITORY}\" > /etc/apt/sources.list.d/mariadb.list; \t{ \t\techo 'Package: *'; \t\techo 'Pin: release o=MariaDB'; \t\techo 'Pin-Priority: 999'; \t} > /etc/apt/preferences.d/mariadb # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.355484079Z",
+        "created_by": "RUN |3 GPG_KEYS=177F4010FE56CA3336300305F1656F24C74CD1D8 MARIADB_VERSION=1:11.8.9+maria~ubu2404 REPOSITORY=http://archive.mariadb.org/mariadb-11.8.9/repo/ubuntu/ noble main main/debug /bin/sh -c set -ex; \t{ \t\techo \"mariadb-server\" mysql-server/root_password password 'unused'; \t\techo \"mariadb-server\" mysql-server/root_password_again password 'unused'; \t} | debconf-set-selections; \tapt-get update; \tmkdir -p /var/lib/mysql/mysql ; touch /var/lib/mysql/mysql/user.frm ; \tapt-get install -y --no-install-recommends mariadb-server=\"$MARIADB_VERSION\" mariadb-backup socat \t; \trm -rf /var/lib/apt/lists/*; \trm -rf /var/lib/mysql; \tmkdir -p /var/lib/mysql /run/mysqld; \tchown -R mysql:mysql /var/lib/mysql /run/mysqld; \tchmod 1777 /run/mysqld; \tfind /etc/mysql/ -name '*.cnf' -print0 \t\t| xargs -0 grep -lZE '^(bind-address|log|user\\s)' \t\t| xargs -rt -0 sed -Ei 's/^(bind-address|log|user\\s)/#&/'; \tprintf \"[mariadb]\\nhost-cache-size=0\\nskip-name-resolve\\n\" > /etc/mysql/mariadb.conf.d/05-skipcache.cnf; \tif [ -L /etc/mysql/my.cnf ]; then \t\tsed -i -e '/includedir/ {N;s/\\(.*\\)\\n\\(.*\\)/\\n\\2\\n\\1/}' /etc/mysql/mariadb.cnf; \tfi # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.355484079Z",
+        "created_by": "VOLUME [/var/lib/mysql]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.403784178Z",
+        "created_by": "COPY healthcheck.sh /usr/local/bin/healthcheck.sh # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.434626657Z",
+        "created_by": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.434626657Z",
+        "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.434626657Z",
+        "created_by": "EXPOSE map[3306/tcp:{}]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-20T03:29:08.434626657Z",
+        "created_by": "CMD [\"mariadbd\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:369ede38a92da8cd72a76f15f37e496def401830f3c8b7d39c0c7695682a51ce",
+        "sha256:0825336138036b421146a069421e6dcf39825ed1740cfe8a6a2cf02ce8d43def",
+        "sha256:8c342f141d28a8d87227bcba51adf4c875f9500c188b169a0fd2a028d1b41987",
+        "sha256:61dba2d7d17ce4477c77ff9137f7e3a00ad2d5e0cdaefe5f97956420ecdc2e26",
+        "sha256:2462de151fa1d3196df63cb75bff4174031d080fd51343d64b43906386231b5f",
+        "sha256:c60f55299ecd5d14010f6a76dda780d44ab0c3e50c21c51c35b2d1d36e0f418a",
+        "sha256:f25da99ec6a8f5a217d61bafcff00e8b1a59c027b6d8833c290d9400769c1d25",
+        "sha256:1a5029e02d93229bea600e171089fc501cf6b608295dba1ea7cc42fbe95104a6"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:6e562000e74ce36a9c7cc1302e462c271e3e3a5e0e7ae0ec2ab5f71f0f586f02",
+  "image": "registry-1.docker.io/library/mariadb:11"
+}

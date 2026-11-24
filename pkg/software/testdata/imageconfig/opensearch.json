@@ -1,0 +1,192 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "ArgsEscaped": true,
+      "Cmd": [
+        "opensearch"
+      ],
+      "Entrypoint": [
+        "./opensearch-docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/share/opensearch/jdk/bin:/usr/share/opensearch/bin",
+        "JAVA_HOME=/usr/share/opensearch/jdk",
+        "LD_LIBRARY_PATH=:/usr/share/opensearch/plugins/opensearch-knn/lib"
+      ],
+      "ExposedPorts": {
+        "9200/tcp": {},
+        "9300/tcp": {},
+        "9600/tcp": {},
+        "9650/tcp": {}
+      },
+      "Labels": {
+        "DOCKERFILE": "https://github.com/opensearch-project/opensearch-build/blob/main/docker/release/dockerfiles/opensearch.al2.dockerfile",
+        "org.label-schema.build-date": "2024-04-15T19:13:39Z",
+        "org.label-schema.description": "9662",
+        "org.label-schema.license": "Apache-2.0",
+        "org.label-schema.name": "opensearch",
+        "org.label-schema.schema-version": "1.0",
+        "org.label-schema.url": "https://opensearch.org",
+        "org.label-schema.vcs-url": "https://github.com/opensearch-project/OpenSearch",
+        "org.label-schema.vendor": "OpenSearch",
+        "org.label-schema.version": "2.13.0"
+      },
+      "User": "1000",
+      "WorkingDir": "/usr/share/opensearch"
+    },
+    "created": "2024-04-15T19:15:02.027483985Z",
+    "history": [
+      {
+        "created": "2024-04-01T20:15:30.094340744Z",
+        "created_by": "/bin/sh -c #(nop) ADD file:de826c5500889a50df0276921ed9e878fdcb0ee393d6825a1e851927d3defea6 in / "
+      },
+      {
+        "created": "2024-04-01T20:15:31.166077756Z",
+        "created_by": "/bin/sh -c #(nop)  CMD [\"/bin/bash\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:14:20.574251076Z",
+        "created_by": "ARG UID=1000",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:14:20.574251076Z",
+        "created_by": "ARG GID=1000",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:14:20.574251076Z",
+        "created_by": "ARG OPENSEARCH_HOME=/usr/share/opensearch",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:14:20.574251076Z",
+        "created_by": "RUN |3 UID=1000 GID=1000 OPENSEARCH_HOME=/usr/share/opensearch /bin/sh -c dnf update --releasever=latest -y && dnf install -y tar gzip shadow-utils which && dnf clean all # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:14:20.820865931Z",
+        "created_by": "RUN |3 UID=1000 GID=1000 OPENSEARCH_HOME=/usr/share/opensearch /bin/sh -c groupadd -g $GID opensearch &&     adduser -u $UID -g $GID -d $OPENSEARCH_HOME opensearch # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.803614761Z",
+        "created_by": "COPY --chown=1000:1000 /usr/share/opensearch /usr/share/opensearch # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.854122032Z",
+        "created_by": "WORKDIR /usr/share/opensearch"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "RUN |3 UID=1000 GID=1000 OPENSEARCH_HOME=/usr/share/opensearch /bin/sh -c echo \"export JAVA_HOME=$OPENSEARCH_HOME/jdk\" >> /etc/profile.d/java_home.sh &&     echo \"export PATH=\\$PATH:\\$JAVA_HOME/bin\" >> /etc/profile.d/java_home.sh &&     ls -l $OPENSEARCH_HOME # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "ENV JAVA_HOME=/usr/share/opensearch/jdk",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/share/opensearch/jdk/bin:/usr/share/opensearch/bin",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "ENV LD_LIBRARY_PATH=:/usr/share/opensearch/plugins/opensearch-knn/lib",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "USER 1000",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "ARG DISABLE_INSTALL_DEMO_CONFIG=true",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:01.938110974Z",
+        "created_by": "ARG DISABLE_SECURITY_PLUGIN=false",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "RUN |5 UID=1000 GID=1000 OPENSEARCH_HOME=/usr/share/opensearch DISABLE_INSTALL_DEMO_CONFIG=true DISABLE_SECURITY_PLUGIN=false /bin/sh -c ./opensearch-onetime-setup.sh # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "EXPOSE map[9200/tcp:{} 9300/tcp:{} 9600/tcp:{} 9650/tcp:{}]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "ARG VERSION",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "ARG BUILD_DATE",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "ARG NOTES",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "LABEL org.label-schema.schema-version=1.0 org.label-schema.name=opensearch org.label-schema.version=2.13.0 org.label-schema.url=https://opensearch.org org.label-schema.vcs-url=https://github.com/opensearch-project/OpenSearch org.label-schema.license=Apache-2.0 org.label-schema.vendor=OpenSearch org.label-schema.description=9662 org.label-schema.build-date=2024-04-15T19:13:39Z DOCKERFILE=https://github.com/opensearch-project/opensearch-build/blob/main/docker/release/dockerfiles/opensearch.al2.dockerfile",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "ENTRYPOINT [\"./opensearch-docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-04-15T19:15:02.027483985Z",
+        "created_by": "CMD [\"opensearch\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:5b1e002ce42974dc8fa93641df4d23573a52738f4778571713f6c07205106c30",
+        "sha256:f9663509e6db7876ed51a5e060e6432053d18f3f6412a75fe183b883a238c568",
+        "sha256:6eb235ed81fa752d05b606f1abdaf2a4b765c4de895a1f82a0a5511cbe4a63ed",
+        "sha256:e63939e48337f63084e303ef4f55e983e65d0511012ef32eec310398ca5c3e3d",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+        "sha256:2cc862edcf45d4d98afeb9d9ea9cb5979023eaa3327e378d45475d834a9fed9a",
+        "sha256:aa0a2d6592dc6516b0932f72f3ffbd24fa2e51cae00bc1599b69b6b11422135d"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:00f052502297cbc599af34b93605e1eb485438f0e9670dc8d82a4976da7d3feb",
+  "image": "registry-1.docker.io/opensearchproject/opensearch:2.13.0"
+}

@@ -1,0 +1,121 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "Cmd": [
+        "irb"
+      ],
+      "Env": [
+        "PATH=/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "LANG=C.UTF-8",
+        "RUBY_VERSION=3.3.14",
+        "RUBY_DOWNLOAD_URL=https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.14.tar.xz",
+        "RUBY_DOWNLOAD_SHA256=e24ef6d97095a9c42bf8259a2de33a25aac8d92bb48fefdbdc81724b87784854",
+        "GEM_HOME=/usr/local/bundle",
+        "BUNDLE_SILENCE_ROOT_WARNING=1",
+        "BUNDLE_APP_CONFIG=/usr/local/bundle"
+      ]
+    },
+    "created": "2026-11-24T07:58:35.305098595Z",
+    "history": [
+      {
+        "comment": "debuerreotype 0.17",
+        "created": "2026-11-23T00:00:00Z",
+        "created_by": "# debian.sh --arch 'amd64' out/ 'trixie' '@1795392000'"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:39:21.11832931Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tcurl \t\tgnupg \t\tnetbase \t\tsq \t\twget \t; \tapt-get dist-clean # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T05:21:18.279373509Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tgit \t\tmercurial \t\topenssh-client \t\tsubversion \t\t\t\tprocps \t; \tapt-get dist-clean # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T06:15:34.344376098Z",
+        "created_by": "RUN /bin/sh -c set -ex; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tautoconf \t\tautomake \t\tbzip2 \t\tdefault-libmysqlclient-dev \t\tdpkg-dev \t\tfile \t\tg++ \t\tgcc \t\timagemagick \t\tlibbz2-dev \t\tlibc6-dev \t\tlibcurl4-openssl-dev \t\tlibdb-dev \t\tlibevent-dev \t\tlibffi-dev \t\tlibgdbm-dev \t\tlibglib2.0-dev \t\tlibgmp-dev \t\tlibjpeg-dev \t\tlibkrb5-dev \t\tliblzma-dev \t\tlibmagickcore-dev \t\tlibmagickwand-dev \t\tlibmaxminddb-dev \t\tlibncurses5-dev \t\tlibncursesw5-dev \t\tlibpng-dev \t\tlibpq-dev \t\tlibreadline-dev \t\tlibsqlite3-dev \t\tlibssl-dev \t\tlibtool \t\tlibwebp-dev \t\tlibxml2-dev \t\tlibxslt-dev \t\tlibyaml-dev \t\tmake \t\tpatch \t\tunzip \t\txz-utils \t\tzlib1g-dev \t; \tapt-get dist-clean # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:56:59.340008395Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tmkdir -p /usr/local/etc; \techo 'gem: --no-document' >> /usr/local/etc/gemrc # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV LANG=C.UTF-8",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV RUBY_VERSION=3.3.14",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV RUBY_DOWNLOAD_URL=https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.14.tar.xz",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV RUBY_DOWNLOAD_SHA256=e24ef6d97095a9c42bf8259a2de33a25aac8d92bb48fefdbdc81724b87784854",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tdpkg-dev \t\tlibgdbm-dev \t\truby \t; \t\trustArch=; \tdpkgArch=\"$(dpkg --print-architecture)\"; \tcase \"$dpkgArch\" in \t\t'amd64') rustArch='x86_64-unknown-linux-gnu'; rustupUrl='https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-unknown-linux-gnu/rustup-init'; rustupSha256='20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c' ;; \t\t'arm64') rustArch='aarch64-unknown-linux-gnu'; rustupUrl='https://static.rust-lang.org/rustup/archive/1.28.2/aarch64-unknown-linux-gnu/rustup-init'; rustupSha256='e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c' ;; \tesac; \t\tif [ -n \"$rustArch\" ]; then \t\tmkdir -p /tmp/rust; \t\t\t\twget -O /tmp/rust/rustup-init \"$rustupUrl\"; \t\techo \"$rustupSha256 */tmp/rust/rustup-init\" | sha256sum --check --strict; \t\tchmod +x /tmp/rust/rustup-init; \t\t\t\texport RUSTUP_HOME='/tmp/rust/rustup' CARGO_HOME='/tmp/rust/cargo'; \t\texport PATH=\"$CARGO_HOME/bin:$PATH\"; \t\t/tmp/rust/rustup-init -y --no-modify-path --profile minimal --default-toolchain '1.91.1' --default-host \"$rustArch\"; \t\t\t\trustc --version; \t\tcargo --version; \tfi; \t\twget -O ruby.tar.xz \"$RUBY_DOWNLOAD_URL\"; \techo \"$RUBY_DOWNLOAD_SHA256 *ruby.tar.xz\" | sha256sum --check --strict; \t\tmkdir -p /usr/src/ruby; \ttar -xJf ruby.tar.xz -C /usr/src/ruby --strip-components=1; \trm ruby.tar.xz; \t\tcd /usr/src/ruby; \t\tautoconf; \tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \texport LDFLAGS='-Wl,-z,relro -Wl,-z,now'; \t./configure \t\t--build=\"$gnuArch\" \t\t--disable-install-doc \t\t--enable-shared \t\t${rustArch:+--enable-yjit} \t; \tmake -j \"$(nproc)\"; \tmake install; \t\trm -rf /tmp/rust; \tapt-mark auto '.*' > /dev/null; \tapt-mark manual $savedAptMark > /dev/null; \tfind /usr/local -type f -executable -not \\( -name '*tkinter*' \\) -exec ldd '{}' ';' \t\t| awk '/=>/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -r dpkg-query --search \t\t| awk 'sub(\":$\", \"\", $1) { print $1 }' \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \tapt-get dist-clean; \t\tcd /; \trm -r /usr/src/ruby; \tif dpkg -l | grep -i ruby; then exit 1; fi; \t[ \"$(command -v ruby)\" = '/usr/local/bin/ruby' ]; \truby --version; \tgem --version; \tbundle --version # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV GEM_HOME=/usr/local/bundle",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV BUNDLE_SILENCE_ROOT_WARNING=1 BUNDLE_APP_CONFIG=/usr/local/bundle",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.193396601Z",
+        "created_by": "ENV PATH=/usr/local/bundle/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.305098595Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tmkdir \"$GEM_HOME\"; \tchmod 1777 \"$GEM_HOME\" # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T07:58:35.305098595Z",
+        "created_by": "CMD [\"irb\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:5a13ab4fd379b4a5b3e5e0b199e5ebc916896237a7b3775975b960743d34373d",
+        "sha256:659e96a3451280f2aaa6413e0719cbc261683886e44409b9c023244aa7785432",
+        "sha256:0cb57ba75d8944a94e4da61cfa72bef30f7f39526d228e0993ca575f9a4ac012",
+        "sha256:eb48e6d293c47c956dcefef857bd52fda8631857a9dc63073377662b485fbe2a",
+        "sha256:81a741b06b2026d0faa5bde41e3cf367be144cca3b1ad0f6e3b023cf20ef14f3",
+        "sha256:21495c5fc7280c05f71193f6477cca3966953ac6076ca0fc651029c5633ba910",
+        "sha256:ed8b6b34889403820e1ba5d74e8bc44ab92e0df623972bbc120e2bd767040aea"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:11693d63a8e47cbdcda9e6e05902db230e2d407710d2c50ae6b97d86d1dc1c2e",
+  "image": "registry-1.docker.io/library/ruby:3.3"
+}

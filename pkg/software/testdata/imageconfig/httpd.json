@@ -1,0 +1,117 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "Cmd": [
+        "httpd-foreground"
+      ],
+      "Env": [
+        "PATH=/usr/local/apache2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HTTPD_PREFIX=/usr/local/apache2",
+        "HTTPD_VERSION=2.4.71",
+        "HTTPD_SHA256=2bc5da5a33c247341de082717d4ebcb5cb49e8b73a05b7fddf7d5d6dc2f8de62",
+        "HTTPD_PATCHES="
+      ],
+      "ExposedPorts": {
+        "80/tcp": {}
+      },
+      "StopSignal": "SIGWINCH",
+      "WorkingDir": "/usr/local/apache2"
+    },
+    "created": "2026-11-24T04:16:39.508646967Z",
+    "history": [
+      {
+        "comment": "debuerreotype 0.17",
+        "created": "2026-11-23T00:00:00Z",
+        "created_by": "# debian.sh --arch 'amd64' out/ 'trixie' '@1795392000'"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:33.487215154Z",
+        "created_by": "ENV HTTPD_PREFIX=/usr/local/apache2",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:33.487215154Z",
+        "created_by": "ENV PATH=/usr/local/apache2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:33.487215154Z",
+        "created_by": "RUN /bin/sh -c mkdir -p \"$HTTPD_PREFIX\" \t&& chown www-data:www-data \"$HTTPD_PREFIX\" # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:33.534703857Z",
+        "created_by": "WORKDIR /usr/local/apache2"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:38.89655976Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get install --update -y --no-install-recommends \t\tca-certificates \t\tlibaprutil1-ldap \t\tlibldap-common \t; \tapt-get dist-clean # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:38.89655976Z",
+        "created_by": "ENV HTTPD_VERSION=2.4.71",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:38.89655976Z",
+        "created_by": "ENV HTTPD_SHA256=2bc5da5a33c247341de082717d4ebcb5cb49e8b73a05b7fddf7d5d6dc2f8de62",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:14:38.89655976Z",
+        "created_by": "ENV HTTPD_PATCHES=",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:16:39.482016091Z",
+        "created_by": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get install --update -y --no-install-recommends \t\tbzip2 \t\tdpkg-dev \t\tgcc \t\tgnupg \t\tlibapr1-dev \t\tlibaprutil1-dev \t\tlibbrotli-dev \t\tlibcurl4-openssl-dev \t\tlibjansson-dev \t\tliblua5.2-dev \t\tlibnghttp2-dev \t\tlibpcre2-dev \t\tlibssl-dev \t\tlibxml2-dev \t\tmake \t\tpatch \t\twget \t\tzlib1g-dev \t; \t\tddist() { \t\tlocal f=\"$1\"; shift; \t\tlocal distFile=\"$1\"; shift; \t\tlocal success=; \t\tlocal distUrl=; \t\tfor distUrl in \t\t\thttps://dlcdn.apache.org/ \t\t\thttps://archive.apache.org/dist/ \t\t; do \t\t\tif wget -O \"$f\" \"$distUrl$distFile\" && [ -s \"$f\" ]; then \t\t\t\tsuccess=1; \t\t\t\tbreak; \t\t\tfi; \t\tdone; \t\t[ -n \"$success\" ]; \t}; \t\tddist 'httpd.tar.bz2' \"httpd/httpd-$HTTPD_VERSION.tar.bz2\"; \techo \"$HTTPD_SHA256 *httpd.tar.bz2\" | sha256sum -c -; \t\tddist 'httpd.tar.bz2.asc' \"httpd/httpd-$HTTPD_VERSION.tar.bz2.asc\"; \texport GNUPGHOME=\"$(mktemp -d)\"; \tfor key in \t\tDE29FB3971E71543FD2DC049508EAEC5302DA568 \t\t13155B0E9E634F42BF6C163FDDBA64BA2C312D2F \t\t8B39757B1D8A994DF2433ED58B3A601F08C975E5 \t\t31EE1A81B8D066548156D37B7D6DBFD1F08E012A \t\tA10208FEC3152DD7C0C9B59B361522D782AB7BD1 \t\t3DE024AFDA7A4B15CB6C14410F81AA8AB0D5F771 \t\tEB138C6AF0FC691001B16D93344A844D751D7F27 \t\tCBA5A7C21EC143314C41393E5B968010E04F9A89 \t\t3C016F2B764621BB549C66B516A96495E2226795 \t\t937FB3994A242BA9BF49E93021454AF0CC8B0F7E \t\tEAD1359A4C0F2D37472AAF28F55DF0293A4E7AC9 \t\t4C1EADADB4EF5007579C919C6635B6C0DE885DD3 \t\t01E475360FCCF1D0F24B9D145D414AE1E005C9CB \t\t92CCEF0AA7DD46AC3A0F498BCA6939748103A37E \t\tD395C7573A68B9796D38C258153FA0CD75A67692 \t\tFA39B617B61493FD283503E7EED1EA392261D073 \t\t984FB3350C1D5C7A3282255BB31B213D208F5064 \t\tFE7A49DAA875E890B4167F76CCB2EB46E76CF6D0 \t\t39F6691A0ECF0C50E8BB849CF78875F642721F00 \t\t29A2BA848177B73878277FA475CAA2A3F39B3750 \t\t120A8667241AEDD4A78B46104C042818311A3DE5 \t\t453510BDA6C5855624E009236D0BC73A40581837 \t\t0DE5C55C6BF3B2352DABB89E13249B4FEC88A0BF \t\t7CDBED100806552182F98844E8E7E00B4DAA1988 \t\tA8BA9617EF3BCCAC3B29B869EDB105896F9522D8 \t\t3E6AC004854F3A7F03566B592FF06894E55B0D0E \t\t5B5181C2C0AB13E59DA3F7A3EC582EB639FF092C \t\tA93D62ECC3C8EA12DB220EC934EA76E6791485A8 \t\t65B2D44FE74BD5E3DE3AC3F082781DE46D5954FA \t\t8935926745E1CE7E3ED748F6EC99EE267EB5F61A \t\tE3480043595621FE56105F112AB12A7ADC55C003 \t\t93525CFCF6FDFFB3FD9700DD5A4B10AE43B56A27 \t\tC55AB7B9139EB2263CD1AABC19B033D1760C227B \t\t26F51EF9A82F4ACB43F1903ED377C9E7D1944C66 \t; do \t\tgpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\"; \tdone; \tgpg --batch --verify httpd.tar.bz2.asc httpd.tar.bz2; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" httpd.tar.bz2.asc; \t\tmkdir -p src; \ttar -xf httpd.tar.bz2 -C src --strip-components=1; \trm httpd.tar.bz2; \tcd src; \t\tpatches() { \t\twhile [ \"$#\" -gt 0 ]; do \t\t\tlocal patchFile=\"$1\"; shift; \t\t\tlocal patchSha256=\"$1\"; shift; \t\t\tddist \"$patchFile\" \"httpd/patches/apply_to_$HTTPD_VERSION/$patchFile\"; \t\t\techo \"$patchSha256 *$patchFile\" | sha256sum -c -; \t\t\tpatch -p0 < \"$patchFile\"; \t\t\trm -f \"$patchFile\"; \t\tdone; \t}; \tpatches $HTTPD_PATCHES; \t\tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \tCFLAGS=\"$(dpkg-buildflags --get CFLAGS)\"; \tCPPFLAGS=\"$(dpkg-buildflags --get CPPFLAGS)\"; \tLDFLAGS=\"$(dpkg-buildflags --get LDFLAGS)\"; \t./configure \t\t--build=\"$gnuArch\" \t\t--prefix=\"$HTTPD_PREFIX\" \t\t--enable-mods-shared=reallyall \t\t--enable-mpms-shared=all \t\t--enable-pie \t\tCFLAGS=\"-pipe $CFLAGS\" \t\tCPPFLAGS=\"$CPPFLAGS\" \t\tLDFLAGS=\"-Wl,--as-needed $LDFLAGS\" \t; \tmake -j \"$(nproc)\"; \tmake install; \t\tcd ..; \trm -r src man manual; \t\tsed -ri \t\t-e 's!^(\\s*CustomLog)\\s+\\S+!\\1 /proc/self/fd/1!g' \t\t-e 's!^(\\s*ErrorLog)\\s+\\S+!\\1 /proc/self/fd/2!g' \t\t-e 's!^(\\s*TransferLog)\\s+\\S+!\\1 /proc/self/fd/1!g' \t\t-e 's!^(\\s*User)\\s+daemon\\s*$!\\1 www-data!g' \t\t-e 's!^(\\s*Group)\\s+daemon\\s*$!\\1 www-data!g' \t\t\"$HTTPD_PREFIX/conf/httpd.conf\" \t\t\"$HTTPD_PREFIX/conf/extra/httpd-ssl.conf\" \t; \tgrep -E '^\\s*User www-data$' \"$HTTPD_PREFIX/conf/httpd.conf\"; \tgrep -E '^\\s*Group www-data$' \"$HTTPD_PREFIX/conf/httpd.conf\"; \t\tapt-mark auto '.*' > /dev/null; \t[ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark; \tfind /usr/local -type f -executable -exec ldd '{}' ';' \t\t| awk '/=>/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -r dpkg-query --search \t\t| cut -d: -f1 \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \tapt-get dist-clean; \t\thttpd -v # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:16:39.482016091Z",
+        "created_by": "STOPSIGNAL SIGWINCH",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:16:39.508646967Z",
+        "created_by": "COPY httpd-foreground /usr/local/bin/ # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:16:39.508646967Z",
+        "created_by": "EXPOSE map[80/tcp:{}]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:16:39.508646967Z",
+        "created_by": "CMD [\"httpd-foreground\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:54ae9782e24f4abba5eebc5cc388f983b590abb011b69f20e0e592240bb7a698",
+        "sha256:04483759ac4606264c435b390be8ec2bc3608d0b7a9aca4fa424f908f1b7aebe",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+        "sha256:b62cbb5680c6ee6bbb7cef809b2d7e7c0fa399ac3195690d924a7fbb987bbaf2",
+        "sha256:a9657b0f931d28537ff31c7036688c6e9d419e72c813eafe894a981b73cb4040",
+        "sha256:55e571600d6af25b903b8f079ecf3c2ac22ec19384fb0a2f4c42c0dd1d32e37b"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:98fa7a33501c7d2e51be022bacb570b45fbe6c808d4caeaf9cfb6197cc105d4f",
+  "image": "registry-1.docker.io/library/httpd:2.4"
+}

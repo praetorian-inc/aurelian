@@ -1,0 +1,112 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "Cmd": [
+        "memcached"
+      ],
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "MEMCACHED_VERSION=1.6.45",
+        "MEMCACHED_URL=https://memcached.org/files/memcached-1.6.45.tar.gz",
+        "MEMCACHED_SHA1=45038980ea7045a548b9b5b5125ef7116312a768"
+      ],
+      "ExposedPorts": {
+        "11211/tcp": {}
+      },
+      "User": "memcache"
+    },
+    "created": "2026-11-24T04:20:04.948668321Z",
+    "history": [
+      {
+        "comment": "debuerreotype 0.17",
+        "created": "2026-11-23T00:00:00Z",
+        "created_by": "# debian.sh --arch 'amd64' out/ 'trixie' '@1795392000'"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:17:16.845136042Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tgroupadd --system --gid 11211 memcache; \tuseradd --system --gid memcache --uid 11211 memcache # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:17:19.492337475Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tlibsasl2-modules \t; \trm -rf /var/lib/apt/lists/* # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.801282062Z",
+        "created_by": "ENV MEMCACHED_VERSION=1.6.45",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.801282062Z",
+        "created_by": "ENV MEMCACHED_URL=https://memcached.org/files/memcached-1.6.45.tar.gz",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.801282062Z",
+        "created_by": "ENV MEMCACHED_SHA1=45038980ea7045a548b9b5b5125ef7116312a768",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.801282062Z",
+        "created_by": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tdpkg-dev \t\tgcc \t\tlibc6-dev \t\tlibevent-dev \t\tlibio-socket-ssl-perl \t\tlibsasl2-dev \t\tlibssl-dev \t\tmake \t\tperl \t\twget \t; \trm -rf /var/lib/apt/lists/*; \t\twget -O memcached.tar.gz \"$MEMCACHED_URL\"; \techo \"$MEMCACHED_SHA1  memcached.tar.gz\" | sha1sum -c -; \tmkdir -p /usr/src/memcached; \ttar -xzf memcached.tar.gz -C /usr/src/memcached --strip-components=1; \trm memcached.tar.gz; \t\tcd /usr/src/memcached; \t\tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \tcase \"$gnuArch\" in \t\tarm-*abihf) export ac_cv_c_alignment=need ;; \tesac; \t./configure \t\t--build=\"$gnuArch\" \t\t--enable-extstore \t\t--enable-proxy \t\t--enable-sasl \t\t--enable-sasl-pwdb \t\t--enable-tls \t; \tnproc=\"$(nproc)\"; \tmake -j \"$nproc\"; \t\tsed -i.bak 's/SECLEVEL=2/SECLEVEL=1/g' /etc/ssl/openssl.cnf; \tmake test PARALLEL=\"$nproc\" || make test; \tmv /etc/ssl/openssl.cnf.bak /etc/ssl/openssl.cnf; \t\tmake install; \t\tcd /; \trm -rf /usr/src/memcached; \t\tapt-mark auto '.*' > /dev/null; \tapt-mark manual $savedAptMark > /dev/null; \tfind /usr/local -type f -executable -exec ldd '{}' ';' \t\t| awk '/=>/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -r dpkg-query --search \t\t| cut -d: -f1 \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \t\tmemcached -V # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.851504325Z",
+        "created_by": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.948668321Z",
+        "created_by": "RUN /bin/sh -c ln -s usr/local/bin/docker-entrypoint.sh /entrypoint.sh # backwards compat # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.948668321Z",
+        "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.948668321Z",
+        "created_by": "USER memcache",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.948668321Z",
+        "created_by": "EXPOSE map[11211/tcp:{}]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2026-11-24T04:20:04.948668321Z",
+        "created_by": "CMD [\"memcached\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:54ae9782e24f4abba5eebc5cc388f983b590abb011b69f20e0e592240bb7a698",
+        "sha256:b9971e711fcec945bd6eedd2e1c1a403a194004a32678dea9f013feb377ba5c9",
+        "sha256:e047e3fd6f8e64ca1a46167288213e554745875f0257d68ca3097e7917c70cdb",
+        "sha256:b658f59998b8886f975d9a36faa0df9bb513575d12dec910a96a57be03a1dda6",
+        "sha256:885d396855f7be3e5b33613b02b09713a77bcba97805702522382969cb506515",
+        "sha256:5f8ec468eb28ec2f3dcf19e00296cda1c56e72dab1cfc00b3ebb6f7a14d91e8c"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:caff88f7360e5ea9026db1efe05691b7cbb5da1177ba93a19bcb7b3dcc8de0d3",
+  "image": "registry-1.docker.io/library/memcached:1.6"
+}

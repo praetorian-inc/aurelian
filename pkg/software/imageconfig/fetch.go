@@ -7,7 +7,6 @@
 // environment as a matter of convention, and that marker is inherited by every
 // image built FROM them, so a private `myorg/app` built on `python:3.11`
 // announces its runtime in a blob the registry serves before any layer moves.
-// See pkg/software/testdata/imageconfig/FINDINGS.md for the harvested evidence.
 //
 // This package performs network I/O, which is why it is separate from
 // pkg/software: software.Detect is a pure function of (resourceType,

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -14,11 +15,156 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// loadHarvested reads one of the config blobs harvested from a live registry
-// in pkg/software/testdata/imageconfig. These are real blobs, verbatim: a
-// decoder tested against hand-written env slices would be tested against what
-// the author imagined official images do, which is the mistake FINDINGS.md
-// exists to prevent.
+// harvested holds every config blob in testdata/imageconfig against the
+// product and version the marker in it must yield, as `product@version`.
+//
+// These are real blobs pulled from live registries, and this table is the
+// record of what they contain — the reason the marker allowlist in
+// imagestack.go has the rows it has. A decoder checked against hand-written
+// env slices would only prove the author guessed right about official images.
+//
+// Expectations are product@version rather than CPE strings on purpose: marker
+// extraction owns the product and the version, while the vendor list belongs
+// to pkg/cpe and changes whenever the NVD table is regenerated.
+var harvested = map[string][]string{
+	"consul":          nil,
+	"eclipse-temurin": {"openjdk@17.0.21.1"}, // JAVA_VERSION=jdk-17.0.21.1+2
+	"golang":          {"go@1.23.12"},
+	"grafana":         nil,
+	"haproxy":         {"haproxy@2.9.15"},
+	"httpd":           {"http_server@2.4.71"},
+	"influxdb":        {"influxdb@2.7.12"},
+	"jenkins":         {"jenkins@2.580.2"},
+	"kafka":           nil,
+	"lambda-dotnet":   {".net@8.0.34"}, // a product name containing a dot
+	"lambda-go":       nil,
+	"lambda-java":     nil,
+	"lambda-nodejs":   nil,
+	"lambda-python":   nil,
+	"lambda-ruby":     nil,
+	"mariadb":         {"mariadb@11.8.9"}, // MARIADB_VERSION=1:11.8.9+maria~ubu2404
+	"memcached":       {"memcached@1.6.45"},
+	"mongo":           {"mongodb@7.0.48"},
+	"mysql":           {"mysql@8.4.13.1"}, // MYSQL_VERSION=8.4.13.1-1.el9
+	"nginx":           {"nginx@1.25.5"},
+	"node":            {"node.js@20.20.2"},
+	"opensearch":      nil,
+	"php":             {"php@8.3.37"},
+	"postgres":        {"postgresql@15.20"}, // PG_VERSION=15.20-1.pgdg13+1
+	"python":          {"python@3.11.18"},
+	"rabbitmq":        {"rabbitmq@3.13.7"},
+	"redis":           {"redis@7.4.12"},
+	"ruby":            {"ruby@3.3.14"},
+	"tomcat":          {"openjdk@25.0.5.1", "tomcat@10.1.62"}, // the runtime under the entrypoint
+	"traefik":         nil,
+	"vault":           nil,            // ships a bare `VERSION=` with nothing after it
+	"wordpress":       {"php@8.2.31"}, // inherited from the php base image
+}
+
+func TestTechnologiesFromImageConfig_EveryHarvestedImage(t *testing.T) {
+	for slug, want := range harvested {
+		t.Run(slug, func(t *testing.T) {
+			got := software.TechnologiesFromImageConfig(loadHarvested(t, slug))
+			assert.Equal(t, want, productVersionsOf(got))
+			for _, tech := range got {
+				assert.Equal(t, "image-config-env", tech.Source)
+			}
+		})
+	}
+}
+
+// Every blob on disk must appear in the table above, or a fixture can rot
+// unnoticed — or be added without anyone recording what it proves.
+func TestHarvestedTableCoversEveryFixture(t *testing.T) {
+	paths, err := filepath.Glob(filepath.Join("testdata", "imageconfig", "*.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, paths)
+
+	onDisk := make([]string, 0, len(paths))
+	for _, p := range paths {
+		onDisk = append(onDisk, strings.TrimSuffix(filepath.Base(p), ".json"))
+	}
+	sort.Strings(onDisk)
+
+	inTable := make([]string, 0, len(harvested))
+	for slug := range harvested {
+		inTable = append(inTable, slug)
+	}
+	sort.Strings(inTable)
+
+	assert.Equal(t, onDisk, inTable)
+}
+
+// wordpress:6-php8.2-apache is why tier 3 exists: its base name is not in the
+// tier-2 table, so the tag yields nothing, yet its config carries PHP_VERSION
+// inherited from the php base. Every private image built FROM an official one
+// behaves this way.
+func TestTechnologiesFromImageConfig_TheTagCannotIdentifyADerivedImage(t *testing.T) {
+	product, _, _ := software.ParseImageRef("wordpress:6-php8.2-apache")
+	require.Empty(t, product)
+	assert.Equal(t, []string{"php@8.2.31"},
+		productVersionsOf(software.TechnologiesFromImageConfig(loadHarvested(t, "wordpress"))))
+}
+
+// The marker table is an allowlist, not a *_VERSION sweep: each of these ships
+// a real marker beside a version variable for something else entirely.
+func TestTechnologiesFromImageConfig_IgnoresNonMarkerVersionVariables(t *testing.T) {
+	for _, tc := range []struct {
+		slug      string
+		forbidden []string
+	}{
+		{"nginx", []string{"njs"}},           // the njs scripting module
+		{"mongo", []string{"gosu", "yaml"}},  // the setuid helper, a bundled JS library
+		{"node", []string{"yarn"}},           // the package manager
+		{"mysql", []string{"gosu", "shell"}}, // the client shell, not the server
+		{"influxdb", []string{"cli"}},        // the CLI, not the server
+	} {
+		for _, c := range cpesOf(software.TechnologiesFromImageConfig(loadHarvested(t, tc.slug))) {
+			for _, bad := range tc.forbidden {
+				assert.NotContains(t, c, bad, "image %s emitted %s", tc.slug, c)
+			}
+		}
+	}
+}
+
+func TestTechnologiesFromImageConfig_IsDeterministic(t *testing.T) {
+	cfg := loadHarvested(t, "tomcat")
+	first := cpesOf(software.TechnologiesFromImageConfig(cfg))
+	for range 20 {
+		assert.Equal(t, first, cpesOf(software.TechnologiesFromImageConfig(cfg)),
+			"map iteration order must not reach the output")
+	}
+}
+
+func TestTechnologiesFromImageConfig_HandlesHostileAndMalformedInput(t *testing.T) {
+	for name, cfg := range map[string]imageconfig.Config{
+		"zero":              {},
+		"no env":            {Ref: "app:1", Digest: "sha256:a"},
+		"malformed entries": {Env: []string{"", "=", "NOEQUALS", "=novalue", "PYTHON_VERSION="}},
+		"marker not a version": {Env: []string{
+			"PYTHON_VERSION=latest", "NGINX_VERSION=$(whoami)", "REDIS_VERSION=../../etc/passwd",
+		}},
+		"colon injection": {Env: []string{"NGINX_VERSION=1.25.5:extra:fields"}},
+		"wildcard injection": {Env: []string{
+			"NGINX_VERSION=*", "PHP_VERSION=?", `RUBY_VERSION=3.3.14\:*\:*`,
+		}},
+		"huge value": {Env: []string{"PYTHON_VERSION=" + strings.Repeat("9", 100_000)}},
+	} {
+		assert.NotPanics(t, func() {
+			for _, tech := range software.TechnologiesFromImageConfig(cfg) {
+				assert.Regexp(t, `^cpe:2\.3(:[^:]+){11}$`, tech.CPE, "case %q", name)
+			}
+		}, "case %q", name)
+	}
+}
+
+func TestTechnologiesFromImageConfig_EvidenceNamesTheImageAndTheMarker(t *testing.T) {
+	got := software.TechnologiesFromImageConfig(loadHarvested(t, "nginx"))
+	require.NotEmpty(t, got)
+	assert.Contains(t, got[0].Evidence, "registry-1.docker.io/library/nginx:1.25")
+	assert.Contains(t, got[0].Evidence, "NGINX_VERSION=1.25.5")
+}
+
 func loadHarvested(t *testing.T, slug string) imageconfig.Config {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("testdata", "imageconfig", slug+".json"))
@@ -54,184 +200,23 @@ func cpesOf(techs []output.Technology) []string {
 	return out
 }
 
-func TestTechnologiesFromImageConfig_FullPrecisionMarker(t *testing.T) {
-	got := software.TechnologiesFromImageConfig(loadHarvested(t, "nginx"))
-
-	// One marker, one product, every vendor NVD publishes it under.
-	assert.Equal(t, []string{
-		"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*",
-		"cpe:2.3:a:nginx:nginx:1.25.5:*:*:*:*:*:*:*",
-	}, cpesOf(got))
-	for _, tech := range got {
-		assert.Equal(t, "image-config-env", tech.Source)
-		assert.Contains(t, tech.Evidence, "NGINX_VERSION=1.25.5")
-	}
-}
-
-func TestTechnologiesFromImageConfig_EmitsTheObservedVersionVerbatim(t *testing.T) {
-	// python:3.11-slim reports PYTHON_VERSION=3.11.18, which has no CPE
-	// dictionary entry. It is emitted anyway, unchanged.
-	//
-	// An earlier revision truncated it to 3.11 to find a dictionary hit and
-	// marked the result "-truncated". Measured against the live NVD CVE
-	// corpus on 2026-11-24, that was backwards: 3.11.18 matches 15 CVEs
-	// through NVD's version ranges, which do not require a dictionary entry,
-	// while the 3.11 emitted in its place matched 10 of those plus 1 that
-	// does not apply. Rewriting an observed version can only lose precision.
-	got := software.TechnologiesFromImageConfig(loadHarvested(t, "python"))
-
-	assert.Contains(t, cpesOf(got), "cpe:2.3:a:python:python:3.11.18:*:*:*:*:*:*:*")
-	for _, tech := range got {
-		assert.Equal(t, "image-config-env", tech.Source, "there is no truncated provenance any more")
-		assert.Contains(t, tech.CPE, ":3.11.18:", "the observed version is never rewritten")
-		assert.Contains(t, tech.Evidence, "PYTHON_VERSION=3.11.18")
-	}
-}
-
-func TestTechnologiesFromImageConfig_InheritedMarkerOnADerivedImage(t *testing.T) {
-	// The reason this phase exists. wordpress:6-php8.2-apache is not a `php`
-	// image, its base name is not in the tier-2 table, and ParseImageRef
-	// returns nothing for it — yet its config carries PHP_VERSION, inherited
-	// from the php base. Every private image built FROM an official one
-	// behaves this way.
-	assertEmitsNothingFromTheTag(t, "wordpress:6-php8.2-apache")
-
-	got := software.TechnologiesFromImageConfig(loadHarvested(t, "wordpress"))
-	assert.Contains(t, cpesOf(got), "cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*")
-}
-
-func assertEmitsNothingFromTheTag(t *testing.T, ref string) {
-	t.Helper()
-	product, _, _ := software.ParseImageRef(ref)
-	assert.Empty(t, product, "tier 2 is expected to miss %q; if it no longer does, this test proves less than it claims", ref)
-}
-
-func TestTechnologiesFromImageConfig_EmitsTheRuntimeBeneathTheEntrypoint(t *testing.T) {
-	// tomcat:10 carries TOMCAT_VERSION and JAVA_VERSION. Tomcat is what the
-	// entrypoint runs; Java is what it runs on. Both are the stack, and an
-	// ordering rule must not suppress the one that is not the entrypoint.
-	got := software.TechnologiesFromImageConfig(loadHarvested(t, "tomcat"))
-
-	// Subset, not an exact set: a product resolves under every vendor the
-	// dictionary lists for it, and that list is snapshot data owned by
-	// pkg/cpe. What matters here is that BOTH markers produced a technology.
-	assert.Subset(t, cpesOf(got), []string{
-		"cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*",
-		"cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*",
-	})
-}
-
-func TestTechnologiesFromImageConfig_IgnoresNonMarkerVersionVariables(t *testing.T) {
-	// The marker table is an allowlist, not a *_VERSION sweep. Each of these
-	// images carries a real marker next to junk that must not be emitted.
-	for _, tc := range []struct {
-		slug      string
-		want      []string
-		forbidden []string
-	}{
-		{"nginx", []string{"cpe:2.3:a:f5:nginx:1.25.5:*:*:*:*:*:*:*"}, []string{"njs"}},
-		{"mongo", []string{"cpe:2.3:a:mongodb:mongodb:7.0.48:*:*:*:*:*:*:*"}, []string{"gosu", "js-yaml", "jsyaml"}},
-		{"node", []string{"cpe:2.3:a:nodejs:node.js:20.20.2:*:*:*:*:*:*:*"}, []string{"yarn"}},
-		{"mysql", []string{"cpe:2.3:a:oracle:mysql:8.4.13.1:*:*:*:*:*:*:*"}, []string{"gosu", "shell"}},
-	} {
-		got := cpesOf(software.TechnologiesFromImageConfig(loadHarvested(t, tc.slug)))
-		assert.Subset(t, got, tc.want, "image %s", tc.slug)
-		for _, bad := range tc.forbidden {
-			for _, c := range got {
-				assert.NotContains(t, c, bad, "image %s emitted %s", tc.slug, c)
-			}
+// productVersionsOf reduces emissions to the distinct `product@version` pairs
+// behind them, dropping the vendor fan-out pkg/cpe applies.
+func productVersionsOf(techs []output.Technology) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, t := range techs {
+		parts := strings.SplitN(t.CPE, ":", 7)
+		if len(parts) < 7 {
+			continue
 		}
-	}
-}
-
-func TestTechnologiesFromImageConfig_HomonymVendorsAreEmittedAndAreInert(t *testing.T) {
-	// An earlier revision refused to emit anything for these, because
-	// resolving them required truncating to a bare major, and at a bare major
-	// rabbitmq reaches voxpupuli — a Puppet module.
-	//
-	// Measured on 2026-11-24, that defence was aimed at the wrong thing. With
-	// the observed version emitted verbatim, voxpupuli:rabbitmq:3.13.7 matches
-	// no CVE, because the Puppet module never shipped 3.13.7. The version is
-	// the filter, not the vendor. Refusing to emit cost the one CVE that truly
-	// affects rabbitmq 3.13.7, and influxdb's entirely.
-	for _, tc := range []struct{ slug, want string }{
-		{"rabbitmq", "cpe:2.3:a:broadcom:rabbitmq:3.13.7:*:*:*:*:*:*:*"},
-		{"influxdb", "cpe:2.3:a:influxdata:influxdb:2.7.12:*:*:*:*:*:*:*"},
-	} {
-		got := cpesOf(software.TechnologiesFromImageConfig(loadHarvested(t, tc.slug)))
-		assert.Contains(t, got, tc.want, "image %s", tc.slug)
-		for _, c := range got {
-			assert.Contains(t, c, ":"+observedVersionOf(tc.slug)+":",
-				"image %s emitted a rewritten version in %s", tc.slug, c)
+		pv := parts[4] + "@" + parts[5]
+		if _, dup := seen[pv]; dup {
+			continue
 		}
+		seen[pv] = struct{}{}
+		out = append(out, pv)
 	}
-}
-
-// observedVersionOf is the marker value each harvested image carries, from
-// pkg/software/testdata/imageconfig/FINDINGS.md.
-func observedVersionOf(slug string) string {
-	return map[string]string{"rabbitmq": "3.13.7", "influxdb": "2.7.12"}[slug]
-}
-
-func TestTechnologiesFromImageConfig_SurvivesImagesWithNoMarker(t *testing.T) {
-	// Most private images, and several official ones, carry nothing usable.
-	// That is the designed degradation: the config fetch costs the same either
-	// way and tier 2's tag parsing still applies.
-	for _, slug := range []string{"traefik", "grafana", "kafka", "opensearch", "consul", "lambda-go", "lambda-python"} {
-		assert.Empty(t, software.TechnologiesFromImageConfig(loadHarvested(t, slug)), "image %s", slug)
-	}
-}
-
-func TestTechnologiesFromImageConfig_IgnoresABareEmptyVersionVariable(t *testing.T) {
-	// hashicorp/vault ships a bare `VERSION=` with nothing after it.
-	assert.Empty(t, software.TechnologiesFromImageConfig(loadHarvested(t, "vault")))
-}
-
-func TestTechnologiesFromImageConfig_NormalisesAwkwardRealValues(t *testing.T) {
-	for _, tc := range []struct{ slug, want string }{
-		{"eclipse-temurin", "cpe:2.3:a:oracle:openjdk:17.0.21.1:*:*:*:*:*:*:*"}, // JAVA_VERSION=jdk-17.0.21.1+2
-		{"mariadb", "cpe:2.3:a:mariadb:mariadb:11.8.9:*:*:*:*:*:*:*"},           // MARIADB_VERSION=1:11.8.9+maria~ubu2404
-		{"lambda-dotnet", "cpe:2.3:a:microsoft:.net:8.0.34:*:*:*:*:*:*:*"},      // a product name containing a dot
-	} {
-		assert.Contains(t, cpesOf(software.TechnologiesFromImageConfig(loadHarvested(t, tc.slug))), tc.want, "image %s", tc.slug)
-	}
-}
-
-func TestTechnologiesFromImageConfig_IsDeterministic(t *testing.T) {
-	cfg := loadHarvested(t, "tomcat")
-	first := cpesOf(software.TechnologiesFromImageConfig(cfg))
-	for range 20 {
-		assert.Equal(t, first, cpesOf(software.TechnologiesFromImageConfig(cfg)),
-			"map iteration order must not reach the output")
-	}
-}
-
-func TestTechnologiesFromImageConfig_HandlesHostileAndMalformedInput(t *testing.T) {
-	for name, cfg := range map[string]imageconfig.Config{
-		"zero":              {},
-		"no env":            {Ref: "app:1", Digest: "sha256:a"},
-		"malformed entries": {Env: []string{"", "=", "NOEQUALS", "=novalue", "PYTHON_VERSION="}},
-		"marker not a version": {Env: []string{
-			"PYTHON_VERSION=latest", "NGINX_VERSION=$(whoami)", "REDIS_VERSION=../../etc/passwd",
-		}},
-		"colon injection": {Env: []string{"NGINX_VERSION=1.25.5:extra:fields"}},
-		"wildcard injection": {Env: []string{
-			"NGINX_VERSION=*", "PHP_VERSION=?", `RUBY_VERSION=3.3.14\:*\:*`,
-		}},
-		"huge value": {Env: []string{"PYTHON_VERSION=" + strings.Repeat("9", 100_000)}},
-	} {
-		assert.NotPanics(t, func() {
-			got := software.TechnologiesFromImageConfig(cfg)
-			for _, tech := range got {
-				assert.Regexp(t, `^cpe:2\.3(:[^:]+){11}$`, tech.CPE, "case %q", name)
-			}
-		}, "case %q", name)
-	}
-}
-
-func TestTechnologiesFromImageConfig_EvidenceNamesTheImage(t *testing.T) {
-	got := software.TechnologiesFromImageConfig(loadHarvested(t, "nginx"))
-	require.NotEmpty(t, got)
-	assert.Contains(t, got[0].Evidence, "registry-1.docker.io/library/nginx:1.25",
-		"evidence must say which image the marker came from")
+	sort.Strings(out)
+	return out
 }

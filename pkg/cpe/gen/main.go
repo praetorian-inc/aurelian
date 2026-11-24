@@ -31,15 +31,12 @@ const (
 	minProducts = 40000
 
 	// The CVE corpus is published one gzipped JSON file per year, with a
-	// sibling .meta carrying the sha256 used as a cache key. firstCVEYear is
-	// where NVD's own archive starts.
+	// sibling .meta carrying the sha256 used as a cache key.
 	cveFeedBase  = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-%d"
 	firstCVEYear = 2002
 
-	// minCVEVendorProducts is a sanity floor on the CVE pass alone, the
-	// counterpart to minProducts. Measured 2026-11-24 the corpus names far
-	// more than this; the floor only has to fail the build on a feed that
-	// silently returned nothing.
+	// minCVEVendorProducts is the CVE pass's counterpart to minProducts: it
+	// only has to fail the build on a feed that silently returned nothing.
 	minCVEVendorProducts = 20000
 )
 
@@ -94,12 +91,8 @@ func run() error {
 			len(table), minProducts)
 	}
 
-	// Third pass, over a different corpus. The dictionary says which names
-	// exist; the CVE configurations say which names are used, and they
-	// disagree — sun:openjdk is cited by 17 CVEs and has no dictionary record
-	// of any kind. Emitting a CPE is only useful if a CVE matcher can match
-	// it, so the CVE corpus is the authority this table ultimately answers to.
-	// See HarvestCVEChunk.
+	// Third pass, over a different corpus: the dictionary says which names
+	// exist, the CVE configurations which are used. See HarvestCVEChunk.
 	dictOnly := len(table)
 	cveTable := Table{}
 	if err := harvestCVEFeeds(cveTable); err != nil {

@@ -55,9 +55,8 @@ locals {
 #                 CPE files operating systems under part "o" and the generator
 #                 keeps only part "a", so the only "alpine" product in the
 #                 dictionary is alpine_project:alpine — the Pine-successor
-#                 EMAIL CLIENT. One vendor, so the sole-vendor rule would fire
-#                 for every version and stamp an email client's identity onto
-#                 the most common container base image there is.
+#                 EMAIL CLIENT. Emitting it would stamp that identity, and its
+#                 CVE set, onto the most common container base image there is.
 resource "aws_ecs_task_definition" "controls" {
   family       = "${local.prefix}-controls"
   network_mode = "bridge"

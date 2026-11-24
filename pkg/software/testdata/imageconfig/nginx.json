@@ -1,0 +1,141 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "ArgsEscaped": true,
+      "Cmd": [
+        "nginx",
+        "-g",
+        "daemon off;"
+      ],
+      "Entrypoint": [
+        "/docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NGINX_VERSION=1.25.5",
+        "NJS_VERSION=0.8.4",
+        "NJS_RELEASE=3~bookworm",
+        "PKG_RELEASE=1~bookworm"
+      ],
+      "ExposedPorts": {
+        "80/tcp": {}
+      },
+      "Labels": {
+        "maintainer": "NGINX Docker Maintainers <docker-maint@nginx.com>"
+      },
+      "StopSignal": "SIGQUIT"
+    },
+    "created": "2024-05-03T19:49:21Z",
+    "history": [
+      {
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "/bin/sh -c #(nop) ADD file:5aaace706aa00ff97d243daa2c29f5de88f124e1b97c570634f16eef90783286 in / "
+      },
+      {
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "/bin/sh -c #(nop)  CMD [\"bash\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "LABEL maintainer=NGINX Docker Maintainers <docker-maint@nginx.com>",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "ENV NGINX_VERSION=1.25.5",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "ENV NJS_VERSION=0.8.4",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "ENV NJS_RELEASE=3~bookworm",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "ENV PKG_RELEASE=1~bookworm",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "RUN /bin/sh -c set -x     && groupadd --system --gid 101 nginx     && useradd --system --gid nginx --no-create-home --home /nonexistent --comment \"nginx user\" --shell /bin/false --uid 101 nginx     && apt-get update     && apt-get install --no-install-recommends --no-install-suggests -y gnupg1 ca-certificates     &&     NGINX_GPGKEY=573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62;     NGINX_GPGKEY_PATH=/etc/apt/keyrings/nginx-archive-keyring.gpg;     export GNUPGHOME=\"$(mktemp -d)\";     found='';     for server in         hkp://keyserver.ubuntu.com:80         pgp.mit.edu     ; do         echo \"Fetching GPG key $NGINX_GPGKEY from $server\";         gpg1 --keyserver \"$server\" --keyserver-options timeout=10 --recv-keys \"$NGINX_GPGKEY\" && found=yes && break;     done;     test -z \"$found\" && echo >&2 \"error: failed to fetch GPG key $NGINX_GPGKEY\" && exit 1;     gpg1 --export \"$NGINX_GPGKEY\" > \"$NGINX_GPGKEY_PATH\" ;     rm -rf \"$GNUPGHOME\";     apt-get remove --purge --auto-remove -y gnupg1 && rm -rf /var/lib/apt/lists/*     && dpkgArch=\"$(dpkg --print-architecture)\"     && nginxPackages=\"         nginx=${NGINX_VERSION}-${PKG_RELEASE}         nginx-module-xslt=${NGINX_VERSION}-${PKG_RELEASE}         nginx-module-geoip=${NGINX_VERSION}-${PKG_RELEASE}         nginx-module-image-filter=${NGINX_VERSION}-${PKG_RELEASE}         nginx-module-njs=${NGINX_VERSION}+${NJS_VERSION}-${NJS_RELEASE}     \"     && case \"$dpkgArch\" in         amd64|arm64)             echo \"deb [signed-by=$NGINX_GPGKEY_PATH] https://nginx.org/packages/mainline/debian/ bookworm nginx\" >> /etc/apt/sources.list.d/nginx.list             && apt-get update             ;;         *)             echo \"deb-src [signed-by=$NGINX_GPGKEY_PATH] https://nginx.org/packages/mainline/debian/ bookworm nginx\" >> /etc/apt/sources.list.d/nginx.list                         && tempDir=\"$(mktemp -d)\"             && chmod 777 \"$tempDir\"                         && savedAptMark=\"$(apt-mark showmanual)\"                         && apt-get update             && apt-get build-dep -y $nginxPackages             && (                 cd \"$tempDir\"                 && DEB_BUILD_OPTIONS=\"nocheck parallel=$(nproc)\"                     apt-get source --compile $nginxPackages             )                         && apt-mark showmanual | xargs apt-mark auto > /dev/null             && { [ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark; }                         && ls -lAFh \"$tempDir\"             && ( cd \"$tempDir\" && dpkg-scanpackages . > Packages )             && grep '^Package: ' \"$tempDir/Packages\"             && echo \"deb [ trusted=yes ] file://$tempDir ./\" > /etc/apt/sources.list.d/temp.list             && apt-get -o Acquire::GzipIndexes=false update             ;;     esac         && apt-get install --no-install-recommends --no-install-suggests -y                         $nginxPackages                         gettext-base                         curl     && apt-get remove --purge --auto-remove -y && rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/nginx.list         && if [ -n \"$tempDir\" ]; then         apt-get purge -y --auto-remove         && rm -rf \"$tempDir\" /etc/apt/sources.list.d/temp.list;     fi     && ln -sf /dev/stdout /var/log/nginx/access.log     && ln -sf /dev/stderr /var/log/nginx/error.log     && mkdir /docker-entrypoint.d # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "COPY docker-entrypoint.sh / # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "COPY 10-listen-on-ipv6-by-default.sh /docker-entrypoint.d # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "COPY 15-local-resolvers.envsh /docker-entrypoint.d # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "COPY 20-envsubst-on-templates.sh /docker-entrypoint.d # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "COPY 30-tune-worker-processes.sh /docker-entrypoint.d # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "ENTRYPOINT [\"/docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "EXPOSE map[80/tcp:{}]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "STOPSIGNAL SIGQUIT",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-03T19:49:21Z",
+        "created_by": "CMD [\"nginx\" \"-g\" \"daemon off;\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:5d4427064ecc46e3c2add169e9b5eafc7ed2be7861081ec925938ab628ac0e25",
+        "sha256:fc1cf9ca5139883943cc519cc3c57f0855395618f56d6431490fa735461156f1",
+        "sha256:747b290aeba888738176dcbf7382eb0f660f27e785b839592918b8ed291d5792",
+        "sha256:9f4d73e635f122031c04047f0e87fb224bef098a28700439bb4e72d0619aaad6",
+        "sha256:56f8fe6aedcdee31bdee17249b1e18434ce7ab5a1814e2193773b54d7f9db39a",
+        "sha256:7d2fd59c368c60f74214fc47399dcc35ef8513e26890a0c6004835bceabeb4c6",
+        "sha256:14773070094ddc0debcea4f38f0daa7dd8116858387e0c238fa96ae8047bc07e"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:e688fed0b0c7513a63364959e7d389c37ac8ecac7a6c6a31455eca2f5a71ab8b",
+  "image": "registry-1.docker.io/library/nginx:1.25"
+}

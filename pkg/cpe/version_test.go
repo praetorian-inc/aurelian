@@ -57,8 +57,8 @@ func TestNormalizeVersion_OutputIsSafeForCPEAssembly(t *testing.T) {
 	}
 }
 
-// Both cases below were found by harvesting real image config blobs
-// (pkg/software/testdata/imageconfig/FINDINGS.md). Each one costs a real
+// Both cases below were found by harvesting real image config blobs. Each
+// one costs a real
 // emission: cpe.Resolve("openjdk", "25.0.5.1") and
 // cpe.Resolve("mariadb", "11.8.9") both resolve, so the only thing standing
 // between the observed marker and a correct CPE was normalisation.

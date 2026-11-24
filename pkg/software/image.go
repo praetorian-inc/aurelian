@@ -59,18 +59,12 @@ var imageProducts = map[string]string{
 }
 
 // Deliberately absent: OS base images (alpine, debian, ubuntu, centos, …).
-//
-// CPE files operating systems under part `o`, and the generator keeps only
-// part `a`, so an OS name is either missing from the table (debian_linux,
-// ubuntu_linux) or — worse — collides with unrelated application software of
-// the same name. The `a`-part `alpine` is alpine_project's Pine-successor
-// email client, and since it has exactly one vendor the sole-vendor rule would
-// fire for every version, tagging the most common base image in existence with
-// an email client's CVE set.
-//
-// OS packages are an explicit non-goal of this design in any case; caligula
-// owns that half. Before adding an entry here, confirm what the `a`-part
-// dictionary actually calls the product — not what the image is named.
+// CPE files operating systems under part `o` and the generator keeps only part
+// `a`, so an OS name is either missing from the table or collides with
+// unrelated software: `a`-part `alpine` is an email client, and adding it
+// would tag the most common base image in existence with its CVEs. OS packages
+// are caligula's half. Before adding a row, confirm what the `a`-part
+// dictionary calls the product, not what the image is named.
 
 // ParseImageRef parses a `[registry[:port]/][namespace/]name[:tag][@digest]`
 // image reference.

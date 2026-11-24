@@ -1,0 +1,198 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "AttachStderr": false,
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "Cmd": [
+        "agent",
+        "-dev",
+        "-client",
+        "0.0.0.0"
+      ],
+      "Domainname": "",
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HASHICORP_RELEASES=https://releases.hashicorp.com"
+      ],
+      "ExposedPorts": {
+        "8300/tcp": {},
+        "8301/tcp": {},
+        "8301/udp": {},
+        "8302/tcp": {},
+        "8302/udp": {},
+        "8500/tcp": {},
+        "8600/tcp": {},
+        "8600/udp": {}
+      },
+      "Hostname": "",
+      "Image": "sha256:510ba70f60ab9e328db088e6dc2b110d05ee31f1c349d113cbf889a50cf14bd1",
+      "Labels": {
+        "org.opencontainers.image.authors": "Consul Team <consul@hashicorp.com>",
+        "org.opencontainers.image.description": "Consul is a datacenter runtime that provides service discovery, configuration, and orchestration.",
+        "org.opencontainers.image.documentation": "https://www.consul.io/docs",
+        "org.opencontainers.image.source": "https://github.com/hashicorp/consul",
+        "org.opencontainers.image.title": "consul",
+        "org.opencontainers.image.url": "https://www.consul.io/",
+        "org.opencontainers.image.vendor": "HashiCorp",
+        "org.opencontainers.image.version": "1.15.4"
+      },
+      "OnBuild": null,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "",
+      "Volumes": {
+        "/consul/data": {}
+      },
+      "WorkingDir": ""
+    },
+    "container": "a20744a22b66a181317115619877c9eed8dbb0355333bc845efb8e884d85f727",
+    "container_config": {
+      "AttachStderr": false,
+      "AttachStdin": false,
+      "AttachStdout": false,
+      "Cmd": [
+        "/bin/sh",
+        "-c",
+        "#(nop) ",
+        "CMD [\"agent\" \"-dev\" \"-client\" \"0.0.0.0\"]"
+      ],
+      "Domainname": "",
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HASHICORP_RELEASES=https://releases.hashicorp.com"
+      ],
+      "ExposedPorts": {
+        "8300/tcp": {},
+        "8301/tcp": {},
+        "8301/udp": {},
+        "8302/tcp": {},
+        "8302/udp": {},
+        "8500/tcp": {},
+        "8600/tcp": {},
+        "8600/udp": {}
+      },
+      "Hostname": "a20744a22b66",
+      "Image": "sha256:510ba70f60ab9e328db088e6dc2b110d05ee31f1c349d113cbf889a50cf14bd1",
+      "Labels": {
+        "org.opencontainers.image.authors": "Consul Team <consul@hashicorp.com>",
+        "org.opencontainers.image.description": "Consul is a datacenter runtime that provides service discovery, configuration, and orchestration.",
+        "org.opencontainers.image.documentation": "https://www.consul.io/docs",
+        "org.opencontainers.image.source": "https://github.com/hashicorp/consul",
+        "org.opencontainers.image.title": "consul",
+        "org.opencontainers.image.url": "https://www.consul.io/",
+        "org.opencontainers.image.vendor": "HashiCorp",
+        "org.opencontainers.image.version": "1.15.4"
+      },
+      "OnBuild": null,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Tty": false,
+      "User": "",
+      "Volumes": {
+        "/consul/data": {}
+      },
+      "WorkingDir": ""
+    },
+    "created": "2024-03-16T08:00:34.665676457Z",
+    "docker_version": "20.10.23",
+    "history": [
+      {
+        "created": "2023-11-30T23:23:11.878184473Z",
+        "created_by": "/bin/sh -c #(nop) ADD file:aa1af71c6b66d2dddee4797236e3e526f70f904ab641cc0dd6b41445cfedf9b4 in / "
+      },
+      {
+        "created": "2023-11-30T23:23:11.980068941Z",
+        "created_by": "/bin/sh -c #(nop)  CMD [\"/bin/sh\"]",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:25.732305978Z",
+        "created_by": "/bin/sh -c #(nop)  ARG CONSUL_VERSION=1.15.4",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:25.808688058Z",
+        "created_by": "/bin/sh -c #(nop)  LABEL org.opencontainers.image.authors=Consul Team <consul@hashicorp.com> org.opencontainers.image.url=https://www.consul.io/ org.opencontainers.image.documentation=https://www.consul.io/docs org.opencontainers.image.source=https://github.com/hashicorp/consul org.opencontainers.image.version=1.15.4 org.opencontainers.image.vendor=HashiCorp org.opencontainers.image.title=consul org.opencontainers.image.description=Consul is a datacenter runtime that provides service discovery, configuration, and orchestration.",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:25.883120953Z",
+        "created_by": "/bin/sh -c #(nop)  ENV HASHICORP_RELEASES=https://releases.hashicorp.com",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:26.445238226Z",
+        "created_by": "|1 CONSUL_VERSION=1.15.4 /bin/sh -c addgroup consul &&     adduser -S -G consul consul"
+      },
+      {
+        "created": "2024-03-16T08:00:32.710533014Z",
+        "created_by": "|1 CONSUL_VERSION=1.15.4 /bin/sh -c set -eux &&     apk add --no-cache ca-certificates curl dumb-init gnupg libcap openssl su-exec iputils jq libc6-compat iptables tzdata &&     gpg --keyserver keyserver.ubuntu.com --recv-keys C874011F0AB405110D02105534365D9472D7468F &&     mkdir -p /tmp/build &&     cd /tmp/build &&     apkArch=\"$(apk --print-arch)\" &&     case \"${apkArch}\" in         aarch64) consulArch='arm64' ;;         armhf) consulArch='arm' ;;         x86) consulArch='386' ;;         x86_64) consulArch='amd64' ;;         *) echo >&2 \"error: unsupported architecture: ${apkArch} (see ${HASHICORP_RELEASES}/consul/${CONSUL_VERSION}/)\" && exit 1 ;;     esac &&     wget ${HASHICORP_RELEASES}/consul/${CONSUL_VERSION}/consul_${CONSUL_VERSION}_linux_${consulArch}.zip &&     wget ${HASHICORP_RELEASES}/consul/${CONSUL_VERSION}/consul_${CONSUL_VERSION}_SHA256SUMS &&     wget ${HASHICORP_RELEASES}/consul/${CONSUL_VERSION}/consul_${CONSUL_VERSION}_SHA256SUMS.sig &&     gpg --batch --verify consul_${CONSUL_VERSION}_SHA256SUMS.sig consul_${CONSUL_VERSION}_SHA256SUMS &&     grep consul_${CONSUL_VERSION}_linux_${consulArch}.zip consul_${CONSUL_VERSION}_SHA256SUMS | sha256sum -c &&     unzip -d /tmp/build consul_${CONSUL_VERSION}_linux_${consulArch}.zip &&     cp /tmp/build/consul /bin/consul &&     if [ -f /tmp/build/EULA.txt ]; then mkdir -p /usr/share/doc/consul; mv /tmp/build/EULA.txt /usr/share/doc/consul/EULA.txt; fi &&     if [ -f /tmp/build/TermsOfEvaluation.txt ]; then mkdir -p /usr/share/doc/consul; mv /tmp/build/TermsOfEvaluation.txt /usr/share/doc/consul/TermsOfEvaluation.txt; fi &&     cd /tmp &&     rm -rf /tmp/build &&     gpgconf --kill all &&     apk del gnupg openssl &&     rm -rf /root/.gnupg &&     consul version"
+      },
+      {
+        "created": "2024-03-16T08:00:33.535829781Z",
+        "created_by": "|1 CONSUL_VERSION=1.15.4 /bin/sh -c mkdir -p /consul/data &&     mkdir -p /consul/config &&     chown -R consul:consul /consul"
+      },
+      {
+        "created": "2024-03-16T08:00:34.04555973Z",
+        "created_by": "|1 CONSUL_VERSION=1.15.4 /bin/sh -c test -e /etc/nsswitch.conf || echo 'hosts: files dns' > /etc/nsswitch.conf"
+      },
+      {
+        "created": "2024-03-16T08:00:34.137740187Z",
+        "created_by": "/bin/sh -c #(nop)  VOLUME [/consul/data]",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:34.224877794Z",
+        "created_by": "/bin/sh -c #(nop)  EXPOSE 8300",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:34.313525622Z",
+        "created_by": "/bin/sh -c #(nop)  EXPOSE 8301 8301/udp 8302 8302/udp",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:34.398883432Z",
+        "created_by": "/bin/sh -c #(nop)  EXPOSE 8500 8600 8600/udp",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:34.490933866Z",
+        "created_by": "/bin/sh -c #(nop) COPY file:f5ba00fb9fd3a67a835a792e07b11da3b163222c18f8512aa772b36520d2a653 in /usr/local/bin/docker-entrypoint.sh "
+      },
+      {
+        "created": "2024-03-16T08:00:34.577346449Z",
+        "created_by": "/bin/sh -c #(nop)  ENTRYPOINT [\"docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "created": "2024-03-16T08:00:34.665676457Z",
+        "created_by": "/bin/sh -c #(nop)  CMD [\"agent\" \"-dev\" \"-client\" \"0.0.0.0\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:2879a4821959ab702528e28a1c59cd26c4956112497f6d1dbfd86c8d88003983",
+        "sha256:11e0fa40fa1e954ef23479f214dd72a0e947efdeda1240d9e9f73a55fa109d7c",
+        "sha256:0bcede05b11d570830eb9eff1700c14da5ef9ddf3f8cf980371529225b1a5d37",
+        "sha256:900903efedf8ba8b28ece7a2f97a0b651cf861681c755d98aa7110a044f9dc6a",
+        "sha256:47df63e9300d3e9a0bb73717c56c79d60642db799115d52f94fb743f2df0dcf7",
+        "sha256:3c2c29381cce7523b494eaa864b05486f6c36fbbbfa5596f3431b511ee2a50cf"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:a9ea68f555f30bc89d31529bd87d03865a32f8281d19873e194c24e5f31ec074",
+  "image": "registry-1.docker.io/library/consul:1.15"
+}

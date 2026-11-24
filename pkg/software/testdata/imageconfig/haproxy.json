@@ -1,0 +1,113 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "Cmd": [
+        "haproxy",
+        "-f",
+        "/usr/local/etc/haproxy/haproxy.cfg"
+      ],
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "HAPROXY_VERSION=2.9.15",
+        "HAPROXY_URL=https://www.haproxy.org/download/2.9/src/haproxy-2.9.15.tar.gz",
+        "HAPROXY_SHA256=5eec9b048458d0cdc682ec823810f953507c92e4d12673145156c7dbe560bfc5"
+      ],
+      "StopSignal": "SIGUSR1",
+      "User": "haproxy",
+      "WorkingDir": "/var/lib/haproxy"
+    },
+    "created": "2025-03-21T17:13:30Z",
+    "history": [
+      {
+        "comment": "debuerreotype 0.15",
+        "created": "2025-03-17T00:00:00Z",
+        "created_by": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1742169600'"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t; \trm -rf /var/lib/apt/lists/* # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tgroupadd --gid 99 --system haproxy; \tuseradd \t\t--gid haproxy \t\t--home-dir /var/lib/haproxy \t\t--no-create-home \t\t--system \t\t--uid 99 \t\thaproxy \t; \tmkdir /var/lib/haproxy; \tchown haproxy:haproxy /var/lib/haproxy # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "ENV HAPROXY_VERSION=2.9.15",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "ENV HAPROXY_URL=https://www.haproxy.org/download/2.9/src/haproxy-2.9.15.tar.gz",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "ENV HAPROXY_SHA256=5eec9b048458d0cdc682ec823810f953507c92e4d12673145156c7dbe560bfc5",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update && apt-get install -y --no-install-recommends \t\tgcc \t\tlibc6-dev \t\tliblua5.4-dev \t\tlibpcre2-dev \t\tlibssl-dev \t\tmake \t\twget \t; \trm -rf /var/lib/apt/lists/*; \t\twget -O haproxy.tar.gz \"$HAPROXY_URL\"; \techo \"$HAPROXY_SHA256 *haproxy.tar.gz\" | sha256sum -c; \tmkdir -p /usr/src/haproxy; \ttar -xzf haproxy.tar.gz -C /usr/src/haproxy --strip-components=1; \trm haproxy.tar.gz; \t\tmakeOpts=' \t\tTARGET=linux-glibc \t\tUSE_GETADDRINFO=1 \t\tUSE_LUA=1 LUA_INC=/usr/include/lua5.4 \t\tUSE_OPENSSL=1 \t\tUSE_PCRE2=1 USE_PCRE2_JIT=1 \t\tUSE_PROMEX=1 \t\t\t\tEXTRA_OBJS=\" \t\t\" \t'; \tdpkgArch=\"$(dpkg --print-architecture)\"; \tcase \"$dpkgArch\" in \t\tarmel) makeOpts=\"$makeOpts ADDLIB=-latomic\" ;; \tesac; \t\tnproc=\"$(nproc)\"; \teval \"make -C /usr/src/haproxy -j '$nproc' all $makeOpts\"; \teval \"make -C /usr/src/haproxy install-bin $makeOpts\"; \t\tmkdir -p /usr/local/etc/haproxy; \tcp -R /usr/src/haproxy/examples/errorfiles /usr/local/etc/haproxy/errors; \trm -rf /usr/src/haproxy; \t\tapt-mark auto '.*' > /dev/null; \t[ -z \"$savedAptMark\" ] || apt-mark manual $savedAptMark; \tfind /usr/local -type f -executable -exec ldd '{}' ';' \t\t| awk '/=>/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -r dpkg-query --search \t\t| cut -d: -f1 \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \t\thaproxy -v # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "STOPSIGNAL SIGUSR1",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "USER haproxy",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "WORKDIR /var/lib/haproxy"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-03-21T17:13:30Z",
+        "created_by": "CMD [\"haproxy\" \"-f\" \"/usr/local/etc/haproxy/haproxy.cfg\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:1287fbecdfcce6ee8cf2436e5b9e9d86a4648db2d91080377d499737f1b307f3",
+        "sha256:5fceaeed73ad3ed1624890e4c28991c09fee8bf30924632e2269755dfc9078a2",
+        "sha256:1bd2fb74cdf017901c73d3783cc7fe302d5103a9b8a797fc0cffd2bfa7ceeed7",
+        "sha256:891c653104fe7a4a354499b864bb874eec1f099e6a91a01876e9c31e23c808d4",
+        "sha256:3c4d21bfd4a42b22c02e56d17858af83100c4403154c86d5be2be522787f876f",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:efe03e1fecf2d79bec2755ccbbb0449f8543e4509edd26eb17d48d2405e97734",
+  "image": "registry-1.docker.io/library/haproxy:2.9"
+}

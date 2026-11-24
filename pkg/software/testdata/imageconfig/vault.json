@@ -1,0 +1,172 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "ArgsEscaped": true,
+      "Cmd": [
+        "server",
+        "-dev"
+      ],
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NAME=vault",
+        "VERSION="
+      ],
+      "ExposedPorts": {
+        "8200/tcp": {}
+      },
+      "Labels": {
+        "description": "Vault is a tool for securely accessing secrets. A secret is anything that you want to tightly control access to, such as API keys, passwords, certificates, and more. Vault provides a unified interface to any secret, while providing tight access control and recording a detailed audit log.",
+        "maintainer": "Vault Team <vault@hashicorp.com>",
+        "name": "Vault",
+        "release": "e92d9a57018f43360e2e3717b3b6a7f650c88f4c",
+        "revision": "e92d9a57018f43360e2e3717b3b6a7f650c88f4c",
+        "summary": "Vault is a tool for securely accessing secrets.",
+        "vendor": "HashiCorp",
+        "version": "1.16.3"
+      },
+      "Volumes": {
+        "/vault/file": {},
+        "/vault/logs": {}
+      }
+    },
+    "created": "2024-05-29T14:37:05.819257076Z",
+    "history": [
+      {
+        "created": "2024-01-27T00:30:56.150825642Z",
+        "created_by": "/bin/sh -c #(nop) ADD file:8729f9c0258836b640e9e789c7ab029cf4547e0596557d54dd4a4d7d8e4a785f in / "
+      },
+      {
+        "created": "2024-01-27T00:30:56.304681072Z",
+        "created_by": "/bin/sh -c #(nop)  CMD [\"/bin/sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ARG BIN_NAME",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ARG NAME=vault",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ARG PRODUCT_VERSION",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ARG PRODUCT_REVISION",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ARG TARGETOS TARGETARCH",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "LABEL name=Vault maintainer=Vault Team <vault@hashicorp.com> vendor=HashiCorp version=1.16.3 release=e92d9a57018f43360e2e3717b3b6a7f650c88f4c revision=e92d9a57018f43360e2e3717b3b6a7f650c88f4c summary=Vault is a tool for securely accessing secrets. description=Vault is a tool for securely accessing secrets. A secret is anything that you want to tightly control access to, such as API keys, passwords, certificates, and more. Vault provides a unified interface to any secret, while providing tight access control and recording a detailed audit log.",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "COPY LICENSE /licenses/LICENSE.txt # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ENV NAME=vault",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:02.227813566Z",
+        "created_by": "ENV VERSION=",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:04.614582942Z",
+        "created_by": "RUN |6 BIN_NAME=vault NAME=vault PRODUCT_VERSION=1.16.3 PRODUCT_REVISION=e92d9a57018f43360e2e3717b3b6a7f650c88f4c TARGETOS=linux TARGETARCH=amd64 /bin/sh -c addgroup ${NAME} && adduser -S -G ${NAME} ${NAME} # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.149863321Z",
+        "created_by": "RUN |6 BIN_NAME=vault NAME=vault PRODUCT_VERSION=1.16.3 PRODUCT_REVISION=e92d9a57018f43360e2e3717b3b6a7f650c88f4c TARGETOS=linux TARGETARCH=amd64 /bin/sh -c apk add --no-cache libcap su-exec dumb-init tzdata # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.731957589Z",
+        "created_by": "COPY dist/linux/amd64/vault /bin/ # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.809658948Z",
+        "created_by": "RUN |6 BIN_NAME=vault NAME=vault PRODUCT_VERSION=1.16.3 PRODUCT_REVISION=e92d9a57018f43360e2e3717b3b6a7f650c88f4c TARGETOS=linux TARGETARCH=amd64 /bin/sh -c mkdir -p /vault/logs &&     mkdir -p /vault/file &&     mkdir -p /vault/config &&     chown -R ${NAME}:${NAME} /vault # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.809658948Z",
+        "created_by": "VOLUME [/vault/logs]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.809658948Z",
+        "created_by": "VOLUME [/vault/file]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.809658948Z",
+        "created_by": "EXPOSE map[8200/tcp:{}]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.819257076Z",
+        "created_by": "COPY .release/docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.819257076Z",
+        "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-05-29T14:37:05.819257076Z",
+        "created_by": "CMD [\"server\" \"-dev\"]",
+        "empty_layer": true
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:aedc3bda2944bb9bcb6c3d475bee8b460db9a9b0f3e0b33a6ed2fd1ae0f1d445",
+        "sha256:b477d04c45a79906c6bc427181b429891872b9ffbf55dc94cf3c781a5bebf199",
+        "sha256:7ee8e514218eaff6370bb1361ec00a3d34b557f6a7ece8cd640eaa424590a359",
+        "sha256:c13f048205fd1869c5368b8c54fb5c005008eb359b04119ac63d08a5c8a19118",
+        "sha256:5333fac595b316331322e2ca685e98b7977f8aaddc90b4c0754028a7f2a06e75",
+        "sha256:6f2ae22bb6f5c738d6382a86ad8252369e918b67dd19fc028e40b2fb284408f9",
+        "sha256:97c3cb1a37a604a5036274c2335e92ed40fe255edc5693df62dff895ceb9f185"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:b4fa75568d4ed987eb64edee26d15f98237e61aec2ea1bdb9145ca769a9fb0e6",
+  "image": "registry-1.docker.io/hashicorp/vault:1.16"
+}

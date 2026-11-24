@@ -147,8 +147,8 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 	//
 	// Their environments are what a private application image inherits from an
 	// official base: a marker naming the runtime, beside junk that must not be
-	// emitted. GOSU_VERSION and YARN_VERSION are values observed in real
-	// official images (pkg/software/testdata/imageconfig/FINDINGS.md).
+	// emitted. GOSU_VERSION and YARN_VERSION are observed in real official
+	// images.
 	appRef := pushImageWithConfig(t, ecrClient, registry, repoName, "app-v1",
 		[]string{"PATH=/usr/local/bin", "PYTHON_VERSION=3.11.18", "GOSU_VERSION=1.19", "YARN_VERSION=1.22.22"},
 		[]string{"python3", "app.py"})

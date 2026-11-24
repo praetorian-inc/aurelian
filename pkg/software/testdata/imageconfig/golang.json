@@ -1,0 +1,94 @@
+{
+  "config": {
+    "architecture": "amd64",
+    "config": {
+      "Cmd": [
+        "bash"
+      ],
+      "Env": [
+        "PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "GOLANG_VERSION=1.23.12",
+        "GOTOOLCHAIN=local",
+        "GOPATH=/go"
+      ],
+      "WorkingDir": "/go"
+    },
+    "created": "2025-08-06T19:34:36Z",
+    "history": [
+      {
+        "comment": "debuerreotype 0.15",
+        "created": "2023-05-10T23:29:59Z",
+        "created_by": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1754870400'"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2023-05-10T23:29:59Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tcurl \t\tgnupg \t\tnetbase \t\tsq \t\twget \t; \trm -rf /var/lib/apt/lists/* # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2024-01-09T01:14:25Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tgit \t\tmercurial \t\topenssh-client \t\tsubversion \t\t\t\tprocps \t; \trm -rf /var/lib/apt/lists/* # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tg++ \t\tgcc \t\tlibc6-dev \t\tmake \t\tpkg-config \t; \trm -rf /var/lib/apt/lists/* # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "ENV GOLANG_VERSION=1.23.12",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "ENV GOTOOLCHAIN=local",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "ENV GOPATH=/go",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "ENV PATH=/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "empty_layer": true
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "COPY /target/ / # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "RUN /bin/sh -c mkdir -p \"$GOPATH/src\" \"$GOPATH/bin\" && chmod -R 1777 \"$GOPATH\" # buildkit"
+      },
+      {
+        "comment": "buildkit.dockerfile.v0",
+        "created": "2025-08-06T19:34:36Z",
+        "created_by": "WORKDIR /go"
+      }
+    ],
+    "os": "linux",
+    "rootfs": {
+      "diff_ids": [
+        "sha256:4668f0f488e5ad4494fadff56ad585c514794b3a293e5e8d006410de9da08155",
+        "sha256:bf48051734731bf6dd0fdddba94ff37c4b02586537bff5ce654c74e098f992f1",
+        "sha256:746379c6de534fbb5291700998e2e640f0d2c610299aaebb758998bf24927c59",
+        "sha256:5504f0456f4aa2b654f5deab4ac62977baf9d8b700b90befcf9a22caf4cd725a",
+        "sha256:49848a63c347deca8e5976b3d700c727ddbb6a5d38e118186e644ed6d7d00e64",
+        "sha256:2cbdb4cf0407999d40d61cfd73578f0c029120fa27674fd4c814559af6924d91",
+        "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+      ],
+      "type": "layers"
+    }
+  },
+  "digest": "sha256:e87b2a5f6df2dff71ea330d55d54f4979eb380ae58a7e3aabc9d53121243e689",
+  "image": "registry-1.docker.io/library/golang:1.23"
+}
