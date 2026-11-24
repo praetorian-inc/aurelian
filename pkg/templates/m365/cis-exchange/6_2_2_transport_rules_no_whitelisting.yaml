@@ -1,0 +1,37 @@
+id: "6.2.2"
+title: "Ensure mail transport rules do not whitelist specific domains"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that no Exchange transport rules are configured to bypass
+  spam filtering or set the spam confidence level (SCL) to -1 for
+  specific sender domains.
+rationale: |
+  Transport rules that whitelist domains bypass spam and threat
+  protection for all email from those domains. Attackers can exploit
+  whitelisted domains through domain spoofing or by compromising
+  accounts on those domains.
+impact: |
+  Removing whitelisting rules will subject previously trusted domains
+  to standard spam filtering, which may temporarily quarantine some
+  legitimate email.
+remediation: |
+  Review all transport rules in Exchange Admin Center > Mail flow >
+  Rules and remove or modify any rules that set SCL to -1 or bypass
+  spam filtering for specific domains.
+references:
+  - "https://learn.microsoft.com/en-us/exchange/security-and-compliance/mail-flow-rules/mail-flow-rules"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.2.2"
+cis_controls:
+  - "v8: 9.3"
+guard:
+  finding_slug: "m365-cis-6-2-2-transport-rules-no-whitelisting"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - transport_rules

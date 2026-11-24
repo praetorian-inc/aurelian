@@ -1,0 +1,38 @@
+id: "5.2.2.11"
+title: "Ensure sign-in frequency is enabled and browser sessions are not persistent for administrative users"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that a Conditional Access policy enforces sign-in frequency
+  and disables persistent browser sessions for users in administrative
+  roles.
+rationale: |
+  Long-lived sessions for admin accounts increase the window of
+  opportunity for session hijacking. Enforcing sign-in frequency
+  ensures administrators must re-authenticate regularly, limiting
+  the usefulness of stolen session tokens.
+impact: |
+  Administrators will need to re-authenticate more frequently, which
+  adds friction but reduces the risk of session theft.
+remediation: |
+  Create a Conditional Access policy targeting administrative roles
+  with session controls setting sign-in frequency to a maximum of
+  4 hours and persistent browser session set to "Never persistent".
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/conditional-access/howto-conditional-access-session-lifetime"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.11"
+cis_controls:
+  - "v8: 4.3"
+  - "v8: 12.6"
+guard:
+  finding_slug: "m365-cis-5-2-2-11-admin-sign-in-frequency"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-613"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - conditional_access_policies
+  - directory_roles

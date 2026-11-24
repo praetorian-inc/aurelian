@@ -1,0 +1,34 @@
+id: "6.2.3"
+title: "Ensure external email tagging is enabled"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that external email tagging is enabled to visually identify
+  emails originating from outside the organization.
+rationale: |
+  External email tagging helps users identify potential phishing
+  attempts by clearly marking messages from external senders. Without
+  this visual cue, users may mistake external emails for internal
+  communications, increasing susceptibility to social engineering.
+impact: |
+  External emails will display a visual tag or banner. This is purely
+  informational and does not block any email delivery.
+remediation: |
+  Run Set-ExternalInOutlook -Enabled $true in Exchange Online
+  PowerShell to enable the external sender identification feature.
+references:
+  - "https://learn.microsoft.com/en-us/exchange/mail-flow-best-practices/remote-domains/remote-domains"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.2.3"
+cis_controls:
+  - "v8: 9.3"
+guard:
+  finding_slug: "m365-cis-6-2-3-external-email-tagging"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - external_in_outlook_settings

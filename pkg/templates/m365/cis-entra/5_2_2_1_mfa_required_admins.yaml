@@ -1,0 +1,34 @@
+id: "5.2.2.1"
+title: "Ensure multifactor authentication is required for administrative roles"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that a Conditional Access policy requires MFA for all
+  users assigned administrative directory roles.
+rationale: |
+  Admin accounts are high-value targets. Requiring MFA reduces
+  credential theft risk significantly. Without MFA, a compromised
+  admin password grants full tenant access.
+impact: |
+  Admins must enroll in MFA. Break-glass accounts need proper exclusions.
+remediation: |
+  Create a Conditional Access policy targeting all directory roles
+  with a grant control requiring multifactor authentication.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/conditional-access/howto-conditional-access-policy-admin-mfa"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.1"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 6.4"
+guard:
+  finding_slug: "m365-cis-5-2-2-1-mfa-admins"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-308"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - conditional_access_policies
+  - directory_roles

@@ -1,0 +1,35 @@
+id: "8.5.7"
+title: "Ensure external participants cannot give or request control"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that external meeting participants cannot give or request
+  control of shared content during Teams meetings.
+rationale: |
+  Allowing external participants to request or be given control
+  enables them to interact with shared applications and desktops.
+  This could be exploited to execute malicious actions on a
+  presenter's system or access sensitive content displayed on screen.
+impact: |
+  External participants will be unable to request or receive control
+  during screen sharing sessions. Internal collaboration is
+  unaffected.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  disable "External participants can give or request control".
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-policies-content-sharing"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.7"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-5-7-external-control-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

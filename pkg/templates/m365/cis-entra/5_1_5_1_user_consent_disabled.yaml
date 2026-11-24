@@ -1,0 +1,36 @@
+id: "5.1.5.1"
+title: "Ensure user consent to apps is not allowed"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the authorization policy prevents users from granting
+  consent to applications. Only administrators should be able to
+  consent to application permissions.
+rationale: |
+  When users can consent to apps, they may unknowingly grant
+  malicious applications access to organizational data. Illicit
+  consent grants are a common initial access vector in M365 attacks.
+impact: |
+  Users will need to request admin consent for new applications,
+  which adds friction but improves security posture.
+remediation: |
+  Navigate to Entra ID > Enterprise applications > Consent and
+  permissions > User consent settings and select "Do not allow
+  user consent".
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.1.5.1"
+cis_controls:
+  - "v8: 2.5"
+  - "v8: 2.7"
+guard:
+  finding_slug: "m365-cis-5-1-5-1-user-consent-disabled"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-862"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:R/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - authorization_policy

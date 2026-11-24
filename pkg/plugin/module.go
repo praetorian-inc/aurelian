@@ -21,6 +21,7 @@ const (
 	PlatformAzure Platform = "azure"
 	PlatformGCP   Platform = "gcp"
 	PlatformSaaS  Platform = "saas"
+	PlatformM365  Platform = "m365"
 )
 
 // Category represents the module category

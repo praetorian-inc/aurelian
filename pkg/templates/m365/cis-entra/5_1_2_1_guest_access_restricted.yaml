@@ -1,0 +1,38 @@
+id: "5.1.2.1"
+title: "Ensure that guest user access is restricted"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that guest users have restricted access permissions in the
+  Entra ID authorization policy. The guest user role ID should be
+  set to restrict guest access to properties and memberships of
+  their own directory objects.
+rationale: |
+  By default, guest users may have overly permissive access to
+  enumerate directory objects and user properties. Restricting
+  guest access reduces the attack surface from compromised guest
+  accounts.
+impact: |
+  Guest users will have limited ability to enumerate directory
+  information, which may affect cross-tenant collaboration scenarios.
+remediation: |
+  Navigate to Entra ID > External Identities > External collaboration
+  settings and set "Guest user access restrictions" to "Guest user
+  access is restricted to properties and memberships of their own
+  directory objects (most restrictive)".
+references:
+  - "https://learn.microsoft.com/en-us/entra/external-id/what-is-b2b"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.1.2.1"
+cis_controls:
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-5-1-2-1-guest-access-restricted"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:N/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - authorization_policy

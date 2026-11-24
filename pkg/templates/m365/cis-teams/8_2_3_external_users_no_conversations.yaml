@@ -1,0 +1,38 @@
+id: "8.2.3"
+title: "Ensure external users cannot initiate conversations"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that external users cannot initiate new conversations with
+  internal users, requiring internal users to initiate all external
+  communications.
+rationale: |
+  Allowing external users to initiate conversations creates a
+  phishing vector where attackers can directly message internal
+  users with malicious links or social engineering content. Requiring
+  internal users to initiate contact reduces unsolicited external
+  messaging.
+impact: |
+  External users must wait for internal users to initiate
+  conversations. This may affect responsiveness with external
+  partners.
+remediation: |
+  Navigate to Teams Admin Center > External access and disable
+  the option allowing external users to contact internal users
+  who are not in their contact list.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/manage-external-access"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.2.3"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-2-3-external-users-no-conversations"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_external_access
