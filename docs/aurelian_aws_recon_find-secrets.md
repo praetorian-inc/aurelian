@@ -17,6 +17,7 @@ aurelian aws recon find-secrets [flags]
       --logs-since string              RFC3339 timestamp of the last successful scan; log events older than this time minus six hours are not read
       --max-events int                 Max log events per log group (default 10000)
       --max-streams int                Max streams to sample per log group (default 10)
+      --modified-since string          RFC3339 timestamp of the last successful scan; unchanged resources with reliable AWS modification metadata are skipped
       --opsec_level string             Operational security level for AWS operations (default "none")
       --output-dir string              Base output directory (default "aurelian-output")
   -p, --profile string                 AWS profile to use
