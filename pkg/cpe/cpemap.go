@@ -89,18 +89,38 @@ func load() vendorTable {
 //
 // Aliasing also needs the table it would justify: a collapse must know that
 // hashicorp:consul and makandra:consul are NOT the same software. Of 31
-// reachable products 14 never collide at all, and the only collisions reaching
-// versions still in production — redis 6.2.6 and MySQL 5.6.36 — are true alias
-// pairs. Every homonym collision (jenkins:kubernetes, makandra:consul,
-// mysqljs:mysql, tibco:vault) is capped at a 2004-2018 version that will not
-// appear in a container tag or a Lambda runtime.
-//
-// That cap is the premise, and it is asserted rather than assumed: see
+// reachable products 14 never collide at all, and most homonym collisions
+// (jenkins:kubernetes, makandra:consul, mysqljs:mysql, tibco:vault) are capped
+// at a 2004-2018 version that will not appear in a container tag or a Lambda
+// runtime. That cap is asserted rather than assumed: see
 // forbidden_cpe_substrings in test/terraform/aws/recon/technology-emission/.
 //
-// Downstream precondition: guard's CPE-to-CVE matcher must key on vendor. One
-// that matched on product and version alone would give both siblings edges and
-// double every finding for that software.
+// The cap is not total, and the cost of emitting both is not uniform. Measured
+// against the NVD CVE API:
+//
+//   - redis 6.2.6 is free. redislabs:redis:6.2.6 matches 0 CVEs against
+//     redis:redis:6.2.6's 22, and across all versions the two vendors' CVE sets
+//     (22 and 46) do not intersect at all. The extra CPE is inert: it costs a
+//     node and matches nothing.
+//   - mysql 5.6.36 is not. mysql:mysql is a homonym, not an alias — its two
+//     CVEs at that version are CVE-2009-2942 (the mysql-ocaml bindings) and
+//     CVE-2017-12419 (MantisBT, a PHP bug tracker), neither of which is MySQL
+//     server, against oracle:mysql:5.6.36's 215. It carries exactly one version
+//     for this product where oracle carries 674, which is the shape of a junk
+//     attribution. ResolveVendors emits it today; see
+//     TestResolveVendors_MySQLHomonymReachesAProductionVersion.
+//
+// So emit-both has one measured counterexample at a version real software runs.
+// It is two fabricated CVEs on one product, judged cheaper than dropping an era
+// of real ones — but it is a cost, not a free hedge, and a future narrowing
+// rule should start here rather than with redis.
+//
+// Downstream precondition: guard's CPE-to-CVE matcher must match the vendor
+// field. NVD's cpeMatch criteria carry the vendor, so a matcher built on that
+// data gets this for free — but NVD's own API also offers virtualMatchString,
+// which accepts a wildcard vendor. Reaching for it is the natural move for
+// someone who has just concluded that vendor spelling is unreliable, and it is
+// what would give both siblings edges to the same CVE and double every finding.
 func ResolveVendors(product, version string) []string {
 	byVendor := load()[product]
 	if len(byVendor) == 0 {

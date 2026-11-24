@@ -109,15 +109,22 @@ output "expected_lambda_node_cpes" {
 #
 # The remainder are homonym vendors: unrelated software that shares a product
 # string with something the decoders look up. Emitting both vendors of a
-# collision is a deliberate decision (see the spec's vendor-aliasing entry), and
-# it is only safe because every homonym collision is capped at a version from
-# 2004-2018 that will not appear in a container tag or a Lambda runtime — while
-# the collisions that do reach current versions (redis 6.2.6, MySQL 5.6.36) are
-# true alias pairs naming the same software.
+# collision is a deliberate decision (recorded on cpe.ResolveVendors), and it is
+# cheap only where the homonym is capped at a version from 2004-2018 that will
+# not appear in a container tag or a Lambda runtime.
 #
-# These substrings are what detects that premise breaking. A resolution rule
-# loosened to reach homonyms would fabricate inventory, claiming the customer
-# runs a Jenkins plugin, a Rails gem or a Node driver.
+# These substrings are what detects that cap breaking for the products this
+# fixture actually deploys. A resolution rule loosened to reach homonyms would
+# fabricate inventory, claiming the customer runs a Jenkins plugin, a Rails gem
+# or a Node driver.
+#
+# The cap is NOT total, and this list does not pretend otherwise. mysql:mysql
+# carries 5.6.36 — a version an RDS engine or container tag can really be — and
+# ResolveVendors emits it today. ":a:mysql:mysql" is deliberately absent: no
+# resource here deploys MySQL, so the assertion would be vacuous, and it would
+# assert the opposite of current behaviour. That case is pinned in
+# pkg/cpe/cpemap_test.go instead. Adding a MySQL 5.6.36 resource here without a
+# narrowing rule will fail this check — correctly.
 #
 #   :a:mysqljs    the Node mysql driver, not Oracle MySQL
 #   :a:jenkins    Jenkins plugins sharing kubernetes/mongodb product names

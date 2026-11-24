@@ -70,6 +70,36 @@ func TestResolveVendors_DeprecatedVendorsAreNeverReturned(t *testing.T) {
 	assert.NotContains(t, cpe.ResolveVendors("nginx", "1.25.3"), "igor_sysoev")
 }
 
+func TestResolveVendors_SiblingVendorsAreBothEmitted(t *testing.T) {
+	// redis:redis and redislabs:redis are both live in the dictionary at 6.2.6,
+	// so resolution cannot choose and returns both. Pinned because narrowing it
+	// is a product decision, not a refactor: redislabs:redis:6.2.6 matches 0
+	// CVEs while redis:redis:6.2.6 matches 22, and the two vendors' whole-product
+	// CVE sets do not intersect — so collapsing either way drops real findings.
+	assert.Equal(t, []string{"redis", "redislabs"}, cpe.ResolveVendors("redis", "6.2.6"))
+}
+
+func TestResolveVendors_MySQLHomonymReachesAProductionVersion(t *testing.T) {
+	// A KNOWN LEAK, pinned so it is visible rather than assumed away.
+	//
+	// The emit-both decision rests on homonym collisions being capped at
+	// versions no real deployment runs. mysql:mysql breaks that cap: it carries
+	// exactly one version, 5.6.36, which an RDS engine version or a container
+	// tag can genuinely be. Its CVEs at that version are CVE-2009-2942 (the
+	// mysql-ocaml bindings) and CVE-2017-12419 (MantisBT) — unrelated software
+	// that merely mentions MySQL — so a matcher hangs two fabricated findings on
+	// an asset running Oracle MySQL.
+	//
+	// This is NOT asserted in the integration fixture's forbidden_cpe_substrings:
+	// nothing in that fixture deploys MySQL, so the assertion would be vacuous,
+	// and the behaviour it would forbid is the behaviour shipping today. When a
+	// narrowing rule lands, this test is the one that should change.
+	assert.Equal(t, []string{"mysql", "oracle"}, cpe.ResolveVendors("mysql", "5.6.36"),
+		"if this changed, a narrowing rule landed — update the decision record on ResolveVendors")
+	assert.Equal(t, []string{"oracle"}, cpe.ResolveVendors("mysql", "8.0.35"),
+		"the leak is confined to the single version mysql:mysql carries")
+}
+
 func TestResolveVendors_SortedAndStable(t *testing.T) {
 	got := cpe.ResolveVendors("http_server", "2.4.50")
 	again := cpe.ResolveVendors("http_server", "2.4.50")
