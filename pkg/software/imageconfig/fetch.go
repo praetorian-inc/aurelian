@@ -83,9 +83,11 @@ type Fetcher struct {
 	cache map[string]*entry
 }
 
+// entry memoises one reference's fetch. get is a sync.OnceValue, so the
+// first caller performs the round trip and every later one is handed the same
+// Config without re-entering the registry.
 type entry struct {
-	once sync.Once
-	cfg  Config
+	get func() Config
 }
 
 // New returns a Fetcher using get for the registry round trip. Pass nil for
@@ -115,15 +117,17 @@ func (f *Fetcher) Fetch(ctx context.Context, ref string, auth authn.Authenticato
 	f.mu.Lock()
 	e, ok := f.cache[ref]
 	if !ok {
-		e = &entry{}
+		// Built under the lock but invoked outside it: holding the mutex
+		// across a registry round trip would serialise every other reference
+		// behind this one.
+		e = &entry{get: sync.OnceValue(func() Config {
+			return f.fetchOnce(ctx, ref, auth)
+		})}
 		f.cache[ref] = e
 	}
 	f.mu.Unlock()
 
-	e.once.Do(func() {
-		e.cfg = f.fetchOnce(ctx, ref, auth)
-	})
-	return e.cfg
+	return e.get()
 }
 
 func (f *Fetcher) fetchOnce(ctx context.Context, ref string, auth authn.Authenticator) Config {

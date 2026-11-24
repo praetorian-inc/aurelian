@@ -12,6 +12,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 
 	_ "embed"
@@ -27,32 +28,22 @@ var cpemapGz []byte
 // allowlist: scope is enforced at detection.
 type vendorTable map[string][]string
 
-var (
-	loadOnce sync.Once
-	table    vendorTable
-	loadErr  error
-)
+// load decodes the embedded table once. A failure means the committed
+// artifact is corrupt, not a runtime condition a caller can recover from, so
+// it panics — and sync.OnceValue re-panics identically on every later call.
+var load = sync.OnceValue(func() vendorTable {
+	gz, err := gzip.NewReader(bytes.NewReader(cpemapGz))
+	if err != nil {
+		panic(fmt.Errorf("open embedded cpemap: %w", err))
+	}
+	defer func() { _ = gz.Close() }()
 
-func load() vendorTable {
-	loadOnce.Do(func() {
-		gz, err := gzip.NewReader(bytes.NewReader(cpemapGz))
-		if err != nil {
-			loadErr = fmt.Errorf("open embedded cpemap: %w", err)
-			return
-		}
-		defer func() { _ = gz.Close() }()
-		if err := json.NewDecoder(gz).Decode(&table); err != nil {
-			loadErr = fmt.Errorf("decode embedded cpemap: %w", err)
-		}
-	})
-	if loadErr != nil {
-		// The table is embedded at build time, so a failure here means the
-		// committed artifact is corrupt — not a runtime condition a caller can
-		// recover from or should have to branch on.
-		panic(loadErr)
+	var table vendorTable
+	if err := json.NewDecoder(gz).Decode(&table); err != nil {
+		panic(fmt.Errorf("decode embedded cpemap: %w", err))
 	}
 	return table
-}
+})
 
 // ResolveVendors returns every vendor string NVD publishes the product under,
 // sorted. The version is deliberately not a parameter: NVD matches CVEs on
@@ -71,11 +62,9 @@ func ResolveVendors(product string) []string {
 	if len(vendors) == 0 {
 		return nil
 	}
-	// The generator writes these sorted; copy so a caller cannot mutate the
+	// The generator writes these sorted; clone so a caller cannot mutate the
 	// process-wide table through the returned slice.
-	out := make([]string, len(vendors))
-	copy(out, vendors)
-	return out
+	return slices.Clone(vendors)
 }
 
 func TableSize() int {

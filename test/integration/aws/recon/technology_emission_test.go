@@ -4,7 +4,7 @@ package recon
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -266,6 +266,6 @@ func cpesOf(r output.AWSResource) []string {
 	for _, tech := range r.Technologies {
 		out = append(out, tech.CPE)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

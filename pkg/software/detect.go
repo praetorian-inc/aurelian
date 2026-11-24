@@ -11,7 +11,8 @@ package software
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
@@ -343,10 +344,5 @@ func isDigit(r rune) bool { return r >= '0' && r <= '9' }
 // exists so a caller can register itself for exactly those types without
 // restating the list — a second copy would drift the moment a decoder is added.
 func RegisteredTypes() []string {
-	out := make([]string, 0, len(registry))
-	for rt := range registry {
-		out = append(out, rt)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(registry))
 }

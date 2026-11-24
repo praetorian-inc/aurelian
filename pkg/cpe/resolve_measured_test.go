@@ -1,6 +1,7 @@
 package cpe_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
@@ -109,24 +110,9 @@ func TestResolve_EveryEmissionSatisfiesGuardsKeyRegex(t *testing.T) {
 func vendorsOf(cpes []string) []string {
 	out := make([]string, 0, len(cpes))
 	for _, c := range cpes {
-		parts := splitN(c, ':', 6)
-		if len(parts) > 3 {
+		if parts := strings.Split(c, ":"); len(parts) > 3 {
 			out = append(out, parts[3])
 		}
 	}
 	return out
-}
-
-func splitN(s string, sep byte, n int) []string {
-	var out []string
-	cur := ""
-	for i := 0; i < len(s); i++ {
-		if s[i] == sep && len(out) < n {
-			out = append(out, cur)
-			cur = ""
-			continue
-		}
-		cur += string(s[i])
-	}
-	return append(out, cur)
 }

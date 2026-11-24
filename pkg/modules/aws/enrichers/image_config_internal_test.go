@@ -67,7 +67,7 @@ func TestEnrichTechnologies_ReadsTheConfigOfAPrivateImage(t *testing.T) {
 	calls := withFetcher(t, map[string][]string{"myorg/app:v1": {"PYTHON_VERSION=3.11.18"}}, nil)
 
 	r := taskDef("myorg/app:v1")
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, 1, *calls)
@@ -87,7 +87,7 @@ func TestEnrichTechnologies_TagAndConfigAgreeingIsOneTechnology(t *testing.T) {
 	withFetcher(t, map[string][]string{"nginx:1.25.5": {"NGINX_VERSION=1.25.5"}}, nil)
 
 	r := taskDef("nginx:1.25.5")
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, []string{
@@ -105,7 +105,7 @@ func TestEnrichTechnologies_ConfigAddsToWhatTheTagFound(t *testing.T) {
 	withFetcher(t, map[string][]string{"tomcat:10.1.62": {"TOMCAT_VERSION=10.1.62", "JAVA_VERSION=jdk-25.0.5.1+2"}}, nil)
 
 	r := taskDef("tomcat:10.1.62")
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Subset(t, cpeSet(r), []string{
@@ -120,7 +120,7 @@ func TestEnrichTechnologies_UnreachableRegistryKeepsWhatTheTagFound(t *testing.T
 	withFetcher(t, nil, errors.New("denied"))
 
 	r := taskDef("nginx:1.25.5")
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, []string{
@@ -133,7 +133,7 @@ func TestEnrichTechnologies_RunningTwiceDoesNotDoubleTheField(t *testing.T) {
 	withFetcher(t, map[string][]string{"tomcat:10.1.62": {"JAVA_VERSION=jdk-25.0.5.1+2"}}, nil)
 
 	r := taskDef("tomcat:10.1.62")
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 	first := cpeSet(r)
 	require.NoError(t, enrichTechnologies(cfg, r))
@@ -146,15 +146,13 @@ func TestEnrichTechnologies_OneImageAcrossManyResourcesIsFetchedOnce(t *testing.
 	// inside the shared concurrent pipeline stage, so this also has to hold
 	// when those resources are enriched in parallel.
 	calls := withFetcher(t, map[string][]string{"myorg/app:v1": {"RUBY_VERSION=3.3.14"}}, nil)
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 
 	var wg sync.WaitGroup
 	for range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = enrichTechnologies(cfg, taskDef("myorg/app:v1"))
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -163,7 +161,7 @@ func TestEnrichTechnologies_OneImageAcrossManyResourcesIsFetchedOnce(t *testing.
 
 func TestEnrichTechnologies_ResourcesWithNoImageMakeNoCall(t *testing.T) {
 	calls := withFetcher(t, map[string][]string{}, nil)
-	cfg := plugin.EnricherConfig{Context: context.Background()}
+	cfg := plugin.EnricherConfig{Context: t.Context()}
 
 	r := &output.AWSResource{
 		ResourceType: "AWS::RDS::DBInstance",

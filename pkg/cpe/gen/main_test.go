@@ -1,7 +1,8 @@
 package main
 
 import (
-	"sort"
+	"maps"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,12 +10,7 @@ import (
 )
 
 func keys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(m))
 }
 
 func TestDistillChunk_DropsDeprecated(t *testing.T) {

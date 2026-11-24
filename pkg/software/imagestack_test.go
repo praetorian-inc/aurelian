@@ -1,7 +1,7 @@
 package software_test
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -267,6 +267,6 @@ func productVersionsOf(techs []output.Technology) []string {
 		seen[pv] = struct{}{}
 		out = append(out, pv)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

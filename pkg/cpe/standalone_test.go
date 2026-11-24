@@ -18,7 +18,7 @@ const selfPath = "github.com/praetorian-inc/aurelian/pkg/cpe"
 func TestPackageIsStandalone(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").Output()
 	require.NoError(t, err)
-	for _, dep := range strings.Split(string(out), "\n") {
+	for dep := range strings.SplitSeq(string(out), "\n") {
 		dep = strings.TrimSpace(dep)
 		if dep == "" || dep == selfPath {
 			// `go list -deps` lists the package under test among its own deps.
@@ -34,7 +34,7 @@ func TestPackageIsStandalone(t *testing.T) {
 func TestPackageMakesNoNetworkCallsAtRuntime(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", ".").Output()
 	require.NoError(t, err)
-	for _, dep := range strings.Split(string(out), "\n") {
+	for dep := range strings.SplitSeq(string(out), "\n") {
 		assert.NotEqual(t, "net/http", strings.TrimSpace(dep),
 			"pkg/cpe must not depend on net/http; the NVD fetch lives in pkg/cpe/gen")
 	}

@@ -1,7 +1,8 @@
 package software
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
@@ -106,11 +107,15 @@ func stackFindings(cfg imageconfig.Config) []finding {
 	}
 
 	// Deterministic: map iteration order must never reach the output.
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].primary != out[j].primary {
-			return out[i].primary
+	slices.SortStableFunc(out, func(a, b finding) int {
+		if a.primary != b.primary {
+			// A marker naming the entrypoint process comes first.
+			if a.primary {
+				return -1
+			}
+			return 1
 		}
-		return out[i].product < out[j].product
+		return cmp.Compare(a.product, b.product)
 	})
 	return out
 }

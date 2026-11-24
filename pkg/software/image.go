@@ -89,13 +89,14 @@ func ParseImageRef(ref string) (product, version, digest string) {
 
 	// Only the last path segment can carry a tag, so a registry port
 	// (registry.io:5000/ns/nginx:1.2.3) is never read as one.
-	lastSlash := strings.LastIndex(ref, "/")
-	segment := ref[lastSlash+1:]
-
-	name, tag := segment, ""
-	if i := strings.LastIndex(segment, ":"); i >= 0 {
-		name, tag = segment[:i], segment[i+1:]
+	segment := ref
+	if _, after, found := strings.CutLast(ref, "/"); found {
+		segment = after
 	}
+
+	// CutLast leaves the whole segment as the name and an empty tag when there
+	// is no colon, which is what an untagged reference should yield.
+	name, tag, _ := strings.CutLast(segment, ":")
 
 	product, ok := imageProducts[strings.ToLower(name)]
 	if !ok {

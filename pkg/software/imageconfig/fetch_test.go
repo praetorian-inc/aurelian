@@ -48,7 +48,7 @@ func TestFetch_ReturnsEnvEntrypointAndCmd(t *testing.T) {
 		byRef:   map[string]*v1.ConfigFile{"nginx:1.25": cfgFile([]string{"NGINX_VERSION=1.25.5", "PATH=/usr/bin"}, []string{"/docker-entrypoint.sh"}, []string{"nginx", "-g", "daemon off;"})},
 		digests: map[string]string{"nginx:1.25": "sha256:aaa"},
 	}
-	got := New(f.get).Fetch(context.Background(), "nginx:1.25", nil)
+	got := New(f.get).Fetch(t.Context(), "nginx:1.25", nil)
 
 	assert.Equal(t, "nginx:1.25", got.Ref)
 	assert.Equal(t, "sha256:aaa", got.Digest)
@@ -66,7 +66,7 @@ func TestFetch_SameReferenceIsFetchedOnce(t *testing.T) {
 	}
 	fetcher := New(f.get)
 	for range 50 {
-		require.Equal(t, "sha256:bbb", fetcher.Fetch(context.Background(), "app:1", nil).Digest)
+		require.Equal(t, "sha256:bbb", fetcher.Fetch(t.Context(), "app:1", nil).Digest)
 	}
 	assert.Equal(t, 1, f.calls)
 }
@@ -81,11 +81,9 @@ func TestFetch_ConcurrentCallersForOneReferenceFetchOnce(t *testing.T) {
 	fetcher := New(f.get)
 	var wg sync.WaitGroup
 	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			fetcher.Fetch(context.Background(), "app:1", nil)
-		}()
+		wg.Go(func() {
+			fetcher.Fetch(t.Context(), "app:1", nil)
+		})
 	}
 	wg.Wait()
 	assert.Equal(t, 1, f.calls, "concurrent callers must share one fetch, not race into several")
@@ -98,7 +96,7 @@ func TestFetch_FailureYieldsEmptyConfigAndIsNotRetried(t *testing.T) {
 	f := &fake{err: errors.New("denied")}
 	fetcher := New(f.get)
 	for range 10 {
-		got := fetcher.Fetch(context.Background(), "private/app:1", nil)
+		got := fetcher.Fetch(t.Context(), "private/app:1", nil)
 		assert.True(t, got.Empty())
 	}
 	assert.Equal(t, 1, f.calls)
@@ -106,7 +104,7 @@ func TestFetch_FailureYieldsEmptyConfigAndIsNotRetried(t *testing.T) {
 
 func TestFetch_EmptyReferenceMakesNoCall(t *testing.T) {
 	f := &fake{}
-	assert.True(t, New(f.get).Fetch(context.Background(), "", nil).Empty())
+	assert.True(t, New(f.get).Fetch(t.Context(), "", nil).Empty())
 	assert.Equal(t, 0, f.calls)
 }
 
@@ -124,7 +122,7 @@ func TestFetch_BoundsHostileEnvironments(t *testing.T) {
 		byRef:   map[string]*v1.ConfigFile{"hostile:1": cfgFile(many, nil, nil)},
 		digests: map[string]string{"hostile:1": "sha256:ddd"},
 	}
-	got := New(f.get).Fetch(context.Background(), "hostile:1", nil)
+	got := New(f.get).Fetch(t.Context(), "hostile:1", nil)
 
 	assert.LessOrEqual(t, len(got.Env), MaxEnvEntries)
 	for _, e := range got.Env {
@@ -141,7 +139,7 @@ func TestFetch_BoundsEntrypointAndCmd(t *testing.T) {
 		byRef:   map[string]*v1.ConfigFile{"hostile:2": cfgFile(nil, many, many)},
 		digests: map[string]string{"hostile:2": "sha256:eee"},
 	}
-	got := New(f.get).Fetch(context.Background(), "hostile:2", nil)
+	got := New(f.get).Fetch(t.Context(), "hostile:2", nil)
 	assert.LessOrEqual(t, len(got.Entrypoint), MaxArgs)
 	assert.LessOrEqual(t, len(got.Cmd), MaxArgs)
 }

@@ -161,7 +161,7 @@ func cveMetaSHA(url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read meta: %w", err)
 	}
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		if k, v, ok := strings.Cut(strings.TrimSpace(line), ":"); ok && k == "sha256" {
 			return strings.ToLower(v), nil
 		}

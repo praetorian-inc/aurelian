@@ -16,10 +16,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -143,7 +144,7 @@ func fetchMeta() (feedMeta, error) {
 		return feedMeta{}, fmt.Errorf("read meta: %w", err)
 	}
 	var m feedMeta
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		k, v, ok := strings.Cut(strings.TrimSpace(line), ":")
 		if !ok {
 			continue
@@ -261,12 +262,7 @@ func eachChunk(r io.Reader, fn func(body []byte) error) (int, error) {
 func writeTable(path string, table Table) error {
 	out := make(map[string][]string, len(table))
 	for product, vendors := range table {
-		vs := make([]string, 0, len(vendors))
-		for v := range vendors {
-			vs = append(vs, v)
-		}
-		sort.Strings(vs)
-		out[product] = vs
+		out[product] = slices.Sorted(maps.Keys(vendors))
 	}
 
 	f, err := os.Create(path)

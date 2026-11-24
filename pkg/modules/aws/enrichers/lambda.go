@@ -40,8 +40,7 @@ func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.AWSResource, client 
 		FunctionName: &r.ResourceID,
 	})
 	if err != nil {
-		var notFound *lambdatypes.ResourceNotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 			return nil
 		}
 		slog.Warn("lambda enricher: unexpected error",
@@ -94,8 +93,7 @@ func FetchFunctionImage(cfg plugin.EnricherConfig, r *output.AWSResource, client
 	}
 	out, err := client.GetFunction(ctx, &lambda.GetFunctionInput{FunctionName: &r.ResourceID})
 	if err != nil {
-		var notFound *lambdatypes.ResourceNotFoundException
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*lambdatypes.ResourceNotFoundException](err); ok {
 			return nil
 		}
 		// Best-effort, like every other enrichment: a function whose code
