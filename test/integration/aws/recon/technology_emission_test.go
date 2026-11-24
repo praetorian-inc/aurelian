@@ -156,6 +156,36 @@ func TestTechnologyEmission(t *testing.T) {
 		t.Logf("checked %d emitted CPEs against %d forbidden substrings", checked, len(forbidden))
 	})
 
+	t.Run("every emitted CPE carries the observed version verbatim", func(t *testing.T) {
+		// The invariant that replaced most of forbidden_cpe_substrings.
+		//
+		// Vendor breadth is harmless — a vendor that never shipped the
+		// observed version matches no CVE — but a rewritten VERSION is not: it
+		// attributes CVEs that do not apply to what is actually running. An
+		// earlier revision truncated versions to find a CPE dictionary entry,
+		// and measured against the live NVD CVE corpus that fabricated 19 CVE
+		// attributions across 30 observations.
+		checked := 0
+		for _, results := range scans {
+			for _, r := range results {
+				res, ok := r.(output.AWSResource)
+				if !ok {
+					continue
+				}
+				for _, tech := range res.Technologies {
+					parts := strings.Split(tech.CPE, ":")
+					require.Greater(t, len(parts), 5, "malformed CPE %q", tech.CPE)
+					version := parts[5]
+					checked++
+					assert.Contains(t, tech.Evidence, version,
+						"resource %s emitted version %q which does not appear in its own evidence %q — the observed version was rewritten",
+						res.ResourceID, version, tech.Evidence)
+				}
+			}
+		}
+		require.NotZero(t, checked, "no CPEs were emitted at all; the check is vacuous")
+	})
+
 	t.Run("every emitted CPE satisfies guard's Technology key regex", func(t *testing.T) {
 		// Guard rejects a Technology whose key does not match
 		// ^#technology#cpe:2\.3(:[^:]+){11}$, dropping the node silently. A CPE
