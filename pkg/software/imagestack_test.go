@@ -170,26 +170,9 @@ func loadHarvested(t *testing.T, slug string) imageconfig.Config {
 	raw, err := os.ReadFile(filepath.Join("testdata", "imageconfig", slug+".json"))
 	require.NoError(t, err, "harvested config %q", slug)
 
-	var doc struct {
-		Image  string `json:"image"`
-		Digest string `json:"digest"`
-		Config struct {
-			Config struct {
-				Env        []string `json:"Env"`
-				Entrypoint []string `json:"Entrypoint"`
-				Cmd        []string `json:"Cmd"`
-			} `json:"config"`
-		} `json:"config"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &doc))
-
-	return imageconfig.Config{
-		Ref:        doc.Image,
-		Digest:     doc.Digest,
-		Env:        doc.Config.Config.Env,
-		Entrypoint: doc.Config.Config.Entrypoint,
-		Cmd:        doc.Config.Config.Cmd,
-	}
+	var cfg imageconfig.Config
+	require.NoError(t, json.Unmarshal(raw, &cfg))
+	return cfg
 }
 
 func cpesOf(techs []output.Technology) []string {

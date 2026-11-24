@@ -1,190 +1,21 @@
 {
-  "config": {
-    "architecture": "amd64",
-    "config": {
-      "Cmd": [
-        "mongod"
-      ],
-      "Entrypoint": [
-        "docker-entrypoint.sh"
-      ],
-      "Env": [
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "GOSU_VERSION=1.19",
-        "JSYAML_VERSION=3.13.1",
-        "JSYAML_CHECKSUM=662e32319bdd378e91f67578e56a34954b0a2e33aca11d70ab9f4826af24b941",
-        "MONGO_PACKAGE=mongodb-org",
-        "MONGO_REPO=repo.mongodb.org",
-        "MONGO_MAJOR=7.0",
-        "MONGO_VERSION=7.0.48",
-        "HOME=/data/db"
-      ],
-      "ExposedPorts": {
-        "27017/tcp": {}
-      },
-      "Labels": {
-        "org.opencontainers.image.version": "22.04"
-      },
-      "Volumes": {
-        "/data/configdb": {},
-        "/data/db": {}
-      }
-    },
-    "created": "2026-11-20T03:24:57.449614422Z",
-    "history": [
-      {
-        "created": "2026-11-17T09:18:24.816545885Z",
-        "created_by": "/bin/sh -c #(nop)  ARG RELEASE",
-        "empty_layer": true
-      },
-      {
-        "created": "2026-11-17T09:18:24.854129732Z",
-        "created_by": "/bin/sh -c #(nop)  ARG LAUNCHPAD_BUILD_ARCH",
-        "empty_layer": true
-      },
-      {
-        "created": "2026-11-17T09:18:24.882016179Z",
-        "created_by": "/bin/sh -c #(nop)  LABEL org.opencontainers.image.version=22.04",
-        "empty_layer": true
-      },
-      {
-        "created": "2026-11-17T09:18:27.119966628Z",
-        "created_by": "/bin/sh -c #(nop) ADD file:577abcbf057cdd5d520b6dbfa56d772c9fb1fa3dd63cb6db8942d63dfc9d902b in / "
-      },
-      {
-        "created": "2026-11-17T09:18:27.522347875Z",
-        "created_by": "/bin/sh -c #(nop)  CMD [\"/bin/bash\"]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:23.487190895Z",
-        "created_by": "RUN /bin/sh -c set -eux; \tgroupadd --gid 999 --system mongodb; \tuseradd --uid 999 --system --gid mongodb --home-dir /data/db mongodb; \tmkdir -p /data/db /data/configdb; \tchown -R mongodb:mongodb /data/db /data/configdb # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:28.935005418Z",
-        "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tjq \t\tnumactl \t\tprocps \t; \trm -rf /var/lib/apt/lists/* # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.729722944Z",
-        "created_by": "ENV GOSU_VERSION=1.19",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.729722944Z",
-        "created_by": "ENV JSYAML_VERSION=3.13.1",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.729722944Z",
-        "created_by": "ENV JSYAML_CHECKSUM=662e32319bdd378e91f67578e56a34954b0a2e33aca11d70ab9f4826af24b941",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.729722944Z",
-        "created_by": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tgnupg \t\twget \t; \trm -rf /var/lib/apt/lists/*; \t\tdpkgArch=\"$(dpkg --print-architecture | awk -F- '{ print $NF }')\"; \twget -O /usr/local/bin/gosu \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch\"; \twget -O /usr/local/bin/gosu.asc \"https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$dpkgArch.asc\"; \texport GNUPGHOME=\"$(mktemp -d)\"; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys B42F6819007F00F88E364FD4036A9C25BF357DD4; \tgpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" /usr/local/bin/gosu.asc; \t\tmkdir -p /opt/js-yaml/; \twget -O /opt/js-yaml/js-yaml.tgz https://registry.npmjs.org/js-yaml/-/js-yaml-${JSYAML_VERSION}.tgz; \techo \"$JSYAML_CHECKSUM */opt/js-yaml/js-yaml.tgz\" | sha256sum -c -; \ttar -xz --strip-components=1 -f /opt/js-yaml/js-yaml.tgz -C /opt/js-yaml package/dist/js-yaml.js package/package.json; \trm /opt/js-yaml/js-yaml.tgz; \tln -s /opt/js-yaml/dist/js-yaml.js /js-yaml.js; \t\texport GNUPGHOME=\"$(mktemp -d)\"; \twget -O KEYS 'https://pgp.mongodb.com/server-7.0.asc'; \tgpg --batch --import KEYS; \tmkdir -p /etc/apt/keyrings; \tgpg --batch --export --armor 'E58830201F7DD82CD808AA84160D26BB1785BA38' > /etc/apt/keyrings/mongodb.asc; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" KEYS; \t\tapt-mark auto '.*' > /dev/null; \tapt-mark manual $savedAptMark > /dev/null; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \t\tchmod +x /usr/local/bin/gosu; \tgosu --version; \tgosu nobody true # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.821621151Z",
-        "created_by": "RUN /bin/sh -c mkdir /docker-entrypoint-initdb.d # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.821621151Z",
-        "created_by": "ARG MONGO_PACKAGE=mongodb-org",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.821621151Z",
-        "created_by": "ARG MONGO_REPO=repo.mongodb.org",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.821621151Z",
-        "created_by": "ENV MONGO_PACKAGE=mongodb-org MONGO_REPO=repo.mongodb.org",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.821621151Z",
-        "created_by": "ENV MONGO_MAJOR=7.0",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.90799755Z",
-        "created_by": "RUN |2 MONGO_PACKAGE=mongodb-org MONGO_REPO=repo.mongodb.org /bin/sh -c echo \"deb [ signed-by=/etc/apt/keyrings/mongodb.asc ] http://$MONGO_REPO/apt/ubuntu jammy/$MONGO_PACKAGE/$MONGO_MAJOR multiverse\" | tee \"/etc/apt/sources.list.d/$MONGO_PACKAGE.list\" # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:38.90799755Z",
-        "created_by": "ENV MONGO_VERSION=7.0.48",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.416534997Z",
-        "created_by": "RUN |2 MONGO_PACKAGE=mongodb-org MONGO_REPO=repo.mongodb.org /bin/sh -c set -x \t&& export DEBIAN_FRONTEND=noninteractive \t&& apt-get update \t&& apt-get install -y \t\t${MONGO_PACKAGE}=$MONGO_VERSION \t\t${MONGO_PACKAGE}-server=$MONGO_VERSION \t\t${MONGO_PACKAGE}-shell=$MONGO_VERSION \t\t${MONGO_PACKAGE}-mongos=$MONGO_VERSION \t\t${MONGO_PACKAGE}-tools=$MONGO_VERSION \t\t${MONGO_PACKAGE}-database=$MONGO_VERSION \t\t${MONGO_PACKAGE}-database-tools-extra=$MONGO_VERSION \t&& rm -rf /var/lib/apt/lists/* \t&& rm -rf /var/lib/mongodb \t&& mv /etc/mongod.conf /etc/mongod.conf.orig # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.416534997Z",
-        "created_by": "VOLUME [/data/db /data/configdb]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.416534997Z",
-        "created_by": "ENV HOME=/data/db",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.449614422Z",
-        "created_by": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.449614422Z",
-        "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.449614422Z",
-        "created_by": "EXPOSE map[27017/tcp:{}]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-11-20T03:24:57.449614422Z",
-        "created_by": "CMD [\"mongod\"]",
-        "empty_layer": true
-      }
-    ],
-    "os": "linux",
-    "rootfs": {
-      "diff_ids": [
-        "sha256:af272fa34b9eaf77b9456d49daa4d157829b4e27b91a79d1fe5602a1556635ad",
-        "sha256:e9e014f11858dcc62353fa15737d3b06df458606437e3fb203656514b5c8f600",
-        "sha256:bb6b3fc2eb2077002f98cf969890c25b742ed17dd12df9675dd59493ddb53f9b",
-        "sha256:e0576bc93acf9990846bee7791444224ec0bd6acf7664fb7a05de0f50808e3e9",
-        "sha256:1b1b192bc1c5c3753d16d27e4d0bf2828fa030c919bfb9dc34ed62c504612482",
-        "sha256:3698e22bfc65984aa00a765b2a4fbc6b175f3f545656b3d6409a193ba6ca05f3",
-        "sha256:dbf2ebd418c88041851bf75cd0e40b3914155f86b715ad2a4c441a57bbafcdba",
-        "sha256:f6bac716664cd42523e0424f9949d280947cb3428fb1a7ad70901c74b4e7dd05"
-      ],
-      "type": "layers"
-    }
-  },
+  "ref": "registry-1.docker.io/library/mongo:7",
   "digest": "sha256:b0a2eaadfed52aa4dab7b84d324f8d7ca3c6989793695aa9e05c81fe282642b0",
-  "image": "registry-1.docker.io/library/mongo:7"
+  "env": [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "GOSU_VERSION=1.19",
+    "JSYAML_VERSION=3.13.1",
+    "JSYAML_CHECKSUM=662e32319bdd378e91f67578e56a34954b0a2e33aca11d70ab9f4826af24b941",
+    "MONGO_PACKAGE=mongodb-org",
+    "MONGO_REPO=repo.mongodb.org",
+    "MONGO_MAJOR=7.0",
+    "MONGO_VERSION=7.0.48",
+    "HOME=/data/db"
+  ],
+  "entrypoint": [
+    "docker-entrypoint.sh"
+  ],
+  "cmd": [
+    "mongod"
+  ]
 }

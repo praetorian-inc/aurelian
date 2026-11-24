@@ -1,167 +1,20 @@
 {
-  "config": {
-    "architecture": "amd64",
-    "config": {
-      "Cmd": [
-        "influxd"
-      ],
-      "Entrypoint": [
-        "/entrypoint.sh"
-      ],
-      "Env": [
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-        "GOSU_VER=1.16",
-        "INFLUXDB_VERSION=2.7.12",
-        "INFLUX_CLI_VERSION=2.7.5",
-        "INFLUX_CONFIGS_PATH=/etc/influxdb2/influx-configs",
-        "INFLUXD_INIT_PORT=9999",
-        "INFLUXD_INIT_PING_ATTEMPTS=600",
-        "DOCKER_INFLUXDB_INIT_CLI_CONFIG_NAME=default"
-      ],
-      "ExposedPorts": {
-        "8086/tcp": {}
-      },
-      "Volumes": {
-        "/etc/influxdb2": {},
-        "/var/lib/influxdb2": {}
-      }
-    },
-    "created": "2026-05-04T19:23:46.679518898Z",
-    "history": [
-      {
-        "comment": "debuerreotype 0.17",
-        "created": "2026-04-21T00:00:00Z",
-        "created_by": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1776729600'"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:39.509895058Z",
-        "created_by": "RUN /bin/sh -c export DEBIAN_FRONTEND=noninteractive &&     apt-get update -y &&     apt-get install -y --no-install-recommends       ca-certificates       curl       gnupg &&     apt-get clean &&     rm -rf /var/lib/apt/lists/* # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:40.104302224Z",
-        "created_by": "RUN /bin/sh -c case \"$(dpkg --print-architecture)\" in       *amd64) arch=amd64 ;;       *arm64) arch=arm64 ;;       *) echo 'Unsupported architecture' && exit 1 ;;     esac &&     curl -fL \"https://github.com/TomWright/dasel/releases/download/v2.8.1/dasel_linux_${arch}.gz\" | gzip -d > /usr/local/bin/dasel &&     case ${arch} in       amd64) echo '21fda0a4dc3c779c42737eca4b37e4f187d7ab91ba6301eed97b801af84a9ea2  /usr/local/bin/dasel' ;;       arm64) echo '2c75e63f9884c37578f48788819dda5a5a5c32ec6c4a663eefc19839f44d6291  /usr/local/bin/dasel' ;;     esac | sha256sum -c - &&     chmod +x /usr/local/bin/dasel &&     dasel --version # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:40.222320554Z",
-        "created_by": "RUN /bin/sh -c groupadd -r influxdb --gid=1000 &&     useradd -r -g influxdb --uid=1000 --create-home --home-dir=/home/influxdb --shell=/bin/bash influxdb # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:42.072968923Z",
-        "created_by": "ENV GOSU_VER=1.16",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:42.072968923Z",
-        "created_by": "RUN /bin/sh -c case \"$(dpkg --print-architecture)\" in       *amd64) arch=amd64 ;;       *arm64) arch=arm64 ;;       *) echo 'Unsupported architecture' && exit 1 ;;     esac &&     export GNUPGHOME=\"$(mktemp -d)\" &&     gpg --batch --keyserver keyserver.ubuntu.com --recv-keys       B42F6819007F00F88E364FD4036A9C25BF357DD4 &&     curl -fLo /usr/local/bin/gosu     \"https://github.com/tianon/gosu/releases/download/$GOSU_VER/gosu-${arch}\"          -fLo /usr/local/bin/gosu.asc \"https://github.com/tianon/gosu/releases/download/$GOSU_VER/gosu-${arch}.asc\" &&     gpg --batch --verify /usr/local/bin/gosu.asc                          /usr/local/bin/gosu &&     rm -rf /usr/local/bin/gosu.asc &&     chmod +x /usr/local/bin/gosu &&     gosu --version &&     gosu nobody true # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:42.072968923Z",
-        "created_by": "ENV INFLUXDB_VERSION=2.7.12",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:45.411544023Z",
-        "created_by": "RUN /bin/sh -c case \"$(dpkg --print-architecture)\" in       *amd64) arch=amd64 ;;       *arm64) arch=arm64 ;;       *) echo 'Unsupported architecture' && exit 1 ;;     esac &&     export GNUPGHOME=\"$(mktemp -d)\" &&     gpg --batch --keyserver keyserver.ubuntu.com --recv-keys       24C975CBA61A024EE1B631787C3D57159FC2F927 &&     curl -fLO \"https://dl.influxdata.com/influxdb/releases/v${INFLUXDB_VERSION}/influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz\"          -fLO \"https://dl.influxdata.com/influxdb/releases/v${INFLUXDB_VERSION}/influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz.asc\" &&     gpg --batch --verify \"influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz.asc\"                          \"influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz\" &&     tar xzf \"influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz\" &&     cp \"influxdb2-${INFLUXDB_VERSION}/usr/bin/influxd\" /usr/local/bin/influxd &&     rm -rf \"influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz\"            \"influxdb2-${INFLUXDB_VERSION}_linux_${arch}.tar.gz.asc\"            \"influxdb2_linux_${arch}\" &&     influxd version # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:45.411544023Z",
-        "created_by": "ENV INFLUX_CLI_VERSION=2.7.5",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.553617398Z",
-        "created_by": "RUN /bin/sh -c case \"$(dpkg --print-architecture)\" in       *amd64) arch=amd64 ;;       *arm64) arch=arm64 ;;       *) echo 'Unsupported architecture' && exit 1 ;;     esac &&     export GNUPGHOME=\"$(mktemp -d)\" &&     gpg --batch --keyserver keyserver.ubuntu.com --recv-keys       24C975CBA61A024EE1B631787C3D57159FC2F927 &&     curl -fLO \"https://dl.influxdata.com/influxdb/releases/influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz\"          -fLO \"https://dl.influxdata.com/influxdb/releases/influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz.asc\" &&     gpg --batch --verify \"influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz.asc\"                          \"influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz\" &&     tar xzf \"influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz\" -C /usr/local/bin ./influx &&     rm -rf \"influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz\"            \"influxdb2-client-${INFLUX_CLI_VERSION}-linux-${arch}.tar.gz.asc\" &&     influx version # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.633253592Z",
-        "created_by": "RUN /bin/sh -c mkdir /docker-entrypoint-initdb.d &&     mkdir -p /var/lib/influxdb2 &&     chown -R influxdb:influxdb /var/lib/influxdb2 &&     mkdir -p /etc/influxdb2 &&     chown -R influxdb:influxdb /etc/influxdb2 # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.633253592Z",
-        "created_by": "VOLUME [/var/lib/influxdb2 /etc/influxdb2]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.656489922Z",
-        "created_by": "COPY default-config.yml /etc/defaults/influxdb2/config.yml # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "COPY entrypoint.sh /entrypoint.sh # buildkit"
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "ENTRYPOINT [\"/entrypoint.sh\"]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "CMD [\"influxd\"]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "EXPOSE map[8086/tcp:{}]",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "ENV INFLUX_CONFIGS_PATH=/etc/influxdb2/influx-configs",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "ENV INFLUXD_INIT_PORT=9999",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "ENV INFLUXD_INIT_PING_ATTEMPTS=600",
-        "empty_layer": true
-      },
-      {
-        "comment": "buildkit.dockerfile.v0",
-        "created": "2026-05-04T19:23:46.679518898Z",
-        "created_by": "ENV DOCKER_INFLUXDB_INIT_CLI_CONFIG_NAME=default",
-        "empty_layer": true
-      }
-    ],
-    "os": "linux",
-    "rootfs": {
-      "diff_ids": [
-        "sha256:0da811fd3ed46c38cea69079fa395a3d715dbdbdd5c8177107c450bf6332bbfa",
-        "sha256:14d5d7888949fbcdc7fd0a732059316c198550338345162219ef921be815b5ac",
-        "sha256:922d4bd6933bb7b032714b1527fbec086d8cc6e8f92c88da196a8947748a8182",
-        "sha256:f241f2e83c9be1a7909d138e4c07b4968dc66ac9cb9de32f8bb14a5886ce0e7c",
-        "sha256:eb188ed57db79a20c3bc07d2da2fa3b781faac9d57f06a4bbbbe942743926132",
-        "sha256:138e39d351a0c05ebf9c7797287a8f25abc9c2c7ef1092a51ca1db9c70704bd9",
-        "sha256:b838bd81bc7795a3fe149821d31497714cf396ee824933da0a7b21e351121579",
-        "sha256:aa8cb301770b37bd9fa4bef3151e5f169233c8f5beaa8b0f82b32a01d890333a",
-        "sha256:d0889147bfb00c12dc768397d7a3176739b006f4f02f3aa3b2dfb2cca9433512",
-        "sha256:a71aedf2c72f0888707d9228b0db1853738f9faa3e8b2551aa34cd264d028bb0"
-      ],
-      "type": "layers"
-    }
-  },
+  "ref": "registry-1.docker.io/library/influxdb:2.7",
   "digest": "sha256:7ee90806d2b078a1d70a8ce3f454698997d992427f369ce7f2df11689de80644",
-  "image": "registry-1.docker.io/library/influxdb:2.7"
+  "env": [
+    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "GOSU_VER=1.16",
+    "INFLUXDB_VERSION=2.7.12",
+    "INFLUX_CLI_VERSION=2.7.5",
+    "INFLUX_CONFIGS_PATH=/etc/influxdb2/influx-configs",
+    "INFLUXD_INIT_PORT=9999",
+    "INFLUXD_INIT_PING_ATTEMPTS=600",
+    "DOCKER_INFLUXDB_INIT_CLI_CONFIG_NAME=default"
+  ],
+  "entrypoint": [
+    "/entrypoint.sh"
+  ],
+  "cmd": [
+    "influxd"
+  ]
 }
