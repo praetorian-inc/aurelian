@@ -11,6 +11,7 @@ aurelian aws recon configuration-scan [flags]
 ```
       --concurrency int         Maximum concurrent API requests (default 5)
   -h, --help                    help for configuration-scan
+      --image-configs           Read container image config blobs to identify the software images run
       --opsec_level string      Operational security level for AWS operations (default "none")
       --output-dir string       Base output directory (default "aurelian-output")
   -p, --profile string          AWS profile to use

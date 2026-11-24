@@ -168,3 +168,76 @@ func imageFinding(ref, source string) finding {
 		evidence: evidence,
 	}
 }
+
+// imageRefExtractors maps a resource type to the walks that find container
+// image references on it. They are the same walks the tier-2 decoders use, so
+// the two can never disagree about which images a resource names.
+var imageRefExtractors = map[string][]func(map[string]any) []string{
+	"AWS::ECS::TaskDefinition": {ecsImageRefs},
+	"AWS::Lambda::Function":    {lambdaImageRefs},
+}
+
+// ImageReferences returns the distinct container image references a resource
+// names, in the order they appear.
+//
+// It exists so the enricher that fetches image configs reads exactly the
+// references the tier-2 decoders read, rather than growing a third walk over
+// the same property bags. Deduplicated because a task definition with a
+// sidecar on the same image is one image, and therefore one fetch.
+func ImageReferences(resourceType string, props map[string]any) []string {
+	if len(props) == 0 {
+		return nil
+	}
+
+	var out []string
+	seen := map[string]struct{}{}
+	for _, extract := range imageRefExtractors[resourceType] {
+		for _, ref := range extract(props) {
+			if ref == "" {
+				continue
+			}
+			if _, dup := seen[ref]; dup {
+				continue
+			}
+			seen[ref] = struct{}{}
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+func ecsImageRefs(props map[string]any) []string {
+	containers, ok := props["ContainerDefinitions"].([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, c := range containers {
+		container, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		if ref, ok := stringProp(container, "Image"); ok {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// lambdaImageRefs reads Code.ImageUri, gated on PackageType exactly as
+// lambdaImageURI is: a zip-packaged function has no image, and an absent
+// PackageType means "don't know", which is not a reason to pull.
+func lambdaImageRefs(props map[string]any) []string {
+	if pt, ok := stringProp(props, "PackageType"); !ok || !strings.EqualFold(pt, "Image") {
+		return nil
+	}
+	code, ok := props["Code"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	ref, ok := stringProp(code, "ImageUri")
+	if !ok {
+		return nil
+	}
+	return []string{ref}
+}

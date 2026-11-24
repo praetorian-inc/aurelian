@@ -12,6 +12,7 @@ aurelian aws recon cdk-bucket-takeover [flags]
   -q, --cdk-qualifiers strings   CDK bootstrap qualifiers to check (default [hnb659fds])
       --concurrency int          Maximum concurrent API requests (default 5)
   -h, --help                     help for cdk-bucket-takeover
+      --image-configs            Read container image config blobs to identify the software images run
       --opsec_level string       Operational security level for AWS operations (default "none")
       --output-dir string        Base output directory (default "aurelian-output")
   -p, --profile string           AWS profile to use

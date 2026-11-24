@@ -138,14 +138,38 @@ func buildLambdaFunctionResource(fn lambdatypes.FunctionConfiguration, accountID
 		Region:       region,
 		DisplayName:  name,
 		LastModified: parseLambdaLastModified(aws.ToString(fn.LastModified)),
-		Properties: map[string]any{
-			"FunctionName": name,
-			// Role is the function's execution role; NodeFromAWSResource promotes it to a
-			// top-level node property and resource_to_role.yaml matches resource.Role =
-			// role.Arn to create the (Function)-[:HAS_ROLE]->(Role) edge.
-			"Role": aws.ToString(fn.Role),
-		},
+		Properties:   lambdaProperties(fn, name),
 	}
+}
+
+// lambdaProperties copies the fields of a ListFunctions summary that downstream
+// consumers read. ListFunctions already returns the whole FunctionConfiguration,
+// so every key here is free — it is already in memory, already paid for.
+//
+// Runtime and PackageType are here for pkg/software's tier-1 detection. They
+// used to be dropped, which made Runtime look like a sparse-CloudControl problem
+// and bought a GetResource per function to fetch back a value this struct
+// already held. Lambda in list-all does not come from CloudControl at all.
+func lambdaProperties(fn lambdatypes.FunctionConfiguration, name string) map[string]any {
+	props := map[string]any{
+		"FunctionName": name,
+		// Role is the function's execution role; NodeFromAWSResource promotes it to a
+		// top-level node property and resource_to_role.yaml matches resource.Role =
+		// role.Arn to create the (Function)-[:HAS_ROLE]->(Role) edge.
+		"Role": aws.ToString(fn.Role),
+	}
+	// A zip-packaged function reports its managed runtime; an image-packaged one
+	// reports none, and its software is identified from the image reference the
+	// lambda code enricher fetches instead.
+	if fn.Runtime != "" {
+		props["Runtime"] = string(fn.Runtime)
+	}
+	// PackageType is what gates that fetch, so the per-function GetFunction call
+	// is paid only for the image-packaged minority.
+	if fn.PackageType != "" {
+		props["PackageType"] = string(fn.PackageType)
+	}
+	return props
 }
 
 func parseLambdaLastModified(value string) *time.Time {

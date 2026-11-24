@@ -15,34 +15,65 @@ func init() {
 	}
 }
 
-// hydratedPaths names, per resource type, a property path that must be present
-// before Detect can decode anything. CloudControl's ListResources returns a
-// sparse property set for some types, and a type listed here is hydrated via
-// GetResource when its path is missing.
-//
-// Lambda is the measured case: across every function in the harvest account the
-// union of keys ListResources returned was {FunctionName, FunctionUrl,
-// FunctionUrlAuthType, Role} — neither Runtime nor Code.ImageUri among them
-// (pkg/software/testdata/properties/aws/FINDINGS.md). ECS is deliberately absent
-// from this map: ContainerDefinitions arrives complete and inline, so hydrating
-// it would buy a GetResource call per task definition and nothing else.
-var hydratedPaths = map[string][]string{
-	"AWS::Lambda::Function": {"Runtime"},
-}
-
 // enrichTechnologies populates r.Technologies from the resource's property bag.
 //
+// It makes no API call of its own, which is what keeps it off the wrong side of
+// the design's anti-goal: list-all and public-resources must not pay a
+// per-resource call for version data. Every property it reads is supplied by
+// the enumerator that already listed the resource, or by a type-specific
+// enricher that fetches it under its own cost rationale — Lambda's image
+// reference is the one such case (enrichers/lambda.go), and it is gated on
+// PackageType so only image-packaged functions pay.
+//
+// This deliberately does *not* hydrate via CloudControl GetResource. An earlier
+// revision hydrated Lambda on a missing `Runtime`, on the premise that
+// ListResources was sparse. The premise was wrong twice over: Lambda in
+// list-all is enumerated by the native Lambda SDK, not CloudControl
+// (pkg/aws/enumeration/lambda_function_enumerator.go), so Runtime is free from
+// the listing it already pays for; and `Code/ImageUri` is a *write-only*
+// property in the CloudFormation schema, so GetResource can never return it at
+// any price. The hydration bought one redundant value and one unobtainable one,
+// for a GetResource per function on both hot paths.
+//
 // Detect is a pure function of (resourceType, properties) and makes no network
-// call, so this enricher cannot fail; it returns nil unconditionally. The one
-// call it may make is the hydration above, which is itself best-effort and
-// swallows its own errors.
+// call. The one thing here that can reach the network is the image-config
+// read, and it is gated behind --image-configs and fails soft, so this
+// enricher still returns nil unconditionally.
 func enrichTechnologies(cfg plugin.EnricherConfig, r *output.AWSResource) error {
-	if path, ok := hydratedPaths[r.ResourceType]; ok {
-		hydrateIfMissing(cfg, r, path...)
-	}
-
-	// Assigned, not appended: Detect is the sole author of this field, and an
-	// enricher that ran twice on one resource must not double it.
+	// Assigned, not appended: this enricher is the sole author of the field,
+	// and one that ran twice on a resource must not double it.
 	r.Technologies = software.Detect(r.ResourceType, r.Properties)
+
+	// Opt-in, because this is the one path here that acquires a per-image
+	// registry call. What it buys is the images a tag cannot identify: a
+	// private myorg/app built FROM python:3.11 carries PYTHON_VERSION in its
+	// config, and the runtime under an entrypoint — the JDK beneath Tomcat —
+	// is only ever visible here.
+	if cfg.ScanImageConfigs {
+		r.Technologies = dedupeTechnologies(append(r.Technologies, imageConfigTechnologies(cfg, r)...))
+	}
 	return nil
+}
+
+// dedupeTechnologies keeps the first technology seen for each CPE.
+//
+// The tag and the config routinely agree — nginx:1.25.5 yields f5:nginx:1.25.5
+// from both — and emitting it twice would double every finding guard derives
+// from it. First wins, so a CPE the tag resolved keeps the tag's provenance,
+// which is the more precise claim: it was observed, not recovered from an
+// environment variable.
+func dedupeTechnologies(techs []output.Technology) []output.Technology {
+	if len(techs) < 2 {
+		return techs
+	}
+	out := make([]output.Technology, 0, len(techs))
+	seen := make(map[string]struct{}, len(techs))
+	for _, t := range techs {
+		if _, dup := seen[t.CPE]; dup {
+			continue
+		}
+		seen[t.CPE] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }
