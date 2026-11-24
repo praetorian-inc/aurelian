@@ -66,6 +66,11 @@ var docCmd = &cobra.Command{
 			fmt.Printf("Error removing timestamp: %v\n", err)
 			os.Exit(1)
 		}
+
+		if err := updateREADME("./README.md"); err != nil {
+			fmt.Printf("Error updating README.md: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 

@@ -89,8 +89,8 @@ jobs:
           
           # Check if docs directory exists and has content
           if [ -d "docs" ] && [ "$(ls -A docs/)" ]; then
-            git add docs/
-            if [[ -n "$(git status --porcelain docs/)" ]]; then
+            git add docs/ README.md
+            if [[ -n "$(git status --porcelain docs/ README.md)" ]]; then
               echo "changes=true" >> $GITHUB_OUTPUT
               echo "Found documentation changes to commit"
             else
@@ -109,6 +109,6 @@ jobs:
           
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add docs/
+          git add docs/ README.md
           git commit -m "docs: Update CLI documentation"
           git push
