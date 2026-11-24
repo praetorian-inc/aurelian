@@ -56,3 +56,50 @@ func TestNormalizeVersion_OutputIsSafeForCPEAssembly(t *testing.T) {
 		assert.NotContains(t, got, " ", "input %q", in)
 	}
 }
+
+// Both cases below were found by harvesting real image config blobs
+// (pkg/software/testdata/imageconfig/FINDINGS.md). Each one costs a real
+// emission: cpe.Resolve("openjdk", "25.0.5.1") and
+// cpe.Resolve("mariadb", "11.8.9") both resolve, so the only thing standing
+// between the observed marker and a correct CPE was normalisation.
+func TestNormalizeVersion_StripsJDKDistributionPrefix(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"jdk-25.0.5.1+2", "25.0.5.1"},   // tomcat:10 JAVA_VERSION
+		{"jdk-17.0.21.1+2", "17.0.21.1"}, // eclipse-temurin:17-jre JAVA_VERSION
+		{"openjdk-17.0.9", "17.0.9"},
+		{"jdk-", ""},  // prefix with nothing behind it is not a version
+		{"jdked", ""}, // not the prefix; still fails the leading-digit rule
+	} {
+		assert.Equal(t, tc.want, cpe.NormalizeVersion(tc.in), "input %q", tc.in)
+	}
+}
+
+func TestNormalizeVersion_StripsDebianEpoch(t *testing.T) {
+	// mariadb:11 ships MARIADB_VERSION=1:11.8.9+maria~ubu2404. A leading
+	// "<digits>:" is a Debian/RPM epoch, which is a well-defined thing and not
+	// the compound identifier the colon rule exists to distrust.
+	for _, tc := range []struct{ in, want string }{
+		{"1:11.8.9+maria~ubu2404", "11.8.9"},
+		{"2:1.2.3", "1.2.3"},
+		{"0:9.1", "9.1"},
+	} {
+		assert.Equal(t, tc.want, cpe.NormalizeVersion(tc.in), "input %q", tc.in)
+	}
+}
+
+func TestNormalizeVersion_EpochStripIsNotAGeneralColonEscape(t *testing.T) {
+	// Only a leading all-digit epoch is stripped. Everything else containing a
+	// colon stays rejected — the rule protects digests and compound
+	// identifiers, and loosening it further would turn "1.2:3" into "1.2".
+	for _, in := range []string{
+		"sha256:abc123",
+		"1.2:3",
+		"8.0.mysql_aurora:3.04.0",
+		"1:2:3",     // more than one colon is not an epoch
+		"v1:2.3",    // epoch must lead, not follow a prefix
+		":1.2.3",    // empty epoch
+		"abc:1.2.3", // non-numeric epoch
+	} {
+		assert.Equal(t, "", cpe.NormalizeVersion(in), "input %q", in)
+	}
+}

@@ -23,20 +23,50 @@ func TestResolveVendors_EmptyWhenUndecidable(t *testing.T) {
 	assert.Empty(t, cpe.ResolveVendors("kubernetes", "1.29.0")) // 2 vendors, neither carries it
 }
 
-// A minor-only version resolves or not according to the *vendor count*, not
-// according to the version's precision. NVD's dictionary is per-patch, so no
-// live entry carries a two-part version; for a multi-vendor product rule 3
-// then fires and nothing is emitted.
+// A minor-only version resolves on the strength of the *version*, not the
+// vendor count. NVD's dictionary is per-patch, so no live entry carries a
+// two-part version exactly — but a vendor shipping 3.12.0 through 3.12.7 is
+// evidence that an observed "3.12" is theirs, and rule 1's dotted-prefix arm
+// says so.
 //
-// This is half the picture — see the sole-vendor case below. The two together
-// are the real state of the spec's open "version-granularity gap": it is
-// already resolved, inconsistently, in whichever direction the vendor count
-// happens to fall.
-func TestResolveVendors_MinorOnlyVersionsDoNotResolveForMultiVendorProducts(t *testing.T) {
+// Before that arm existed these all returned nothing, which meant the two
+// commonest Lambda runtimes in existence (Python and Node.js) and every
+// OpenSearch domain emitted no technology at all. The sole-vendor case below
+// is the other half; the two are now consistent rather than falling in
+// whichever direction the vendor count happened to land.
+func TestResolveVendors_MinorOnlyVersionsResolveForMultiVendorProducts(t *testing.T) {
+	assert.Equal(t, []string{"python"}, cpe.ResolveVendors("python", "3.12"))
+	assert.Equal(t, []string{"nodejs"}, cpe.ResolveVendors("node.js", "20"))
+	assert.Equal(t, []string{"elastic"}, cpe.ResolveVendors("elasticsearch", "7.10"))
+	assert.Equal(t, []string{"amazon"}, cpe.ResolveVendors("opensearch", "2.11"))
+}
+
+// Widening rule 1 did not turn rule 3's silence into a guess. NVD carries no
+// kubernetes 1.29 row at any granularity, so the correct answer stays empty —
+// a snapshot-lag result, distinct from a release line NVD has indexed.
+func TestResolveVendors_UnshippedReleaseLinesStayEmpty(t *testing.T) {
 	assert.Empty(t, cpe.ResolveVendors("kubernetes", "1.29"))
-	assert.Empty(t, cpe.ResolveVendors("python", "3.12"))
-	assert.Empty(t, cpe.ResolveVendors("elasticsearch", "7.10"))
-	assert.Empty(t, cpe.ResolveVendors("opensearch", "2.11"))
+	assert.Equal(t, []string{"kubernetes"}, cpe.ResolveVendors("kubernetes", "1.28"))
+}
+
+// Prefix matching widens rule 1, so it can surface a homonym the exact-match
+// arm never reached. Measured instances, kept here so the cost is visible:
+//
+//   - `go 1` — a Lambda go1.x runtime or a public.ecr.aws/lambda/go:1 base
+//     image. A bare major is the coarsest version this design can observe, and
+//     it reaches both golang (correct) and ecies (a Go ECIES library). This is
+//     the same accepted trade as mysql:mysql and redislabs:redis documented on
+//     ResolveVendors: an inert extra node, against silently losing the real one.
+//   - `influxdb 1.8` — before prefix matching this emitted eficode (a Jenkins
+//     plugin that happens to publish the literal string "1.8") and *only*
+//     eficode, because influxdata indexes 1.8.0-1.8.10 and never bare 1.8. The
+//     widened rule restores influxdata alongside it, so the database is no
+//     longer dropped in favour of the plugin.
+func TestResolveVendors_PrefixMatchWidensToHomonyms(t *testing.T) {
+	assert.Equal(t, []string{"ecies", "golang"}, cpe.ResolveVendors("go", "1"))
+	assert.Equal(t, []string{"golang"}, cpe.ResolveVendors("go", "1.21"))
+
+	assert.Equal(t, []string{"eficode", "influxdata"}, cpe.ResolveVendors("influxdb", "1.8"))
 }
 
 // The other half: for a sole-vendor product, rule 2 accepts *any* version,

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	_ "embed"
@@ -62,8 +63,10 @@ func load() vendorTable {
 //
 // The observed version selects the vendor:
 //
-//  1. If any live vendors carry exactly that version, return them — usually
-//     exactly one.
+//  1. If any live vendors carry that version, return them — usually exactly
+//     one. A vendor carries a version either exactly, or as a dotted prefix of
+//     a version it publishes: a vendor shipping 3.12.0 through 3.12.7 is
+//     evidence for an observed "3.12". See carriesVersion.
 //  2. Otherwise, if the product has exactly one vendor, return it. The version
 //     is simply newer than the snapshot; the identification is still sound.
 //  3. Otherwise return nothing. With several vendors and no version evidence
@@ -129,7 +132,7 @@ func ResolveVendors(product, version string) []string {
 
 	var carrying []string
 	for vendor, versions := range byVendor {
-		if containsVersion(versions, version) {
+		if carriesVersion(versions, version) {
 			carrying = append(carrying, vendor)
 		}
 	}
@@ -146,14 +149,40 @@ func ResolveVendors(product, version string) []string {
 	return nil
 }
 
-// containsVersion reports whether versions holds version exactly. The generator
-// writes each vendor's versions sorted, so this is a binary search.
-func containsVersion(versions []string, version string) bool {
+// carriesVersion reports whether a vendor's version list is evidence that the
+// vendor ships the observed version — exactly, or at finer granularity.
+//
+// The exact case is the common one. The dotted-prefix case exists because the
+// most-reported versions in this design are *less precise than the dictionary*.
+// A Lambda runtime reports `python3.12`, never `python3.12.7`; a container tag
+// reports `influxdb:1.8`, never `1.8.10`. NVD indexes the patch level, so an
+// exact-only test finds nothing and rule 3 drops the whole observation — which
+// is how the two commonest Lambda runtimes in existence, Python and Node.js,
+// used to emit nothing at all.
+//
+// A vendor publishing 3.12.0 through 3.12.7 is real evidence that an observed
+// "3.12" is theirs. What is lost is version precision, not vendor correctness:
+// the emitted CPE names the right vendor and the right product, and carries the
+// version actually observed. That is categorically different from naming a
+// vendor the dictionary never associates with the product, which is the
+// confidently-wrong output this design forbids.
+//
+// The trailing dot is what keeps this honest: "3.1" tests the prefix "3.1.",
+// so it matches 3.1.4 and never 3.12.0.
+//
+// The generator writes each vendor's versions sorted, and a lexicographic sort
+// puts every string sharing a prefix in one contiguous run, so both tests are
+// binary searches.
+func carriesVersion(versions []string, version string) bool {
 	if version == "" {
 		return false
 	}
-	i := sort.SearchStrings(versions, version)
-	return i < len(versions) && versions[i] == version
+	if i := sort.SearchStrings(versions, version); i < len(versions) && versions[i] == version {
+		return true
+	}
+	prefix := version + "."
+	j := sort.SearchStrings(versions, prefix)
+	return j < len(versions) && strings.HasPrefix(versions[j], prefix)
 }
 
 // TableSize returns the number of distinct products in the generated table.

@@ -87,13 +87,32 @@ func TestResolve_NeverDoubleEscapes(t *testing.T) {
 
 var keyRegexForTest = regexp.MustCompile(`^cpe:2\.3(:[^:]+){11}$`)
 
-// The open version-granularity gap, pinned as behaviour — and it cuts both
-// ways. A minor-only version emits nothing only when the product has several
-// vendors; where it has exactly one, rule 2 accepts the imprecise version.
-func TestResolve_MinorOnlyVersionsEmitNothingForMultiVendorProducts(t *testing.T) {
+// The version-granularity gap, closed. A minor-only version is the normal case
+// for this design's inputs — a Lambda runtime is `python3.12`, never
+// `python3.12.7` — and it now selects the vendor through the dotted-prefix arm
+// of rule 1 rather than falling through to rule 3.
+//
+// The vendor is the part that must be right, and each of these is: NVD carries
+// python:python:3.12.x, nodejs:node.js:20.x and elastic:elasticsearch:7.10.x.
+// Only the emitted version is coarser than a dictionary row.
+func TestResolve_MinorOnlyVersionsResolveThroughTheVendorThatShipsThem(t *testing.T) {
+	assert.Equal(t, []string{"cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*"},
+		cpe.Resolve("python", "3.12"))
+	assert.Equal(t, []string{"cpe:2.3:a:nodejs:node.js:20:*:*:*:*:*:*:*"},
+		cpe.Resolve("node.js", "20"))
+	assert.Equal(t, []string{"cpe:2.3:a:elastic:elasticsearch:7.10:*:*:*:*:*:*:*"},
+		cpe.Resolve("elasticsearch", "7.10"))
+}
+
+// A version no vendor ships at any granularity still emits nothing when the
+// product has several vendors — rule 3 is unchanged, and widening rule 1 did
+// not turn silence into a guess. (The component-boundary property of the
+// prefix probe itself is tested in carries_internal_test.go, against a
+// synthetic version list: the real dictionary has shipped so many versions
+// that a boundary assertion there passes for the wrong reason.)
+func TestResolve_UnshippedVersionsStillEmitNothing(t *testing.T) {
 	assert.Empty(t, cpe.Resolve("kubernetes", "1.29"))
-	assert.Empty(t, cpe.Resolve("python", "3.12"))
-	assert.Empty(t, cpe.Resolve("elasticsearch", "7.10"))
+	assert.Empty(t, cpe.Resolve("server", "3.2.1"))
 }
 
 func TestResolve_MinorOnlyVersionsDoEmitForSoleVendorProducts(t *testing.T) {

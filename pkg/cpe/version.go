@@ -6,12 +6,14 @@ import "strings"
 // prefix a CPE version component can carry, and returns "" when there is no
 // usable version.
 //
-//	1.25.3-alpine     -> 1.25.3
-//	1.18.0-6ubuntu14  -> 1.18.0
-//	v3.5.9            -> 3.5.9
-//	15.4              -> 15.4
-//	latest            -> ""
-//	sha256:abc123     -> ""
+//	1.25.3-alpine          -> 1.25.3
+//	1.18.0-6ubuntu14       -> 1.18.0
+//	v3.5.9                 -> 3.5.9
+//	15.4                   -> 15.4
+//	jdk-25.0.5.1+2         -> 25.0.5.1
+//	1:11.8.9+maria~ubu2404 -> 11.8.9
+//	latest                 -> ""
+//	sha256:abc123          -> ""
 //
 // Distro and variant suffixes are dropped, never relocated to target_sw: the
 // CPE shape is fixed by the criteria form, and the version is the only
@@ -24,8 +26,32 @@ func NormalizeVersion(raw string) string {
 	// (sha256:abc123) or some compound identifier. Distrust the whole value
 	// rather than silently truncating it to the part before the colon, which
 	// would turn "1.2:3" into a confident "1.2".
+	//
+	// The one exception is a Debian/RPM epoch: a leading run of digits, one
+	// colon, then the version. mariadb:11 ships
+	// MARIADB_VERSION=1:11.8.9+maria~ubu2404 and is lost without this. The
+	// exception is deliberately narrow — exactly one colon, everything before
+	// it a digit — so "1.2:3", "1:2:3", "v1:2.3" and "sha256:abc" all stay
+	// rejected. It runs before the "v" trim so a prefix cannot smuggle a
+	// non-epoch colon through.
 	if strings.ContainsRune(v, ':') {
-		return ""
+		epoch, rest, _ := strings.Cut(v, ":")
+		if !isEpoch(epoch) || strings.ContainsRune(rest, ':') {
+			return ""
+		}
+		v = rest
+	}
+
+	// Distribution prefixes on a Java version. Adoptium and the images built
+	// on it report JAVA_VERSION=jdk-25.0.5.1+2; the version behind the prefix
+	// resolves against the dictionary, so dropping the whole value over four
+	// leading characters loses a real emission. Longest first, so "openjdk-"
+	// is not left with a stray "open".
+	for _, prefix := range []string{"openjdk-", "jdk-"} {
+		if strings.HasPrefix(v, prefix) {
+			v = v[len(prefix):]
+			break
+		}
 	}
 
 	v = strings.TrimPrefix(v, "v")
@@ -50,3 +76,17 @@ func NormalizeVersion(raw string) string {
 }
 
 func isDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// isEpoch reports whether s is a non-empty run of digits — the only thing
+// allowed to sit before a colon in an observed version.
+func isEpoch(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !isDigit(r) {
+			return false
+		}
+	}
+	return true
+}
