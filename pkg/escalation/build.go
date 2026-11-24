@@ -22,6 +22,48 @@ func BuildGroupsByName(gaad *types.AuthorizationAccountDetails) map[string]types
 	return groups
 }
 
+// roleTrustsService requires a concrete Allow for the service principal before
+// emitting a resource-to-runtime-role fact. A role ARN in service configuration
+// is only an association; an incompatible trust policy makes it unusable.
+func roleTrustsService(gaad *types.AuthorizationAccountDetails, roleARN, service string) bool {
+	role, ok := gaad.Roles.Get(roleARN)
+	if !ok || role.AssumeRolePolicyDocument.Statement == nil {
+		return false
+	}
+	allowed := false
+	denied := false
+	for _, statement := range *role.AssumeRolePolicyDocument.Statement {
+		if !actionMatchesPattern(statement.Action, "sts:AssumeRole") || !principalIncludesService(statement.Principal, service) {
+			continue
+		}
+		if strings.EqualFold(statement.Effect, "Deny") {
+			// The structural model cannot evaluate a trust condition against
+			// service invocation context. Conservatively retain possible Deny;
+			// ignoring it could assert an execution-role relationship that AWS denies.
+			denied = true
+		}
+		if statement.Condition == nil && strings.EqualFold(statement.Effect, "Allow") {
+			allowed = true
+		}
+	}
+	return allowed && !denied
+}
+
+func principalIncludesService(principal *types.Principal, service string) bool {
+	if principal == nil {
+		return false
+	}
+	if principal.Service == nil {
+		return false
+	}
+	for _, value := range *principal.Service {
+		if strings.EqualFold(value, service) || value == "*" {
+			return true
+		}
+	}
+	return false
+}
+
 // awsResourceTypeToSolver maps Aurelian CloudControl resource types to the
 // solver's resource type enum.
 var awsResourceTypeToSolver = map[string]ResourceType{
@@ -323,7 +365,7 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 	resources.Range(func(_ string, r output.AWSResource) bool {
 		switch r.ResourceType {
 		case "AWS::Lambda::Function":
-			if roleARN, ok := extractProperty(r, "Role"); ok {
+			if roleARN, ok := extractProperty(r, "Role"); ok && roleTrustsService(gaad, roleARN, "lambda.amazonaws.com") {
 				facts = append(facts, StructuralFact{
 					Type:       FactLambdaExecutionRole,
 					From:       r.ARN,

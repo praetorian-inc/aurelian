@@ -40,6 +40,12 @@ func newTestGAAD() *types.AuthorizationAccountDetails {
 		},
 	}
 	trustPolicy := types.Policy{Statement: &trustStmt}
+	lambdaTrustStmt := types.PolicyStatementList{{
+		Effect:    "Allow",
+		Principal: &types.Principal{Service: &types.DynaString{"lambda.amazonaws.com"}},
+		Action:    &types.DynaString{"sts:AssumeRole"},
+	}}
+	lambdaTrustPolicy := types.Policy{Statement: &lambdaTrustStmt}
 
 	return types.NewAuthorizationAccountDetails(
 		"111111111111",
@@ -85,8 +91,9 @@ func newTestGAAD() *types.AuthorizationAccountDetails {
 				},
 			},
 			{
-				Arn:      "arn:aws:iam::111111111111:role/LambdaRole",
-				RoleName: "LambdaRole",
+				Arn:                      "arn:aws:iam::111111111111:role/LambdaRole",
+				RoleName:                 "LambdaRole",
+				AssumeRolePolicyDocument: lambdaTrustPolicy,
 			},
 		},
 		[]types.ManagedPolicyDetail{
@@ -505,6 +512,82 @@ func TestCollectStructuralFacts_LambdaWithNoRoleProperty(t *testing.T) {
 	for _, f := range facts {
 		assert.NotEqual(t, FactLambdaExecutionRole, f.Type, "should not create fact for Lambda without Role property")
 	}
+}
+
+func TestCollectStructuralFacts_LambdaRequiresCompatibleServiceTrust(t *testing.T) {
+	roleARN := "arn:aws:iam::111111111111:role/RuntimeRole"
+	functionARN := "arn:aws:lambda:us-east-1:111111111111:function:RuntimeFunction"
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set(functionARN, output.AWSResource{
+		ResourceType: "AWS::Lambda::Function", ARN: functionARN,
+		AccountRef: "111111111111", Properties: map[string]any{"Role": roleARN},
+	})
+
+	trustStatement := func(effect string, services ...string) types.PolicyStatement {
+		servicePrincipals := types.DynaString(services)
+		return types.PolicyStatement{
+			Effect: effect, Principal: &types.Principal{Service: &servicePrincipals},
+			Action: &types.DynaString{"sts:AssumeRole"},
+		}
+	}
+	awsTrustStatement := func(effect string, principals ...string) types.PolicyStatement {
+		awsPrincipals := types.DynaString(principals)
+		return types.PolicyStatement{
+			Effect: effect, Principal: &types.Principal{AWS: &awsPrincipals},
+			Action: &types.DynaString{"sts:AssumeRole"},
+		}
+	}
+	gaadWithTrust := func(effect string, services ...string) *types.AuthorizationAccountDetails {
+		trustStatements := types.PolicyStatementList{trustStatement(effect, services...)}
+		return types.NewAuthorizationAccountDetails("111111111111", nil, nil, []types.RoleDetail{{
+			Arn: roleARN, RoleName: "RuntimeRole",
+			AssumeRolePolicyDocument: types.Policy{Statement: &trustStatements},
+		}}, nil)
+	}
+	gaadWithStatements := func(statements ...types.PolicyStatement) *types.AuthorizationAccountDetails {
+		trustStatements := types.PolicyStatementList(statements)
+		return types.NewAuthorizationAccountDetails("111111111111", nil, nil, []types.RoleDetail{{
+			Arn: roleARN, RoleName: "RuntimeRole",
+			AssumeRolePolicyDocument: types.Policy{Statement: &trustStatements},
+		}}, nil)
+	}
+	conditionalTrustStatement := func(effect string) types.PolicyStatement {
+		statement := trustStatement(effect, "lambda.amazonaws.com")
+		condition := types.Condition{
+			"ArnLike": types.ConditionStatement{"aws:SourceArn": types.DynaString{functionARN}},
+		}
+		statement.Condition = &condition
+		return statement
+	}
+
+	for name, gaad := range map[string]*types.AuthorizationAccountDetails{
+		"missing role":         types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil),
+		"incompatible service": gaadWithTrust("Allow", "ec2.amazonaws.com"),
+		"denied Lambda":        gaadWithTrust("Deny", "lambda.amazonaws.com"),
+		"explicit deny overrides allow": gaadWithStatements(
+			trustStatement("Allow", "lambda.amazonaws.com"),
+			trustStatement("Deny", "lambda.amazonaws.com"),
+		),
+		"conditional deny is not assumed inapplicable": gaadWithStatements(
+			trustStatement("Allow", "lambda.amazonaws.com"),
+			conditionalTrustStatement("Deny"),
+		),
+		"AWS principal wildcard is not service trust": gaadWithStatements(
+			awsTrustStatement("Allow", "*"),
+		),
+	} {
+		facts := CollectStructuralFacts(gaad, resources)
+		for _, fact := range facts {
+			assert.NotEqual(t, FactLambdaExecutionRole, fact.Type, name)
+		}
+	}
+
+	facts := CollectStructuralFacts(gaadWithStatements(
+		trustStatement("Allow", "ec2.amazonaws.com", "LaMbDa.AmAzOnAwS.CoM"),
+		awsTrustStatement("Deny", "*"),
+	), resources)
+	require.Len(t, facts, 1)
+	assert.Equal(t, StructuralFact{Type: FactLambdaExecutionRole, From: functionARN, To: roleARN, Confidence: 1.0}, facts[0])
 }
 
 func TestCollectStructuralFacts_AthenaWorkGroupRole(t *testing.T) {
