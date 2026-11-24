@@ -98,10 +98,16 @@ resource "aws_ecs_task_definition" "controls" {
 #                        alpine email client.
 #                        -> f5:nginx:1.25.3
 #
-#   nginx:latest         MUST emit nothing. A tag carrying no parseable
-#                        version. This is the realistic case: the only image
-#                        reference in the whole harvest account was
-#                        "alpine:latest".
+#   nginx@sha256:...     A reference carrying no parseable version, which is
+#                        the realistic case — the only image reference in the
+#                        whole harvest account was "alpine:latest". The tag
+#                        path emits nothing for it; the image config is what
+#                        identifies it, at NGINX_VERSION=1.31.10.
+#                        -> f5:nginx:1.31.10 and nginx:nginx:1.31.10
+#
+#                        Pinned by digest, not ":latest", so the version the
+#                        config reports does not move under the test. Bump the
+#                        digest and the expected version together.
 resource "aws_ecs_task_definition" "parsing" {
   family       = "${local.prefix}-parsing"
   network_mode = "bridge"
@@ -129,8 +135,8 @@ resource "aws_ecs_task_definition" "parsing" {
       essential = false
     },
     {
-      name      = "unversioned-tag"
-      image     = "nginx:latest"
+      name      = "unversioned-reference"
+      image     = "nginx@sha256:6a3df739b6312289e87d70947d900669c1b3087474ece5814b9c01bbf2e6dde3"
       cpu       = 0
       memory    = 128
       essential = false

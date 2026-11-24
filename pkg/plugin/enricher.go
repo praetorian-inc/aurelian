@@ -11,10 +11,6 @@ import (
 type EnricherConfig struct {
 	Context   context.Context
 	AWSConfig aws.Config
-
-	// ScanImageConfigs mirrors AWSCommonRecon.ScanImageConfigs. Enrichers that
-	// would reach a container registry read it; everything else ignores it.
-	ScanImageConfigs bool
 }
 
 type EnricherFunc func(cfg EnricherConfig, r *output.AWSResource) error

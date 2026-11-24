@@ -31,8 +31,9 @@ output "taskdef_parsing_family" {
   value = aws_ecs_task_definition.parsing.family
 }
 
-# Four images, three products: registry-qualified postgres, httpd ->
-# http_server, nginx with a variant-suffixed tag. nginx:latest -> nothing.
+# Four images: registry-qualified postgres, httpd -> http_server, nginx with a
+# variant-suffixed tag, and a digest-only nginx reference that the tag path
+# cannot name and the image config identifies at 1.31.10.
 #
 # One CPE per vendor NVD publishes the product under, all at the observed
 # version. Vendor selection no longer narrows by version (2026-11-24), and the
@@ -57,6 +58,8 @@ output "expected_parsing_cpes" {
     "cpe:2.3:a:zeroo:http_server:2.4.58:*:*:*:*:*:*:*",
     "cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
     "cpe:2.3:a:nginx:nginx:1.25.3:*:*:*:*:*:*:*",
+    "cpe:2.3:a:f5:nginx:1.31.10:*:*:*:*:*:*:*",
+    "cpe:2.3:a:nginx:nginx:1.31.10:*:*:*:*:*:*:*",
   ]
 }
 

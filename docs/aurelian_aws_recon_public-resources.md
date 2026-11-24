@@ -11,7 +11,6 @@ aurelian aws recon public-resources [flags]
 ```
       --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for public-resources
-      --image-configs              Read container image config blobs to identify the software images run
       --opsec_level string         Operational security level for AWS operations (default "none")
       --org-policies-file string   Path to Org Policies JSON file
       --output-dir string          Base output directory (default "aurelian-output")

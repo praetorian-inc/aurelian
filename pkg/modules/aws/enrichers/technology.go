@@ -16,20 +16,19 @@ func init() {
 }
 
 // enrichTechnologies populates r.Technologies from the resource's property
-// bag. Detect is pure and makes no API call, which is what keeps list-all and
-// public-resources off a per-resource call for version data. The one path here
-// that can reach the network is the image-config read, which is gated behind
-// --image-configs and fails soft.
+// bag. Detect itself is pure; the image-config read that follows it is the
+// one path here that reaches the network, and it fails soft.
 func enrichTechnologies(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 	// Assigned, not appended: running twice must not double the field.
 	r.Technologies = software.Detect(r.ResourceType, r.Properties)
 
-	// Buys the images a tag cannot identify: a private myorg/app built FROM
+	// Reaches the images a tag cannot identify: a private myorg/app built FROM
 	// python:3.11 carries PYTHON_VERSION in its config, and the runtime under
-	// an entrypoint — the JDK beneath Tomcat — is only visible here.
-	if cfg.ScanImageConfigs {
-		r.Technologies = dedupeTechnologies(append(r.Technologies, imageConfigTechnologies(cfg, r)...))
-	}
+	// an entrypoint — the JDK beneath Tomcat — is only visible here. It costs
+	// three small requests per distinct image, no layer bytes, cached per
+	// reference for the run, and it fails soft, so this still returns nil
+	// unconditionally and a resource keeps whatever its tag already yielded.
+	r.Technologies = dedupeTechnologies(append(r.Technologies, imageConfigTechnologies(cfg, r)...))
 	return nil
 }
 

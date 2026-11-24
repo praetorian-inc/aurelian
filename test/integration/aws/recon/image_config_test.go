@@ -168,11 +168,9 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 	zipFnName := "aurelian-imgcfg-zip-" + suffix
 	t.Cleanup(createZipLambda(t, lambdaClient, zipFnName, roleARN, "python3.12"))
 
-	// One scan per (resource type, flag) pair, shared across the cases below.
-	ecsOff := listAllForImageConfig(t, ecsType, false)
-	ecsOn := listAllForImageConfig(t, ecsType, true)
-	lambdaOff := listAllForImageConfig(t, lambdaType, false)
-	lambdaOn := listAllForImageConfig(t, lambdaType, true)
+	// One scan per resource type, shared across the cases below.
+	ecsOn := listAllForImageConfig(t, ecsType)
+	lambdaOn := listAllForImageConfig(t, lambdaType)
 
 	for _, tc := range []struct {
 		name    string
@@ -182,40 +180,22 @@ func TestImageConfigTechnologyEmission(t *testing.T) {
 		why     string
 	}{
 		{
-			name:    "ECS/flag off — only what a tag can identify",
-			results: ecsOff, id: taskFamily,
-			expect: cpeTomcat,
-			why:    "tomcat is the only image whose base name is in the tier-2 table; the ECR image and wordpress emit nothing from a tag",
-		},
-		{
-			name:    "ECS/flag on — the config identifies what the tag cannot",
+			name:    "ECS — the config identifies what the tag cannot",
 			results: ecsOn, id: taskFamily,
 			expect: union(cpeTomcat, cpeOpenJDK, cpePHP, cpePython),
-			why:    "openjdk is the runtime beneath tomcat's entrypoint, php is inherited by wordpress from its base, python comes from a private ECR image whose tag says nothing; tomcat is found by both paths and must appear once",
+			why:    "openjdk is the runtime beneath tomcat's entrypoint, php is inherited by wordpress from its base, python comes from a private ECR image whose tag says nothing; tomcat is found by both the tag and the config and must appear once",
 		},
 		{
-			name:    "Lambda/image-packaged, flag off — nothing",
-			results: lambdaOff, id: imageFnName,
-			expect: nil,
-			why:    "an image-packaged function has no Runtime, and its ECR repository name is not a known product",
-		},
-		{
-			name:    "Lambda/image-packaged, flag on — identified from the image config",
+			name:    "Lambda/image-packaged — identified from the image config",
 			results: lambdaOn, id: imageFnName,
 			expect: cpeNode,
-			why:    "Code.ImageUri is write-only in the CloudFormation schema, so this proves the FetchFunctionImage enricher ran before the technology enricher and the config was read from ECR",
+			why:    "an image-packaged function has no Runtime and its ECR repository name is not a known product, so this proves the FetchFunctionImage enricher ran before the technology enricher and the config was read from ECR",
 		},
 		{
-			name:    "Lambda/zip-packaged — runtime, unaffected by the flag",
+			name:    "Lambda/zip-packaged — runtime, no registry call involved",
 			results: lambdaOn, id: zipFnName,
 			expect: cpePython312,
-			why:    "tier 1 reads Runtime=python3.12 directly; no registry call is involved",
-		},
-		{
-			name:    "Lambda/zip-packaged, flag off — same answer",
-			results: lambdaOff, id: zipFnName,
-			expect: cpePython312,
-			why:    "the flag must not change what tier 1 emits",
+			why:    "tier 1 reads Runtime=python3.12 directly; the image-config path must not disturb it",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -315,7 +295,7 @@ func TestImageConfigUnreachableImageDoesNotFailTheScan(t *testing.T) {
 		tomcatRef,
 	}))
 
-	res := findResource(t, listAllForImageConfig(t, ecsType, true), family)
+	res := findResource(t, listAllForImageConfig(t, ecsType), family)
 	require.NotNil(t, res, "a resource with unreachable images must still be emitted")
 
 	// The exact set. openjdk is the load-bearing member: it is reachable ONLY
@@ -571,9 +551,9 @@ func deleteLambda(t *testing.T, client *lambda.Client, fnName string) func() {
 	}
 }
 
-// listAllForImageConfig runs list-all for one resource type with the
-// image-config read on or off, against the configured profile.
-func listAllForImageConfig(t *testing.T, resourceType string, scanImageConfigs bool) []model.AurelianModel {
+// listAllForImageConfig runs list-all for one resource type against the
+// configured profile.
+func listAllForImageConfig(t *testing.T, resourceType string) []model.AurelianModel {
 	t.Helper()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
@@ -585,7 +565,6 @@ func listAllForImageConfig(t *testing.T, resourceType string, scanImageConfigs b
 			"resource-type": []string{resourceType},
 			"regions":       []string{imageConfigRegion},
 			"scan-type":     "full",
-			"image-configs": scanImageConfigs,
 		},
 		Context: context.Background(),
 	})

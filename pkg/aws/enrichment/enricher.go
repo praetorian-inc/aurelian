@@ -44,9 +44,8 @@ func (e *AWSEnricher) Enrich(r output.AWSResource, out *pipeline.P[output.AWSRes
 	}
 
 	ecfg := plugin.EnricherConfig{
-		Context:          context.Background(),
-		AWSConfig:        awsCfg,
-		ScanImageConfigs: e.opts.ScanImageConfigs,
+		Context:   context.Background(),
+		AWSConfig: awsCfg,
 	}
 	for _, enrich := range enrichers {
 		if err := enrich(ecfg, &r); err != nil {

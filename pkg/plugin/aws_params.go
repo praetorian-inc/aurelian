@@ -23,13 +23,6 @@ type AWSCommonRecon struct {
 	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
 	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
 	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
-
-	// ScanImageConfigs opts into reading the OCI config blob of every
-	// container image a resource references, to identify the software the
-	// image runs. Three small requests per distinct image and no layer bytes,
-	// but it is still a per-image registry call, so it is off by default: the
-	// hot paths must not acquire one without being asked.
-	ScanImageConfigs bool `param:"image-configs" desc:"Read container image config blobs to identify the software images run" default:"false"`
 }
 
 func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
@@ -40,7 +33,7 @@ func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
 		}
 		c.Regions = resolved
 	}
-	
+
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }

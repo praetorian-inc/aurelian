@@ -61,25 +61,13 @@ func cpeSet(r *output.AWSResource) []string {
 	return out
 }
 
-func TestEnrichTechnologies_FlagOffMakesNoRegistryCall(t *testing.T) {
-	// The standing anti-goal: list-all and public-resources must not acquire a
-	// per-resource registry call. Off is the default.
-	calls := withFetcher(t, map[string][]string{"myorg/app:v1": {"PYTHON_VERSION=3.11.18"}}, nil)
-
-	r := taskDef("myorg/app:v1")
-	require.NoError(t, enrichTechnologies(plugin.EnricherConfig{Context: context.Background()}, r))
-
-	assert.Zero(t, *calls)
-	assert.Empty(t, cpeSet(r), "myorg/app:v1 is not identifiable from its tag alone")
-}
-
-func TestEnrichTechnologies_FlagOnReadsTheConfigOfAPrivateImage(t *testing.T) {
+func TestEnrichTechnologies_ReadsTheConfigOfAPrivateImage(t *testing.T) {
 	// The phase's reason to exist: a private image whose tag says nothing,
 	// identified from the marker its base image left in the environment.
 	calls := withFetcher(t, map[string][]string{"myorg/app:v1": {"PYTHON_VERSION=3.11.18"}}, nil)
 
 	r := taskDef("myorg/app:v1")
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, 1, *calls)
@@ -99,7 +87,7 @@ func TestEnrichTechnologies_TagAndConfigAgreeingIsOneTechnology(t *testing.T) {
 	withFetcher(t, map[string][]string{"nginx:1.25.5": {"NGINX_VERSION=1.25.5"}}, nil)
 
 	r := taskDef("nginx:1.25.5")
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, []string{
@@ -117,7 +105,7 @@ func TestEnrichTechnologies_ConfigAddsToWhatTheTagFound(t *testing.T) {
 	withFetcher(t, map[string][]string{"tomcat:10.1.62": {"TOMCAT_VERSION=10.1.62", "JAVA_VERSION=jdk-25.0.5.1+2"}}, nil)
 
 	r := taskDef("tomcat:10.1.62")
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Subset(t, cpeSet(r), []string{
@@ -132,7 +120,7 @@ func TestEnrichTechnologies_UnreachableRegistryKeepsWhatTheTagFound(t *testing.T
 	withFetcher(t, nil, errors.New("denied"))
 
 	r := taskDef("nginx:1.25.5")
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 
 	assert.Equal(t, []string{
@@ -145,7 +133,7 @@ func TestEnrichTechnologies_RunningTwiceDoesNotDoubleTheField(t *testing.T) {
 	withFetcher(t, map[string][]string{"tomcat:10.1.62": {"JAVA_VERSION=jdk-25.0.5.1+2"}}, nil)
 
 	r := taskDef("tomcat:10.1.62")
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 	require.NoError(t, enrichTechnologies(cfg, r))
 	first := cpeSet(r)
 	require.NoError(t, enrichTechnologies(cfg, r))
@@ -158,7 +146,7 @@ func TestEnrichTechnologies_OneImageAcrossManyResourcesIsFetchedOnce(t *testing.
 	// inside the shared concurrent pipeline stage, so this also has to hold
 	// when those resources are enriched in parallel.
 	calls := withFetcher(t, map[string][]string{"myorg/app:v1": {"RUBY_VERSION=3.3.14"}}, nil)
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 
 	var wg sync.WaitGroup
 	for range 50 {
@@ -175,7 +163,7 @@ func TestEnrichTechnologies_OneImageAcrossManyResourcesIsFetchedOnce(t *testing.
 
 func TestEnrichTechnologies_ResourcesWithNoImageMakeNoCall(t *testing.T) {
 	calls := withFetcher(t, map[string][]string{}, nil)
-	cfg := plugin.EnricherConfig{Context: context.Background(), ScanImageConfigs: true}
+	cfg := plugin.EnricherConfig{Context: context.Background()}
 
 	r := &output.AWSResource{
 		ResourceType: "AWS::RDS::DBInstance",

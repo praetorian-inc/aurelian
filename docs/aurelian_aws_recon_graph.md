@@ -11,7 +11,6 @@ aurelian aws recon graph [flags]
 ```
       --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for graph
-      --image-configs              Read container image config blobs to identify the software images run
       --neo4j-password string      Neo4j password (default "neo4j")
       --neo4j-uri string           Neo4j connection URI (e.g., bolt://localhost:7687)
       --neo4j-username string      Neo4j username (default "neo4j")

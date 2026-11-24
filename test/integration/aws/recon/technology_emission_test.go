@@ -50,7 +50,7 @@ var technologyCases = []technologyCase{
 		resourceType: ecsType,
 		idOutput:     "taskdef_parsing_family",
 		expectOutput: "expected_parsing_cpes",
-		why:          "registry-qualified name, product name != image name, variant-suffixed tag; nginx:latest emits nothing",
+		why:          "registry-qualified name, product name != image name, variant-suffixed tag; a digest-only reference the tag cannot name but the image config can",
 	},
 	{
 		name:         "ECS/sibling distributions",
