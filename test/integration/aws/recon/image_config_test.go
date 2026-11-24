@@ -4,6 +4,7 @@ package recon
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -14,11 +15,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -36,167 +41,263 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const imageConfigRegion = "us-east-2"
+const (
+	imageConfigRegion  = "us-east-2"
+	imageConfigProfile = "default"
+)
 
-// TestImageConfigTechnologyEmission deploys real AWS resources and proves the
-// phase-3 claim end to end: that the software an image runs is identifiable
-// from its config blob, including for images whose tag says nothing.
+// Public images are pinned BY DIGEST so the expected CPE sets below can be
+// exact and stay exact. Docker Hub rebuilds `tomcat:10.1.62` and
+// `wordpress:6-php8.2-apache` in place, and when it does their JAVA_VERSION
+// and PHP_VERSION move; a test asserting those by tag would fail with no code
+// change.
 //
-// It self-provisions over the SDK rather than Terraform, following the same
-// decision the ecr-dump integration tests made: an ECR repository, an image
-// pushed to it in-process, and a task definition referencing it are three API
-// calls and need no Docker daemon.
+// The `name:tag@digest` form pins the content while leaving the tag readable,
+// which matters because both paths are under test: the tag feeds tier 2 and
+// the config feeds tier 3.
 //
-// Nothing here is mocked. The ECR repository, the pushed image, the task
-// definition, the ECR authorization token and the Docker Hub pulls are all
-// real.
+// Resolved 2026-11-24. Markers carried at these digests:
+//
+//	tomcat    -> JAVA_VERSION=jdk-25.0.5.1+2, TOMCAT_VERSION=10.1.62
+//	wordpress -> PHP_VERSION=8.2.31 (inherited from the php base)
+const (
+	tomcatRef    = "tomcat:10.1.62@sha256:ea2ac195187bc1bb91c9a7fc06bfed33b9aee7c6a7e549045c1c75beee87e483"
+	wordpressRef = "wordpress:6-php8.2-apache@sha256:29a3af5db27d8c1716367575280bbf449cd231ced707daf8ce411895c042ed76"
+)
+
+// Expected CPEs, written out rather than computed. A test that derived these
+// by calling software.Detect would compare the system to itself and pass no
+// matter what it emitted.
+const (
+	cpeTomcat   = "cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*"
+	cpeOpenJDK  = "cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*"
+	cpePHP      = "cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*"
+	cpePython11 = "cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*"
+	cpePython12 = "cpe:2.3:a:python:python:3.12:*:*:*:*:*:*:*"
+	cpeNode     = "cpe:2.3:a:nodejs:node.js:20.20:*:*:*:*:*:*:*"
+)
+
+// TestImageConfigTechnologyEmission proves the phase-3 capability end to end
+// against live AWS and live Docker Hub, for all three resource shapes that can
+// carry software: an ECS task definition, an image-packaged Lambda function,
+// and a zip-packaged Lambda function.
+//
+// Every assertion is an exact set. "Contains" would let a regression that
+// dropped one technology, or invented an extra one, pass unnoticed.
+//
+// Nothing is mocked. The ECR repository, the pushed images, the task
+// definition, the IAM role, both Lambda functions, the ECR authorization token
+// and the Docker Hub pulls are all real.
 func TestImageConfigTechnologyEmission(t *testing.T) {
-	ctx := context.Background()
-
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(imageConfigRegion))
-	require.NoError(t, err, "AWS credentials are required for this test")
+	awsCfg := loadAWSConfig(t)
 
 	ecrClient := ecr.NewFromConfig(awsCfg)
 	ecsClient := ecs.NewFromConfig(awsCfg)
+	lambdaClient := lambda.NewFromConfig(awsCfg)
+	iamClient := iam.NewFromConfig(awsCfg)
 
-	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000)
 	repoName := "aurelian-imgcfg-" + suffix
-
 	t.Cleanup(createECRRepo(t, ecrClient, repoName))
 
-	// The image's TAG is deliberately meaningless. Everything this test
-	// asserts about it has to come from the config blob.
+	registry := ecrRegistryHost(t, ecrClient)
+
+	// Both images have a deliberately meaningless tag. Everything asserted
+	// about them has to come from the config blob.
 	//
-	// Its environment is what a private application image inherits from an
+	// Their environments are what a private application image inherits from an
 	// official base: a marker naming the runtime, beside junk that must not be
-	// emitted. GOSU_VERSION and YARN_VERSION are real values observed in real
-	// official images (see pkg/software/testdata/imageconfig/FINDINGS.md).
-	privateRef := pushImageWithConfig(t, ecrClient, repoName, "v1",
-		[]string{
-			"PATH=/usr/local/bin:/usr/bin",
-			"PYTHON_VERSION=3.11.18",
-			"GOSU_VERSION=1.19",
-			"YARN_VERSION=1.22.22",
+	// emitted. GOSU_VERSION and YARN_VERSION are values observed in real
+	// official images (pkg/software/testdata/imageconfig/FINDINGS.md).
+	appRef := pushImageWithConfig(t, ecrClient, registry, repoName, "app-v1",
+		[]string{"PATH=/usr/local/bin", "PYTHON_VERSION=3.11.18", "GOSU_VERSION=1.19", "YARN_VERSION=1.22.22"},
+		[]string{"python3", "app.py"})
+
+	fnRef := pushImageWithConfig(t, ecrClient, registry, repoName, "fn-v1",
+		[]string{"PATH=/usr/local/bin", "NODE_VERSION=20.20.2", "YARN_VERSION=1.22.22"},
+		[]string{"/var/task/index.handler"})
+
+	taskFamily := "aurelian-imgcfg-" + suffix
+	t.Cleanup(registerTaskDefinition(t, ecsClient, taskFamily, []string{appRef, wordpressRef, tomcatRef}))
+
+	roleARN := createLambdaRole(t, iamClient, "aurelian-imgcfg-role-"+suffix)
+
+	imageFnName := "aurelian-imgcfg-image-" + suffix
+	t.Cleanup(createImageLambda(t, lambdaClient, imageFnName, roleARN, fnRef))
+
+	zipFnName := "aurelian-imgcfg-zip-" + suffix
+	t.Cleanup(createZipLambda(t, lambdaClient, zipFnName, roleARN, "python3.12"))
+
+	// One scan per (resource type, flag) pair, shared across the cases below.
+	ecsOff := listAllForImageConfig(t, ecsType, false)
+	ecsOn := listAllForImageConfig(t, ecsType, true)
+	lambdaOff := listAllForImageConfig(t, lambdaType, false)
+	lambdaOn := listAllForImageConfig(t, lambdaType, true)
+
+	for _, tc := range []struct {
+		name    string
+		results []model.AurelianModel
+		id      string
+		expect  []string
+		why     string
+	}{
+		{
+			name:    "ECS/flag off — only what a tag can identify",
+			results: ecsOff, id: taskFamily,
+			expect: []string{cpeTomcat},
+			why:    "tomcat is the only image whose base name is in the tier-2 table; the ECR image and wordpress emit nothing from a tag",
 		},
-		[]string{"python3", "app.py"},
-	)
-	t.Logf("pushed %s", privateRef)
+		{
+			name:    "ECS/flag on — the config identifies what the tag cannot",
+			results: ecsOn, id: taskFamily,
+			expect: []string{cpeTomcat, cpeOpenJDK, cpePHP, cpePython11},
+			why:    "openjdk is the runtime beneath tomcat's entrypoint, php is inherited by wordpress from its base, python comes from a private ECR image whose tag says nothing; tomcat is found by both paths and must appear once",
+		},
+		{
+			name:    "Lambda/image-packaged, flag off — nothing",
+			results: lambdaOff, id: imageFnName,
+			expect: nil,
+			why:    "an image-packaged function has no Runtime, and its ECR repository name is not a known product",
+		},
+		{
+			name:    "Lambda/image-packaged, flag on — identified from the image config",
+			results: lambdaOn, id: imageFnName,
+			expect: []string{cpeNode},
+			why:    "Code.ImageUri is write-only in the CloudFormation schema, so this proves the FetchFunctionImage enricher ran before the technology enricher and the config was read from ECR",
+		},
+		{
+			name:    "Lambda/zip-packaged — runtime, unaffected by the flag",
+			results: lambdaOn, id: zipFnName,
+			expect: []string{cpePython12},
+			why:    "tier 1 reads Runtime=python3.12 directly; no registry call is involved",
+		},
+		{
+			name:    "Lambda/zip-packaged, flag off — same answer",
+			results: lambdaOff, id: zipFnName,
+			expect: []string{cpePython12},
+			why:    "the flag must not change what tier 1 emits",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := findResource(t, tc.results, tc.id)
+			require.NotNil(t, res, "resource %q not found among %d results", tc.id, len(tc.results))
+			assert.ElementsMatch(t, tc.expect, cpesOf(*res),
+				"%s emitted the wrong CPE set — %s", tc.id, tc.why)
+		})
+	}
 
-	family := "aurelian-imgcfg-" + suffix
-	t.Cleanup(registerTaskDefinition(t, ecsClient, family, []string{
-		privateRef,
-		// A derived public image. wordpress is not in the tier-2 base-name
-		// table and its tag cannot be parsed into a product, but its config
-		// carries PHP_VERSION inherited from the php base.
-		"wordpress:6-php8.2-apache",
-		// Two markers on one image: Tomcat is what the entrypoint runs, the
-		// JDK is what it runs on. Both are the stack.
-		"tomcat:10.1.62",
-	}))
+	t.Run("provenance distinguishes observed from truncated", func(t *testing.T) {
+		res := findResource(t, ecsOn, taskFamily)
+		require.NotNil(t, res)
 
-	t.Run("flag off emits only what the tag can identify", func(t *testing.T) {
-		res := findResource(t, listAllWithImageConfigs(t, ecsType, false), family)
-		require.NotNil(t, res, "task definition %q not found", family)
+		source := map[string]string{}
+		evidence := map[string]string{}
+		for _, tech := range res.Technologies {
+			source[tech.CPE] = tech.Source
+			evidence[tech.CPE] = tech.Evidence
+		}
 
-		got := cpesOf(*res)
-		assert.Equal(t, []string{"cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*"}, got,
-			"only tomcat:10.1.62 has a parseable base name and tag; the ECR image and wordpress must emit nothing")
+		// PYTHON_VERSION=3.11.18 has no dictionary row; 3.11 does. The emitted
+		// criteria matches 3.11.x CVEs that 3.11.18 is already patched for, and
+		// a consumer cannot see that from the CPE alone.
+		assert.Equal(t, "image-config-env-truncated", source[cpePython11])
+		assert.Contains(t, evidence[cpePython11], "PYTHON_VERSION=3.11.18",
+			"evidence must carry what was observed, not what was emitted")
+
+		assert.Equal(t, "image-config-env", source[cpePHP], "PHP_VERSION=8.2.31 resolves exactly")
+		assert.Equal(t, "image-config-env", source[cpeOpenJDK], "JAVA_VERSION normalises to an exact match")
+		assert.Equal(t, "ecs-image-tag", source[cpeTomcat], "the tag observed tomcat first and keeps that provenance")
 	})
 
-	t.Run("flag on identifies images no tag could", func(t *testing.T) {
-		res := findResource(t, listAllWithImageConfigs(t, ecsType, true), family)
-		require.NotNil(t, res, "task definition %q not found", family)
-
-		got := cpesOf(*res)
-
-		// The phase's reason to exist, in two assertions.
-		assert.Contains(t, got, "cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*",
-			"the ECR image's runtime is only visible in its config blob, and reading it proves the ECR auth path")
-		assert.Contains(t, got, "cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*",
-			"wordpress inherits PHP_VERSION from its base; ParseImageRef cannot reach it")
-
-		// The runtime beneath an entrypoint, which no tag carries.
-		assert.Contains(t, got, "cpe:2.3:a:oracle:openjdk:25.0.5.1:*:*:*:*:*:*:*",
-			"tomcat:10.1.62 carries JAVA_VERSION as well as TOMCAT_VERSION")
-
-		// What the tag already found must survive, exactly once.
-		assert.Contains(t, got, "cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*")
-		assert.Len(t, uniq(got), len(got), "a CPE found by both the tag and the config must be emitted once")
-
-		// The allowlist holds against real values on a real image.
-		for _, c := range got {
-			for _, forbidden := range []string{"gosu", "yarn", ":a:alpine", ":a:voxpupuli"} {
-				assert.NotContains(t, c, forbidden, "emitted %q", c)
+	t.Run("no marker junk reaches the output", func(t *testing.T) {
+		// GOSU_VERSION and YARN_VERSION are on the images this test pushed.
+		// The exact-set assertions above already prove they are absent; this
+		// says so by name, so a failure reads as what it is.
+		for _, results := range [][]model.AurelianModel{ecsOn, lambdaOn} {
+			for _, id := range []string{taskFamily, imageFnName} {
+				res := findResource(t, results, id)
+				if res == nil {
+					continue
+				}
+				for _, c := range cpesOf(*res) {
+					for _, bad := range []string{"gosu", "yarn", ":a:alpine", ":a:voxpupuli"} {
+						assert.NotContains(t, c, bad, "resource %s emitted %q", id, c)
+					}
+				}
 			}
 		}
 	})
 
-	t.Run("provenance distinguishes observed from truncated", func(t *testing.T) {
-		res := findResource(t, listAllWithImageConfigs(t, ecsType, true), family)
-		require.NotNil(t, res)
-
-		sources := map[string]string{}
-		evidence := map[string]string{}
-		for _, tech := range res.Technologies {
-			sources[tech.CPE] = tech.Source
-			evidence[tech.CPE] = tech.Evidence
-		}
-
-		// PYTHON_VERSION=3.11.18 has no dictionary row; 3.11 does. A consumer
-		// must be able to tell that the emitted version is coarser than the
-		// observed one, because the emitted criteria matches 3.11.x CVEs that
-		// 3.11.18 is already patched for.
-		assert.Equal(t, "image-config-env-truncated", sources["cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*"])
-		assert.Contains(t, evidence["cpe:2.3:a:python:python:3.11:*:*:*:*:*:*:*"], "PYTHON_VERSION=3.11.18",
-			"evidence must carry what was observed, not what was emitted")
-
-		// PHP_VERSION=8.2.31 resolves exactly.
-		assert.Equal(t, "image-config-env", sources["cpe:2.3:a:php:php:8.2.31:*:*:*:*:*:*:*"])
-
-		// Tomcat was found by the tag first and keeps that provenance.
-		assert.Equal(t, "ecs-image-tag", sources["cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*"])
-	})
-
 	t.Run("every emitted CPE satisfies guard's Technology key regex", func(t *testing.T) {
-		res := findResource(t, listAllWithImageConfigs(t, ecsType, true), family)
-		require.NotNil(t, res)
-		require.NotEmpty(t, res.Technologies)
-
-		for _, tech := range res.Technologies {
-			assert.Regexp(t, `^cpe:2\.3(:[^:]+){11}$`, tech.CPE)
-			assert.NotEmpty(t, tech.Source)
-			assert.NotEmpty(t, tech.Evidence)
+		checked := 0
+		for _, results := range [][]model.AurelianModel{ecsOn, lambdaOn} {
+			for _, id := range []string{taskFamily, imageFnName, zipFnName} {
+				res := findResource(t, results, id)
+				if res == nil {
+					continue
+				}
+				for _, tech := range res.Technologies {
+					checked++
+					assert.Regexp(t, `^cpe:2\.3(:[^:]+){11}$`, tech.CPE)
+					assert.NotEmpty(t, tech.Source, "technology on %s has no Source", id)
+					assert.NotEmpty(t, tech.Evidence, "technology on %s has no Evidence", id)
+				}
+			}
 		}
+		require.NotZero(t, checked, "no CPEs were emitted at all; the check is vacuous")
 	})
 }
 
-// TestImageConfigUnreachableImageDoesNotFailTheScan proves the fail-soft rule
-// against a real registry: a reference that cannot be pulled contributes no
-// technology and does not stop the module or the resource.
+// TestImageConfigUnreachableImageDoesNotFailTheScan proves fail-soft against
+// real registries: references that cannot be pulled contribute nothing, while
+// a reachable image on the same resource still emits.
 func TestImageConfigUnreachableImageDoesNotFailTheScan(t *testing.T) {
-	ctx := context.Background()
-	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(imageConfigRegion))
-	require.NoError(t, err)
-
-	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	awsCfg := loadAWSConfig(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano()%1_000_000_000)
 	family := "aurelian-imgcfg-missing-" + suffix
 
+	// Both unreachable references must also be unidentifiable from their tag,
+	// or this test measures the wrong thing. An earlier revision used
+	// "library/nginx:0.0.0-does-not-exist" and found that it emits
+	// cpe:2.3:a:f5:nginx:0.0.0 — correctly, under the shipped sole-vendor rule
+	// ("if no vendor carries the version and the product has exactly one
+	// vendor, use it"), since nginx has exactly one live vendor. That is a
+	// real property worth knowing, but it is tier 2's rule and not fail-soft,
+	// so it does not belong here.
 	t.Cleanup(registerTaskDefinition(t, ecs.NewFromConfig(awsCfg), family, []string{
-		// A repository that does not exist in this account.
 		fmt.Sprintf("000000000000.dkr.ecr.%s.amazonaws.com/no-such-repo:v1", imageConfigRegion),
-		// A tag that does not exist in a repository that does.
-		"library/nginx:0.0.0-does-not-exist",
-		// One image that does work, so a passing test is not vacuous.
-		"tomcat:10.1.62",
+		"aurelian-no-such-org/no-such-app:v1",
+		tomcatRef,
 	}))
 
-	res := findResource(t, listAllWithImageConfigs(t, ecsType, true), family)
+	res := findResource(t, listAllForImageConfig(t, ecsType, true), family)
 	require.NotNil(t, res, "a resource with unreachable images must still be emitted")
-	assert.Contains(t, cpesOf(*res), "cpe:2.3:a:apache:tomcat:10.1.62:*:*:*:*:*:*:*",
-		"the reachable image's technology must survive its neighbours failing")
+
+	// The exact set. openjdk is the load-bearing member: it is reachable ONLY
+	// through the config path, so its presence proves the two failures above
+	// did not abort the read for the image that worked.
+	assert.ElementsMatch(t, []string{cpeTomcat, cpeOpenJDK}, cpesOf(*res))
 }
 
-// --- provisioning helpers ---------------------------------------------------
+// --- provisioning -----------------------------------------------------------
+
+func loadAWSConfig(t *testing.T) aws.Config {
+	t.Helper()
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(imageConfigRegion),
+		config.WithSharedConfigProfile(imageConfigProfile),
+	)
+	require.NoError(t, err, "AWS profile %q is required for this test", imageConfigProfile)
+	return cfg
+}
+
+func ecrRegistryHost(t *testing.T, client *ecr.Client) string {
+	t.Helper()
+	out, err := client.GetAuthorizationToken(context.TODO(), &ecr.GetAuthorizationTokenInput{})
+	require.NoError(t, err)
+	require.NotEmpty(t, out.AuthorizationData)
+	return strings.TrimPrefix(aws.ToString(out.AuthorizationData[0].ProxyEndpoint), "https://")
+}
 
 func createECRRepo(t *testing.T, client *ecr.Client, repoName string) func() {
 	t.Helper()
@@ -209,8 +310,7 @@ func createECRRepo(t *testing.T, client *ecr.Client, repoName string) func() {
 	return func() {
 		force := true
 		if _, err := client.DeleteRepository(context.TODO(), &ecr.DeleteRepositoryInput{
-			RepositoryName: &repoName,
-			Force:          force,
+			RepositoryName: &repoName, Force: force,
 		}); err != nil {
 			t.Logf("warning: failed to delete ECR repo %s: %v", repoName, err)
 		}
@@ -218,27 +318,22 @@ func createECRRepo(t *testing.T, client *ecr.Client, repoName string) func() {
 }
 
 // pushImageWithConfig builds a one-layer image in process, sets its config
-// environment and command, pushes it, and returns the reference.
+// environment and command, pushes it to ECR and returns the reference.
 //
-// Setting Config.Env is the whole point: this is what an image inherits from
-// an official base, and what this phase reads.
-func pushImageWithConfig(t *testing.T, client *ecr.Client, repoName, tag string, env, cmd []string) string {
+// Setting Config.Env is the point: it is what an image inherits from an
+// official base and what this phase reads. Architecture and OS are set because
+// Lambda refuses an image whose manifest does not declare linux/amd64.
+func pushImageWithConfig(t *testing.T, client *ecr.Client, registry, repoName, tag string, env, cmd []string) string {
 	t.Helper()
-	ctx := context.TODO()
 
-	authResp, err := client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+	out, err := client.GetAuthorizationToken(context.TODO(), &ecr.GetAuthorizationTokenInput{})
 	require.NoError(t, err)
-	require.NotEmpty(t, authResp.AuthorizationData)
-
-	decoded, err := base64.StdEncoding.DecodeString(*authResp.AuthorizationData[0].AuthorizationToken)
+	decoded, err := base64.StdEncoding.DecodeString(aws.ToString(out.AuthorizationData[0].AuthorizationToken))
 	require.NoError(t, err)
 	user, pass, found := strings.Cut(string(decoded), ":")
 	require.True(t, found, "unexpected ECR auth token format")
 
-	accountID := strings.TrimPrefix(*authResp.AuthorizationData[0].ProxyEndpoint, "https://")
-	accountID, _, _ = strings.Cut(accountID, ".")
-
-	layer, err := tarGzLayer("app/app.py", []byte("print('hello')\n"))
+	layer, err := tarGzLayer("var/task/index.py", []byte("def handler(event, context):\n    return {}\n"))
 	require.NoError(t, err)
 
 	img, err := mutate.AppendLayers(empty.Image, layer)
@@ -247,30 +342,42 @@ func pushImageWithConfig(t *testing.T, client *ecr.Client, repoName, tag string,
 	cf, err := img.ConfigFile()
 	require.NoError(t, err)
 	cf = cf.DeepCopy()
+	cf.Architecture = "amd64"
+	cf.OS = "linux"
 	cf.Config.Env = env
 	cf.Config.Cmd = cmd
 	img, err = mutate.ConfigFile(img, cf)
 	require.NoError(t, err)
 
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s", accountID, imageConfigRegion, repoName, tag)
-	ref, err := name.ParseReference(imageURI)
+	ref := fmt.Sprintf("%s/%s:%s", registry, repoName, tag)
+	parsed, err := name.ParseReference(ref)
 	require.NoError(t, err)
+	require.NoError(t, remote.Write(parsed, img, remote.WithAuth(
+		authn.FromConfig(authn.AuthConfig{Username: user, Password: pass}))))
 
-	require.NoError(t, remote.Write(ref, img, remote.WithAuth(authn.FromConfig(authn.AuthConfig{
-		Username: user,
-		Password: pass,
-	}))))
-
-	// ECR is read-after-write for the manifest but the tag index settles a
-	// moment later.
-	time.Sleep(2 * time.Second)
-	return imageURI
+	return ref
 }
 
 func tarGzLayer(path string, content []byte) (v1.Layer, error) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
+
+	// Lambda validates the image at CreateFunction and rejects a layer whose
+	// file has no parent directory entries:
+	//   CustomerError: MissingParentDirectory: Parent directory does not exist
+	// A real docker build always emits them; a hand-built layer must too.
+	segments := strings.Split(path, "/")
+	for i := 1; i < len(segments); i++ {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     strings.Join(segments[:i], "/") + "/",
+			Mode:     0o755,
+			Typeflag: tar.TypeDir,
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := tw.WriteHeader(&tar.Header{
 		Name: path, Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg,
 	}); err != nil {
@@ -292,18 +399,17 @@ func tarGzLayer(path string, content []byte) (v1.Layer, error) {
 
 // registerTaskDefinition registers a task definition naming the given images.
 // Registration is free and instantaneous: nothing is scheduled, no cluster
-// exists, and no capacity is reserved.
+// exists, no capacity is reserved.
 func registerTaskDefinition(t *testing.T, client *ecs.Client, family string, images []string) func() {
 	t.Helper()
 
 	containers := make([]ecstypes.ContainerDefinition, 0, len(images))
 	for i, img := range images {
 		containers = append(containers, ecstypes.ContainerDefinition{
-			Name:      awsString(fmt.Sprintf("c%d", i)),
-			Image:     awsString(img),
-			Cpu:       0,
-			Memory:    awsInt32(128),
-			Essential: awsBool(i == 0),
+			Name:      aws.String(fmt.Sprintf("c%d", i)),
+			Image:     aws.String(img),
+			Memory:    aws.Int32(128),
+			Essential: aws.Bool(i == 0),
 		})
 	}
 
@@ -314,7 +420,7 @@ func registerTaskDefinition(t *testing.T, client *ecs.Client, family string, ima
 	})
 	require.NoError(t, err, "failed to register task definition %s", family)
 
-	arn := *out.TaskDefinition.TaskDefinitionArn
+	arn := aws.ToString(out.TaskDefinition.TaskDefinitionArn)
 	return func() {
 		if _, err := client.DeregisterTaskDefinition(context.TODO(), &ecs.DeregisterTaskDefinitionInput{
 			TaskDefinition: &arn,
@@ -324,9 +430,105 @@ func registerTaskDefinition(t *testing.T, client *ecs.Client, family string, ima
 	}
 }
 
-// listAllWithImageConfigs runs list-all for one resource type with the
-// image-config read on or off.
-func listAllWithImageConfigs(t *testing.T, resourceType string, scanImageConfigs bool) []model.AurelianModel {
+func createLambdaRole(t *testing.T, client *iam.Client, roleName string) string {
+	t.Helper()
+	const trust = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}`
+
+	out, err := client.CreateRole(context.TODO(), &iam.CreateRoleInput{
+		RoleName:                 &roleName,
+		AssumeRolePolicyDocument: aws.String(trust),
+		Description:              aws.String("aurelian image-config integration test"),
+	})
+	require.NoError(t, err, "failed to create IAM role %s", roleName)
+
+	t.Cleanup(func() {
+		if _, err := client.DeleteRole(context.TODO(), &iam.DeleteRoleInput{RoleName: &roleName}); err != nil {
+			t.Logf("warning: failed to delete IAM role %s: %v", roleName, err)
+		}
+	})
+
+	// IAM is eventually consistent; Lambda rejects a role it cannot yet see.
+	time.Sleep(12 * time.Second)
+	return aws.ToString(out.Role.Arn)
+}
+
+func createImageLambda(t *testing.T, client *lambda.Client, fnName, roleARN, imageURI string) func() {
+	t.Helper()
+	_, err := client.CreateFunction(context.TODO(), &lambda.CreateFunctionInput{
+		FunctionName:  &fnName,
+		Role:          &roleARN,
+		PackageType:   lambdatypes.PackageTypeImage,
+		Code:          &lambdatypes.FunctionCode{ImageUri: &imageURI},
+		Architectures: []lambdatypes.Architecture{lambdatypes.ArchitectureX8664},
+	})
+	require.NoError(t, err, "failed to create image-packaged function %s from %s", fnName, imageURI)
+
+	// Registered BEFORE the wait, not after. CreateFunction can succeed and
+	// the function still settle into Failed, and an earlier revision returned
+	// the cleanup only on the happy path — so a function that failed to
+	// initialise was left behind in the account. An orphan outlives the run
+	// and breaks later ones.
+	cleanup := deleteLambda(t, client, fnName)
+	t.Cleanup(cleanup)
+
+	waitForLambda(t, client, fnName)
+	return func() {}
+}
+
+func createZipLambda(t *testing.T, client *lambda.Client, fnName, roleARN, runtime string) func() {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	f, err := zw.Create("index.py")
+	require.NoError(t, err)
+	_, err = f.Write([]byte("def handler(event, context):\n    return {}\n"))
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+
+	_, err = client.CreateFunction(context.TODO(), &lambda.CreateFunctionInput{
+		FunctionName: &fnName,
+		Role:         &roleARN,
+		PackageType:  lambdatypes.PackageTypeZip,
+		Runtime:      lambdatypes.Runtime(runtime),
+		Handler:      aws.String("index.handler"),
+		Code:         &lambdatypes.FunctionCode{ZipFile: buf.Bytes()},
+	})
+	require.NoError(t, err, "failed to create zip-packaged function %s", fnName)
+
+	// Registered before the wait, for the reason given in createImageLambda.
+	t.Cleanup(deleteLambda(t, client, fnName))
+
+	waitForLambda(t, client, fnName)
+	return func() {}
+}
+
+func waitForLambda(t *testing.T, client *lambda.Client, fnName string) {
+	t.Helper()
+	for range 30 {
+		out, err := client.GetFunction(context.TODO(), &lambda.GetFunctionInput{FunctionName: &fnName})
+		if err == nil && out.Configuration != nil && out.Configuration.State == lambdatypes.StateActive {
+			return
+		}
+		if err == nil && out.Configuration != nil && out.Configuration.State == lambdatypes.StateFailed {
+			t.Fatalf("function %s failed to create: %s", fnName, aws.ToString(out.Configuration.StateReason))
+		}
+		time.Sleep(4 * time.Second)
+	}
+	t.Fatalf("function %s did not become Active", fnName)
+}
+
+func deleteLambda(t *testing.T, client *lambda.Client, fnName string) func() {
+	return func() {
+		if _, err := client.DeleteFunction(context.TODO(), &lambda.DeleteFunctionInput{FunctionName: &fnName}); err != nil {
+			t.Logf("warning: failed to delete function %s: %v", fnName, err)
+		}
+	}
+}
+
+// listAllForImageConfig runs list-all for one resource type with the
+// image-config read on or off, against the configured profile.
+func listAllForImageConfig(t *testing.T, resourceType string, scanImageConfigs bool) []model.AurelianModel {
 	t.Helper()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
@@ -334,6 +536,7 @@ func listAllWithImageConfigs(t *testing.T, resourceType string, scanImageConfigs
 
 	results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 		Args: map[string]any{
+			"profile":       imageConfigProfile,
 			"resource-type": []string{resourceType},
 			"regions":       []string{imageConfigRegion},
 			"scan-type":     "full",
@@ -344,20 +547,3 @@ func listAllWithImageConfigs(t *testing.T, resourceType string, scanImageConfigs
 	require.NoError(t, err, "list-all failed for %s", resourceType)
 	return results
 }
-
-func uniq(in []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		if _, dup := seen[v]; dup {
-			continue
-		}
-		seen[v] = struct{}{}
-		out = append(out, v)
-	}
-	return out
-}
-
-func awsString(s string) *string { return &s }
-func awsInt32(i int32) *int32    { return &i }
-func awsBool(b bool) *bool       { return &b }
