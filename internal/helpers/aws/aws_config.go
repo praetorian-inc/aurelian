@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/middleware"
 )
 
 type ConfigLoader func(ctx context.Context, optFns ...func(*config.LoadOptions) error) (aws.Config, error)
@@ -20,6 +21,7 @@ type AWSConfigInput struct {
 	Profile       string
 	ProfileDir    string
 	LoadOptionFns []func(*config.LoadOptions) error
+	BeforeRequest func(context.Context) error
 }
 
 func NewAWSConfig(input AWSConfigInput) (aws.Config, error) {
@@ -31,6 +33,20 @@ func newAWSConfigWith(loader ConfigLoader, input AWSConfigInput) (aws.Config, er
 	region := resolveRegion(input.Region)
 	options := buildLoadOptions(region, input.Profile, input.ProfileDir)
 	options = append(options, input.LoadOptionFns...)
+	if input.BeforeRequest != nil {
+		options = append(options, config.WithAPIOptions([]func(*middleware.Stack) error{
+			func(stack *middleware.Stack) error {
+				// Signing is inside the SDK retry loop, so each attempt needs admission.
+				return stack.Finalize.Insert(middleware.FinalizeMiddlewareFunc("AurelianRequestAdmission",
+					func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (middleware.FinalizeOutput, middleware.Metadata, error) {
+						if err := input.BeforeRequest(ctx); err != nil {
+							return middleware.FinalizeOutput{}, middleware.Metadata{}, err
+						}
+						return next.HandleFinalize(ctx, in)
+					}), "Signing", middleware.Before)
+			},
+		}))
+	}
 
 	cfg, err := loader(context.TODO(), options...)
 	if err != nil {
@@ -51,6 +67,8 @@ func resolveRegion(region string) string {
 func buildLoadOptions(region string, profile string, profileDir string) []func(*config.LoadOptions) error {
 	options := []func(*config.LoadOptions) error{
 		config.WithRegion(region),
+		// Adaptive mode retains the SDK's bounded exponential backoff with jitter,
+		// in addition to throttling-aware pacing. Request admission must not replace it.
 		config.WithRetryMode(aws.RetryModeAdaptive),
 	}
 

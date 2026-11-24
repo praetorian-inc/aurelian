@@ -237,7 +237,7 @@ func TestEnabledRegions_IntegrationWithNewAWSConfig(t *testing.T) {
 
 	// The mocked loader hands back a config carrying no credentials, so tier 1 and
 	// tier 2 both fail and resolution lands on tier 3.
-	regions, err := EnabledRegions(profile, profileDir)
+	regions, err := EnabledRegions(profile, profileDir, nil)
 
 	require.NoError(t, err, "a tier-3 fallback must degrade, not error")
 

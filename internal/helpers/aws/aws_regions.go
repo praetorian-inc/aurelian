@@ -190,7 +190,7 @@ func (r *RegionResolver) getEnabledRegionsFromEC2(ctx context.Context) ([]string
 // returns any other input unchanged.
 func ResolveRegions(regions []string, profile, profileDir string) ([]string, error) {
 	if len(regions) == 1 && strings.ToLower(regions[0]) == "all" {
-		return EnabledRegions(profile, profileDir)
+		return EnabledRegions(profile, profileDir, nil)
 	}
 	return regions, nil
 }
@@ -198,11 +198,12 @@ func ResolveRegions(regions []string, profile, profileDir string) ([]string, err
 // newRegionResolver is the single construction point for both exported entry
 // points, so a change to the config input cannot be applied to one and silently
 // missed on the other.
-func newRegionResolver(profile, profileDir string) (*RegionResolver, error) {
+func newRegionResolver(profile, profileDir string, beforeRequest func(context.Context) error) (*RegionResolver, error) {
 	cfg, err := NewAWSConfig(AWSConfigInput{
-		Region:     "us-east-1",
-		Profile:    profile,
-		ProfileDir: profileDir,
+		Region:        "us-east-1",
+		Profile:       profile,
+		ProfileDir:    profileDir,
+		BeforeRequest: beforeRequest,
 	})
 	if err != nil {
 		return nil, err
@@ -215,8 +216,8 @@ func newRegionResolver(profile, profileDir string) (*RegionResolver, error) {
 }
 
 // EnabledRegions returns the enabled AWS regions for the given profile.
-func EnabledRegions(profile string, profileDir string) ([]string, error) {
-	resolver, err := newRegionResolver(profile, profileDir)
+func EnabledRegions(profile string, profileDir string, beforeRequest func(context.Context) error) ([]string, error) {
+	resolver, err := newRegionResolver(profile, profileDir, beforeRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +235,7 @@ func EnabledRegions(profile string, profileDir string) ([]string, error) {
 // load inside newRegionResolver hands the loader its own context.TODO() and takes
 // no context parameter to override it, so ctx first takes effect below.
 func EnabledRegionsWithSource(ctx context.Context, profile, profileDir string) ([]string, output.RegionSource, error) {
-	resolver, err := newRegionResolver(profile, profileDir)
+	resolver, err := newRegionResolver(profile, profileDir, nil)
 	if err != nil {
 		return nil, "", err
 	}

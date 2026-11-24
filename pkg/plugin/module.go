@@ -44,6 +44,9 @@ type Config struct {
 	Output  io.Writer       // Output destination
 	Verbose bool            // Verbose logging
 	Log     *Logger         // User-facing terminal logger
+	// AWSBeforeRequest admits SDK attempts (including retries) in list-all, graph,
+	// public-resources, org-policies, and find-secrets. Shared across clients in this run.
+	AWSBeforeRequest func(context.Context) error
 }
 
 // Info logs an informational message if a Logger is configured.
@@ -108,6 +111,15 @@ type PostBinder interface {
 
 type ModuleWrapper struct {
 	Module
+}
+
+// NewInstance creates an unbound module for an independent execution.
+func (m *ModuleWrapper) NewInstance() (*ModuleWrapper, error) {
+	t := reflect.TypeOf(m.Module)
+	if t == nil || t.Kind() != reflect.Pointer || t.Elem().Kind() != reflect.Struct {
+		return nil, fmt.Errorf("module %T must be a pointer to a struct", m.Module)
+	}
+	return &ModuleWrapper{Module: reflect.New(t.Elem()).Interface().(Module)}, nil
 }
 
 func (m *ModuleWrapper) Run(cfg Config, out *pipeline.P[model.AurelianModel]) error {

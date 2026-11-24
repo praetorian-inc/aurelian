@@ -208,9 +208,10 @@ func (g *GAAD) initializeGAADClient() error {
 	region := "us-east-1"
 
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-		Region:     region,
-		Profile:    g.opts.Profile,
-		ProfileDir: g.opts.ProfileDir,
+		Region:        region,
+		Profile:       g.opts.Profile,
+		ProfileDir:    g.opts.ProfileDir,
+		BeforeRequest: g.opts.BeforeRequest,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create AWS config: %w", err)

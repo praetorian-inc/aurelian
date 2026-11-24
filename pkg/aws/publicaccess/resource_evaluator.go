@@ -120,9 +120,10 @@ func (e *ResourceEvaluator) SupportedResourceTypes() []string {
 func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.P[PublicAccessResult]) error {
 	return e.crossRegionActor.ActInRegion(resource.Region, func() error {
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     awshelpers.RegionForService(resource.ResourceType, resource.Region),
-			Profile:    e.opts.Profile,
-			ProfileDir: e.opts.ProfileDir,
+			Region:        awshelpers.RegionForService(resource.ResourceType, resource.Region),
+			Profile:       e.opts.Profile,
+			ProfileDir:    e.opts.ProfileDir,
+			BeforeRequest: e.opts.BeforeRequest,
 		})
 		if err != nil {
 			slog.Warn("failed to create AWS config, skipping resource",

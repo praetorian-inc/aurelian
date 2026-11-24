@@ -81,9 +81,10 @@ func (c *ResourcePolicyCollector) Collect(resource output.AWSResource, out *pipe
 
 	return c.crossRegionActor.ActInRegion(resource.Region, func() error {
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     resource.Region,
-			Profile:    c.opts.Profile,
-			ProfileDir: c.opts.ProfileDir,
+			Region:        resource.Region,
+			Profile:       c.opts.Profile,
+			ProfileDir:    c.opts.ProfileDir,
+			BeforeRequest: c.opts.BeforeRequest,
 		})
 		if err != nil {
 			slog.Warn("creating AWS config for resource policies, skipping resource",
