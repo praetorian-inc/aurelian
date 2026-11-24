@@ -6,16 +6,18 @@ Licensed under the Apache License, Version 2.0. See LICENSE.
 
 --------------------------------------------------------------------------------
 
-National Vulnerability Database (NVD) CPE Dictionary
+National Vulnerability Database (NVD)
 
-pkg/cpe/cpemap.json.gz is generated from the NVD CPE dictionary bulk feed:
+pkg/cpe/cpemap.json.gz is generated from two NVD bulk feeds:
 
     https://nvd.nist.gov/feeds/json/cpe/2.0/nvdcpe-2.0.tar.gz
+    https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-<year>.json.gz
 
-It is a distillation of that dictionary's live application entries into a
-product-to-vendor-to-version mapping. The snapshot date of the feed it was
-generated from is recorded in pkg/cpe/snapshot_gen.go as NVDSnapshot, and the
-file is regenerated with `go generate ./pkg/cpe/...`.
+It is a product-to-vendor mapping, distilled from the dictionary's live
+application entries and from the vendor spellings cited by CVE applicability
+criteria. The snapshot date of the dictionary feed is recorded in
+pkg/cpe/snapshot_gen.go as NVDSnapshot, and the file is regenerated with
+`go generate ./pkg/cpe/...`.
 
 NVD data is produced by the National Institute of Standards and Technology
 (NIST), an agency of the United States government. As a work of the U.S.

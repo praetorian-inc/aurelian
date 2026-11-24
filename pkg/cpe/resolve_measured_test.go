@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // The cases below are not invented. Each was measured against the live NVD CVE
@@ -35,28 +36,10 @@ import (
 // resolves, and let the version select the vendor), which measured precision
 // 0.940 / recall 0.849, with precision 1.000 / recall 0.906.
 
+// The version is emitted exactly as observed. None of these has an exact
+// dictionary entry, every one matches CVEs in NVD at that version, and
+// falseCVEs is what the truncated form used to attribute that does not apply.
 func TestResolve_EmitsTheObservedVersionVerbatim(t *testing.T) {
-	// The version is never rewritten. Each of these has no exact dictionary
-	// entry, and each matches CVEs in NVD at exactly this version.
-	for _, tc := range []struct{ product, version string }{
-		{"python", "3.11.18"},
-		{"node.js", "20.20.2"},
-		{"mongodb", "7.0.48"},
-		{"memcached", "1.6.45"},
-		{"redis", "7.4.12"},
-		{"postgresql", "15.20"},
-	} {
-		got := cpe.Resolve(tc.product, tc.version)
-		assert.NotEmpty(t, got, "%s %s must resolve", tc.product, tc.version)
-		for _, c := range got {
-			assert.Contains(t, c, ":"+tc.version+":",
-				"%s %s was rewritten to %s", tc.product, tc.version, c)
-		}
-	}
-}
-
-func TestResolve_NeverTruncates(t *testing.T) {
-	// The specific regressions truncation caused, by measured CVE cost.
 	for _, tc := range []struct {
 		product, version string
 		falseCVEs        int
@@ -66,10 +49,14 @@ func TestResolve_NeverTruncates(t *testing.T) {
 		{"mongodb", "7.0.48", 2},
 		{"mysql", "8.4.13.1", 1},
 		{"python", "3.11.18", 1},
+		{"redis", "7.4.12", 0},
+		{"postgresql", "15.20", 0},
 	} {
-		for _, c := range cpe.Resolve(tc.product, tc.version) {
+		got := cpe.Resolve(tc.product, tc.version)
+		require.NotEmpty(t, got, "%s %s must resolve", tc.product, tc.version)
+		for _, c := range got {
 			assert.Contains(t, c, ":"+tc.version+":",
-				"%s %s truncated to %s — measured, that attributes %d CVEs that do not apply",
+				"%s %s was rewritten to %s — measured, that attributes %d CVEs that do not apply",
 				tc.product, tc.version, c, tc.falseCVEs)
 		}
 	}
