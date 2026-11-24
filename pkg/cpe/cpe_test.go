@@ -10,8 +10,14 @@ import (
 )
 
 func TestResolve_CriteriaShape(t *testing.T) {
-	assert.Equal(t, []string{"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*"},
-		cpe.Resolve("nginx", "1.25.3"))
+	// Both spellings are emitted: f5 is the dictionary's live vendor, and
+	// nginx:nginx is cited by CVE configurations that were never back-filled
+	// after the F5 acquisition. The shape under test is the criteria form —
+	// part:vendor:product:<observed version> with `*` in the other seven.
+	assert.Equal(t, []string{
+		"cpe:2.3:a:f5:nginx:1.25.3:*:*:*:*:*:*:*",
+		"cpe:2.3:a:nginx:nginx:1.25.3:*:*:*:*:*:*:*",
+	}, cpe.Resolve("nginx", "1.25.3"))
 }
 
 func TestResolve_EmitsNothingOnBadInput(t *testing.T) {

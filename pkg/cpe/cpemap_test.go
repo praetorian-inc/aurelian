@@ -65,20 +65,42 @@ func TestResolveVendors_HomonymVendorsAreReturnedAndAreInert(t *testing.T) {
 	assert.Greater(t, len(got), 1)
 }
 
-func TestResolveVendors_DeprecatedVendorsAreAbsent_KnownRecallGap(t *testing.T) {
-	// A KNOWN GAP, pinned so it is visible rather than forgotten.
-	//
-	// The generator keeps a deprecated record's successor and drops its own
-	// vendor name. But CVE configurations still cite the old names: measured,
-	// sun:openjdk has zero dictionary entries yet appears in 11 live CVEs, and
-	// nginx:nginx, php_group:php, python_software_foundation:python and
-	// yukihiro_matsumoto:ruby are the same shape.
-	//
-	// Retaining both names takes measured recall from 0.906 to 1.000. The fix
-	// belongs in pkg/cpe/gen/distill.go and needs a feed regeneration.
-	assert.NotContains(t, cpe.ResolveVendors("openjdk"), "sun",
-		"if this starts failing the generator was fixed — delete this test and update the recall figures")
-	assert.NotContains(t, cpe.ResolveVendors("nginx"), "nginx")
+// This was pinned as a known recall gap, and is now the fix for it.
+//
+// Every vendor below is cited by live NVD CVE configurations and has NO CPE
+// dictionary record at all — not a deprecated one, not any. sun:openjdk is
+// cited by 17 CVEs and simply does not exist in the dictionary. No resolution
+// rule over a dictionary-only table could ever have reached them; the table is
+// now distilled from the CVE corpus as well (pkg/cpe/gen/cve.go), which is
+// what took measured recall from 0.906 to 1.000.
+//
+// If one of these regresses, the CVE pass has stopped contributing and the
+// recall figures in ResolveVendors' doc comment are no longer true.
+func TestResolveVendors_IncludesVendorsOnlyTheCVECorpusCites(t *testing.T) {
+	for _, tc := range []struct {
+		product, vendor string
+		cves            int
+	}{
+		{"openjdk", "sun", 17},
+		{"ruby", "yukihiro_matsumoto", 8},
+		{"memcached", "memcachedb", 4},
+		{"php", "php_group", 3},
+		{"nginx", "nginx", 2},
+		{"python", "python_software_foundation", 2},
+	} {
+		assert.Contains(t, cpe.ResolveVendors(tc.product), tc.vendor,
+			"%s:%s is cited by %d CVEs and has no dictionary record; only the CVE pass supplies it",
+			tc.vendor, tc.product, tc.cves)
+	}
+}
+
+// The dictionary half must survive the union. A CVE pass that overwrote rather
+// than merged would pass the test above and silently drop every vendor the
+// dictionary alone knows about.
+func TestResolveVendors_KeepsDictionaryOnlyVendorsAfterTheUnion(t *testing.T) {
+	assert.Contains(t, cpe.ResolveVendors("nginx"), "f5")
+	assert.Contains(t, cpe.ResolveVendors("openjdk"), "oracle")
+	assert.Contains(t, cpe.ResolveVendors("tomcat"), "apache")
 }
 
 func TestResolveVendors_SortedAndStable(t *testing.T) {

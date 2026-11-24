@@ -4,4 +4,4 @@ package cpe
 
 // NVDSnapshot is the lastModifiedDate of the NVD CPE dictionary feed that
 // cpemap.json.gz was distilled from.
-const NVDSnapshot = "2026-11-19T23:50:02-05:00"
+const NVDSnapshot = "2026-11-23T23:50:01-05:00"

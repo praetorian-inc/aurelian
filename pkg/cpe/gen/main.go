@@ -29,6 +29,18 @@ const (
 	archiveURL  = "https://nvd.nist.gov/feeds/json/cpe/2.0/nvdcpe-2.0.tar.gz"
 	userAgent   = "aurelian-cpegen"
 	minProducts = 40000
+
+	// The CVE corpus is published one gzipped JSON file per year, with a
+	// sibling .meta carrying the sha256 used as a cache key. firstCVEYear is
+	// where NVD's own archive starts.
+	cveFeedBase  = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-%d"
+	firstCVEYear = 2002
+
+	// minCVEVendorProducts is a sanity floor on the CVE pass alone, the
+	// counterpart to minProducts. Measured 2026-11-24 the corpus names far
+	// more than this; the floor only has to fail the build on a feed that
+	// silently returned nothing.
+	minCVEVendorProducts = 20000
 )
 
 func main() {
@@ -81,6 +93,33 @@ func run() error {
 		return fmt.Errorf("table holds %d products, fewer than the %d sanity floor: truncated download or schema change",
 			len(table), minProducts)
 	}
+
+	// Third pass, over a different corpus. The dictionary says which names
+	// exist; the CVE configurations say which names are used, and they
+	// disagree — sun:openjdk is cited by 17 CVEs and has no dictionary record
+	// of any kind. Emitting a CPE is only useful if a CVE matcher can match
+	// it, so the CVE corpus is the authority this table ultimately answers to.
+	// See HarvestCVEChunk.
+	dictOnly := len(table)
+	cveTable := Table{}
+	if err := harvestCVEFeeds(cveTable); err != nil {
+		return err
+	}
+	if len(cveTable) < minCVEVendorProducts {
+		return fmt.Errorf("cve corpus named %d products, fewer than the %d sanity floor: truncated download or schema change",
+			len(cveTable), minCVEVendorProducts)
+	}
+	added := 0
+	for product, vendors := range cveTable {
+		for vendor := range vendors {
+			if _, dup := table[product][vendor]; !dup {
+				added++
+			}
+			record(table, product, vendor)
+		}
+	}
+	log.Printf("cve corpus named %d products; merged %d vendor spellings the dictionary lacked, %d -> %d products",
+		len(cveTable), added, dictOnly, len(table))
 
 	// `go generate` runs a directive with the working directory set to the
 	// package that holds it, i.e. pkg/cpe. An explicit argument overrides that
@@ -223,22 +262,18 @@ func eachChunk(r io.Reader, fn func(body []byte) error) (int, error) {
 	return chunks, nil
 }
 
-// writeTable writes product -> vendor -> sorted versions as gzipped JSON.
-// Map keys are emitted sorted by encoding/json and version slices are sorted
-// explicitly, so regenerating an unchanged feed produces an identical file.
+// writeTable writes product -> sorted vendors as gzipped JSON. Map keys are
+// emitted sorted by encoding/json and vendor slices are sorted explicitly, so
+// regenerating an unchanged feed produces an identical file.
 func writeTable(path string, table Table) error {
-	out := make(map[string]map[string][]string, len(table))
-	for product, byVendor := range table {
-		vendors := make(map[string][]string, len(byVendor))
-		for vendor, versions := range byVendor {
-			vs := make([]string, 0, len(versions))
-			for v := range versions {
-				vs = append(vs, v)
-			}
-			sort.Strings(vs)
-			vendors[vendor] = vs
+	out := make(map[string][]string, len(table))
+	for product, vendors := range table {
+		vs := make([]string, 0, len(vendors))
+		for v := range vendors {
+			vs = append(vs, v)
 		}
-		out[product] = vendors
+		sort.Strings(vs)
+		out[product] = vs
 	}
 
 	f, err := os.Create(path)

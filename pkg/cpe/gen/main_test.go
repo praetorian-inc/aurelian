@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type table = map[string]map[string]map[string]struct{} // product -> vendor -> versions
-
 func keys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
@@ -23,7 +21,7 @@ func keys[V any](m map[string]V) []string {
 func TestDistillChunk_DropsDeprecated(t *testing.T) {
 	body, err := os.ReadFile("../testdata/nvd/nginx.json")
 	require.NoError(t, err)
-	into := table{}
+	into := Table{}
 	require.NoError(t, DistillChunk(body, into))
 	vendors := keys(into["nginx"])
 	assert.Contains(t, vendors, "f5")
@@ -31,16 +29,24 @@ func TestDistillChunk_DropsDeprecated(t *testing.T) {
 	assert.NotContains(t, vendors, "igor_sysoev") // deprecated
 }
 
-func TestDistillChunk_RecordsVersionsPerVendor(t *testing.T) {
+// Versions were recorded until the resolution rule was measured on
+// 2026-11-24. They are dead weight now — ResolveVendors does not take a
+// version, NVD matches CVEs on ranges the dictionary cannot represent, and the
+// CVE pass has no dictionary version set to contribute for the vendors only it
+// knows about. The table is a product -> vendors index and nothing else.
+func TestDistillChunk_CarriesNoVersions(t *testing.T) {
 	body, err := os.ReadFile("../testdata/nvd/nginx.json")
 	require.NoError(t, err)
-	into := table{}
+	into := Table{}
 	require.NoError(t, DistillChunk(body, into))
-	assert.Contains(t, into["nginx"]["f5"], "1.25.3")
+
+	require.Contains(t, into["nginx"], "f5")
+	// The vendor's value is a set membership marker, not a version set.
+	assert.Equal(t, struct{}{}, into["nginx"]["f5"])
 }
 
 func TestDistillChunk_AccumulatesAcrossChunks(t *testing.T) {
-	into := table{}
+	into := Table{}
 	for _, f := range []string{"nginx.json", "redis.json"} {
 		body, err := os.ReadFile("../testdata/nvd/" + f)
 		require.NoError(t, err)
@@ -55,7 +61,7 @@ func TestDistillChunk_FollowsDeprecatedByChain(t *testing.T) {
 	// deprecated records, the resolver must land on the live successor.
 	body, err := os.ReadFile("../testdata/nvd/nginx-deprecated-only.json")
 	require.NoError(t, err)
-	into := table{}
+	into := Table{}
 	require.NoError(t, DistillChunk(body, into))
 	assert.Equal(t, []string{"f5"}, keys(into["nginx"]))
 }
@@ -81,13 +87,12 @@ func TestDistill_FollowsDeprecatedByAcrossChunks(t *testing.T) {
 	for _, c := range [][]byte{chunkA, chunkB} {
 		require.NoError(t, IndexChunk(c, idx))
 	}
-	into := table{}
+	into := Table{}
 	for _, c := range [][]byte{chunkA, chunkB} {
 		require.NoError(t, DistillChunkWithIndex(c, into, idx))
 	}
 
 	assert.Equal(t, []string{"f5"}, keys(into["nginx"]))
-	assert.Contains(t, into["nginx"]["f5"], "1.0.0")
 }
 
 func TestDistillChunk_KeepsEveryLiveVendorForAProduct(t *testing.T) {
@@ -95,12 +100,11 @@ func TestDistillChunk_KeepsEveryLiveVendorForAProduct(t *testing.T) {
 	// keeps all of them, and the resolution rule discriminates on version.
 	body, err := os.ReadFile("../testdata/nvd/redis.json")
 	require.NoError(t, err)
-	into := table{}
+	into := Table{}
 	require.NoError(t, DistillChunk(body, into))
 	vendors := keys(into["redis"])
 	assert.Contains(t, vendors, "redis")
 	assert.Contains(t, vendors, "redislabs")
-	assert.Contains(t, into["redis"]["redis"], "7.0.5")
 }
 
 func TestDistillChunk_SkipsNonApplicationParts(t *testing.T) {
@@ -109,7 +113,7 @@ func TestDistillChunk_SkipsNonApplicationParts(t *testing.T) {
 		{"cpe":{"cpeName":"cpe:2.3:h:cisco:asa:1.0:*:*:*:*:*:*:*","deprecated":false}},
 		{"cpe":{"cpeName":"cpe:2.3:a:acme:widget:1.0:*:*:*:*:*:*:*","deprecated":false}}
 	]}`)
-	into := table{}
+	into := Table{}
 	require.NoError(t, DistillChunk(body, into))
 	assert.Equal(t, []string{"widget"}, keys(into))
 }
@@ -122,13 +126,12 @@ func TestDistillChunk_StoresUnescapedLiterals(t *testing.T) {
 		{"cpe":{"cpeName":"cpe:2.3:a:notepad-plus-plus:notepad\\+\\+:8.9.6.4:*:*:*:*:*:*:*","deprecated":false}},
 		{"cpe":{"cpeName":"cpe:2.3:a:1c:1c\\:enterprise:8.3.13:*:*:*:*:*:*:*","deprecated":false}}
 	]}`)
-	into := table{}
+	into := Table{}
 	require.NoError(t, DistillChunk(body, into))
 
 	assert.Contains(t, into, "notepad++")
 	assert.NotContains(t, into, `notepad\+\+`)
 	assert.Contains(t, into["notepad++"], "notepad-plus-plus")
-	assert.Contains(t, into["notepad++"]["notepad-plus-plus"], "8.9.6.4")
 
 	// A product whose NVD spelling escapes a colon keys on the literal colon.
 	assert.Contains(t, into, "1c:enterprise")
@@ -136,6 +139,6 @@ func TestDistillChunk_StoresUnescapedLiterals(t *testing.T) {
 }
 
 func TestDistillChunk_RejectsMalformedBody(t *testing.T) {
-	into := table{}
+	into := Table{}
 	assert.Error(t, DistillChunk([]byte("not json"), into))
 }

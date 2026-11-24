@@ -6,8 +6,30 @@ import (
 	"strings"
 )
 
-// Table accumulates product -> vendor -> set(version) across feed chunks.
-type Table = map[string]map[string]map[string]struct{}
+// Table accumulates product -> set(vendor) across feed chunks, from both
+// sources: the CPE dictionary (names that exist) and the CVE corpus (names
+// that are used). It is a union — see HarvestCVEChunk for why neither source
+// alone is sufficient.
+//
+// Versions are deliberately not recorded. They were, until the resolution rule
+// was measured against the live CVE corpus on 2026-11-24: NVD attaches CVEs to
+// version RANGES, so a dictionary version set can neither confirm nor exclude
+// an observed version, and ResolveVendors no longer takes a version at all.
+// Carrying them made the artifact ten times larger than its only consumer
+// needs, and would have forced this file to invent version data for every
+// vendor the CVE pass contributes.
+type Table = map[string]map[string]struct{}
+
+// record notes that `product` is published under `vendor`. Both sources funnel
+// through it so the table can never acquire two spellings of the same entry.
+func record(into Table, product, vendor string) {
+	vendors, ok := into[product]
+	if !ok {
+		vendors = map[string]struct{}{}
+		into[product] = vendors
+	}
+	vendors[vendor] = struct{}{}
+}
 
 // maxDeprecationDepth bounds the deprecatedBy walk. NVD's longest observed
 // chain is igor_sysoev -> nginx -> f5 (two hops); the bound only has to stop a
@@ -58,8 +80,8 @@ func IndexChunk(body []byte, idx DeprecationIndex) error {
 
 // DistillChunk parses one NVD CPE dictionary chunk (or one /cpes/2.0 REST
 // response — they share a schema) and accumulates its live application entries
-// into `into` as product -> vendor -> set(version), resolving deprecations
-// against that chunk alone.
+// into `into` as product -> set(vendor), resolving deprecations against that
+// chunk alone.
 //
 // Deprecated records are not merely dropped. NVD records the rename chain in
 // `deprecatedBy`, so a deprecated record contributes its *successor's* vendor
@@ -135,26 +157,11 @@ func DistillChunkWithIndex(body []byte, into Table, idx DeprecationIndex) error 
 		}
 
 		for _, name := range names {
-			_, _, vendor, version, ok := splitCPE(name)
+			_, _, vendor, _, ok := splitCPE(name)
 			if !ok {
 				continue
 			}
-
-			byVendor, ok := into[product]
-			if !ok {
-				byVendor = map[string]map[string]struct{}{}
-				into[product] = byVendor
-			}
-			versions, ok := byVendor[vendor]
-			if !ok {
-				versions = map[string]struct{}{}
-				byVendor[vendor] = versions
-			}
-			// "*" and "-" are wildcards, not versions. The vendor is still
-			// recorded (the sole-vendor fallback needs to know it exists).
-			if version != "*" && version != "-" && version != "" {
-				versions[version] = struct{}{}
-			}
+			record(into, product, vendor)
 		}
 	}
 	return nil

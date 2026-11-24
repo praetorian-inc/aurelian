@@ -12,7 +12,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"sync"
 
 	_ "embed"
@@ -23,11 +22,12 @@ import (
 //go:embed cpemap.json.gz
 var cpemapGz []byte
 
-// vendorTable is product -> vendor -> sorted versions, distilled from the live
-// application entries of the whole NVD dictionary. There is deliberately no
-// product allowlist: scope is enforced at detection, never by truncating this
-// table.
-type vendorTable map[string]map[string][]string
+// vendorTable is product -> sorted vendors, distilled from two NVD corpora:
+// the CPE dictionary's live application entries (names that exist) and the CVE
+// feeds' applicability criteria (names that are used). There is deliberately
+// no product allowlist: scope is enforced at detection, never by truncating
+// this table.
+type vendorTable map[string][]string
 
 var (
 	loadOnce sync.Once
@@ -82,30 +82,33 @@ func load() vendorTable {
 //
 // That is why the old sole-vendor and version-carrying rules are gone, along
 // with the dotted-prefix version match that backed them. Over 30 observations
-// the change moved precision 0.940 -> 1.000 and recall 0.849 -> 0.906.
+// the change moved precision 0.940 -> 1.000 and recall 0.849 -> 0.906; adding
+// the CVE corpus as a second vendor source then took recall to 1.000.
 //
-// What it does NOT fix: vendor names that appear in CVE configurations but not
-// in the CPE dictionary at all. sun:openjdk has zero dictionary entries yet is
-// cited by 11 live CVEs, and php_group:php, python_software_foundation:python,
-// yukihiro_matsumoto:ruby and nginx:nginx are the same shape — deprecated
-// predecessors that CVE records still reference. The generator drops a
-// deprecated record's own vendor and keeps only its successor's, which is what
-// loses them. Retaining both takes recall to 1.000; see pkg/cpe/gen/distill.go.
+// The last 9.4% of recall was a different problem, and it is fixed in the
+// generator rather than here. Ten vendor spellings are cited by live CVE
+// configurations and carry NO CPE dictionary record at all — sun:openjdk is
+// cited by 17 CVEs and does not exist in the dictionary, deprecated or
+// otherwise, and php_group:php, python_software_foundation:python,
+// yukihiro_matsumoto:ruby and nginx:nginx are the same shape. No resolution
+// rule over a dictionary-only table could reach them. The generator therefore
+// distils from both corpora: the dictionary for names that exist, the CVE
+// feeds for names that are used. See pkg/cpe/gen/cve.go. That took measured
+// recall to 1.000.
 //
 // Downstream precondition, unchanged: guard's CPE-to-CVE matcher must match on
 // the vendor field. NVD's cpeMatch criteria carry it, so a matcher built on
 // that data gets this for free. A matcher using a wildcard vendor would give
 // every sibling an edge to the same CVE and double every finding.
 func ResolveVendors(product string) []string {
-	byVendor := load()[product]
-	if len(byVendor) == 0 {
+	vendors := load()[product]
+	if len(vendors) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(byVendor))
-	for vendor := range byVendor {
-		out = append(out, vendor)
-	}
-	sort.Strings(out)
+	// The generator writes these sorted; copy so a caller cannot mutate the
+	// process-wide table through the returned slice.
+	out := make([]string, len(vendors))
+	copy(out, vendors)
 	return out
 }
 
