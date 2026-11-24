@@ -76,7 +76,14 @@ func TestResolveVendors_ProductKeysAreUnescaped(t *testing.T) {
 	assert.NotEmpty(t, cpe.ResolveVendors("1c:enterprise"))
 }
 
-// No emitted CPE may carry a double backslash, whatever the product spelling.
+// A product whose punctuation needs one escape must not get two: `+` binds to
+// `\+`, never `\\+`.
+//
+// This is not a ban on `\\` in general. That sequence is the correct CPE 2.3
+// escaping of a literal backslash, and NVD publishes 280 part-`a` names
+// containing one — `backpack\\crud`, the PHP namespace Backpack\CRUD, among
+// them. None of the products below contains a backslash, which is why none of
+// their emissions may carry `\\`.
 func TestResolve_NeverDoubleEscapes(t *testing.T) {
 	for _, p := range []string{"notepad++", "c++_compiler_classic", "sendmail+pro", "deslock+"} {
 		for _, c := range cpe.Resolve(p, "1.0") {

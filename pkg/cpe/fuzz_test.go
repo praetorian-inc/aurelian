@@ -2,7 +2,6 @@ package cpe_test
 
 import (
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/cpe"
@@ -35,11 +34,12 @@ func FuzzResolve_NeverEmitsAKeyGuardWouldReject(f *testing.F) {
 		{"nginx", "*"},
 		{"php", "?"},
 		{"ruby", `3.3.14\:*\:*`},
-		// Found by this fuzzer: a literal backslash is quoted twice and binds
-		// to a component NVD never publishes, past keyRegex (which sees no
-		// colon). Reachable through Resolve's public API, though not through
-		// aurelian, whose NormalizeVersion strips backslashes first.
+		// A literal backslash. It binds to `\\`, which is the correct CPE 2.3
+		// escaping and not a defect: NVD itself publishes 280 part-`a` names
+		// containing one, `backpack\\crud` (the PHP namespace Backpack\CRUD)
+		// among them.
 		{"r", `\`},
+		{`backpack\crud`, "0.5.1"},
 		{"", ""},
 	} {
 		f.Add(tc.product, tc.version)
@@ -50,12 +50,6 @@ func FuzzResolve_NeverEmitsAKeyGuardWouldReject(f *testing.F) {
 			if !guardKeyRegex.MatchString(c) {
 				t.Fatalf("Resolve(%q, %q) emitted %q, which guard's "+
 					"model.NewTechnology rejects", product, version, c)
-			}
-			// A double backslash is a component escaped twice; NVD never
-			// publishes one, so it would match no CVE.
-			if strings.Contains(c, `\\`) {
-				t.Fatalf("Resolve(%q, %q) emitted a double-escaped component: %q",
-					product, version, c)
 			}
 		}
 	})
