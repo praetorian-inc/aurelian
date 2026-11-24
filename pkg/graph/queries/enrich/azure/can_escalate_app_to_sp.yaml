@@ -1,0 +1,22 @@
+id: azure/enrich/can-escalate-app-to-sp
+name: Application to Service Principal Compromise Chain
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Application compromise (credential addition) provides access to the
+  corresponding Service Principal and all its permissions. Creates
+  CAN_ESCALATE edges from Applications to their Service Principals.
+severity: high
+order: 92
+cypher: |
+  MATCH (app:Application)
+  WITH app
+  MATCH (sp:ServicePrincipal)
+  WHERE sp.appId = app.appId
+  WITH DISTINCT app, sp
+  MERGE (app)-[r:CAN_ESCALATE {method: 'ApplicationToServicePrincipal'}]->(sp)
+  ON CREATE SET
+    r.condition = 'Application compromise provides access to corresponding Service Principal and all its permissions',
+    r.category = 'ApplicationIdentity'
+  RETURN count(r) AS created

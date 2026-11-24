@@ -1,0 +1,16 @@
+id: azure/enrich/group-nesting-paths
+name: Group Nesting Privilege Paths
+platform: azure
+type: enrich
+category: privesc
+description: |
+  Identifies transitive paths through nested group memberships that lead
+  to privileged role assignments. A user in group A which is a member of
+  group B inherits B's role assignments.
+severity: medium
+order: 35
+cypher: |
+  MATCH path = (u:User)-[:MEMBER_OF*1..3]->(g:Group)-[:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE length(path) > 2
+  SET u._hasTransitivePrivilege = true
+  RETURN u.id AS userId, g.displayName AS groupName, rd.displayName AS roleName, length(path) AS depth
