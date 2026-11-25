@@ -21,9 +21,10 @@ func init() {
 type FindSecretsConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
-	MaxEvents  int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
-	MaxStreams int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
-	LogsSince  string `param:"logs-since" desc:"RFC3339 timestamp of the last successful scan; log events older than this time minus six hours are not read"`
+	MaxEvents     int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
+	MaxStreams    int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
+	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; unchanged resources with reliable AWS modification metadata are skipped"`
+	LogsSince     string `param:"logs-since" desc:"RFC3339 timestamp of the last successful scan; log events older than this time minus six hours are not read"`
 }
 
 // AWSFindSecretsModule scans AWS resources for hardcoded secrets using Titus.
@@ -74,6 +75,16 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
 
+	var modifiedSince time.Time
+	incremental := c.ModifiedSince != ""
+	if incremental {
+		var err error
+		modifiedSince, err = time.Parse(time.RFC3339Nano, c.ModifiedSince)
+		if err != nil {
+			return fmt.Errorf("invalid modified-since timestamp %q: %w", c.ModifiedSince, err)
+		}
+	}
+
 	var logsSince time.Time
 	if c.LogsSince != "" {
 		var err error
@@ -90,8 +101,8 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
 
-	// Callers persisting a logs-since checkpoint must not accept partial scans.
-	checkpointed := c.LogsSince != ""
+	// Callers persisting either checkpoint must not accept partial scans.
+	checkpointed := incremental || c.LogsSince != ""
 	var s secrets.SecretScanner
 	if err := s.Start(c.ScannerConfig); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
@@ -107,10 +118,11 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
-		MaxEvents:   c.MaxEvents,
-		MaxStreams:  c.MaxStreams,
-		LogsSince:   logsSince,
-		FailOnError: checkpointed,
+		MaxEvents:     c.MaxEvents,
+		MaxStreams:    c.MaxStreams,
+		ModifiedSince: modifiedSince,
+		LogsSince:     logsSince,
+		FailOnError:   checkpointed,
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
@@ -135,6 +147,12 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	}
 	if err := risks.Wait(); err != nil {
 		return err
+	}
+	// An incremental caller advances its checkpoint when Run succeeds, so a
+	// region or type that enumeration could not read must fail the run rather
+	// than be silently treated as scanned.
+	if incremental && lister.Skipped.Len() > 0 {
+		return fmt.Errorf("resource enumeration was incomplete: %s", lister.Skipped.Summary())
 	}
 
 	if checkpointed && lister.Skipped.Len() > 0 {

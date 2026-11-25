@@ -15,9 +15,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFindSecrets_LogsCheckpointRejectsPartialScan(t *testing.T) {
-	for _, failedOperation := range []string{"GetResource", "FilterLogEvents"} {
-		t.Run(failedOperation, func(t *testing.T) {
+func TestFindSecrets_CheckpointRejectsPartialScan(t *testing.T) {
+	for _, test := range []struct {
+		checkpoint      string
+		failedOperation string
+	}{
+		{"logs-since", "GetResource"},
+		{"logs-since", "FilterLogEvents"},
+		{"modified-since", "GetResource"},
+		{"modified-since", "FilterLogEvents"},
+	} {
+		t.Run(test.checkpoint+"/"+test.failedOperation, func(t *testing.T) {
+			failedOperation := test.failedOperation
 			var failures atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, operation, _ := strings.Cut(r.Header.Get("X-Amz-Target"), ".")
@@ -52,10 +61,10 @@ func TestFindSecrets_LogsCheckpointRejectsPartialScan(t *testing.T) {
 			t.Setenv("AWS_SHARED_CREDENTIALS_FILE", t.TempDir()+"/credentials")
 
 			cfg := plugin.Config{Context: context.Background(), Args: map[string]any{
-				"regions":      []string{"us-east-1"},
-				"resource-arn": []string{"arn:aws:logs:us-east-1:123456789012:log-group:/test"},
-				"output-dir":   t.TempDir(),
-				"logs-since":   "0001-01-01T00:00:00Z",
+				"regions":       []string{"us-east-1"},
+				"resource-arn":  []string{"arn:aws:logs:us-east-1:123456789012:log-group:/test"},
+				"output-dir":    t.TempDir(),
+				test.checkpoint: "0001-01-01T00:00:00Z",
 			}}
 			mod := plugin.ModuleWrapper{Module: &AWSFindSecretsModule{}}
 			out := pipeline.New[model.AurelianModel]()
