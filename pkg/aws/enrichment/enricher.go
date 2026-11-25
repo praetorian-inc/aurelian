@@ -32,9 +32,10 @@ func (e *AWSEnricher) Enrich(r output.AWSResource, out *pipeline.P[output.AWSRes
 	}
 
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-		Region:     awshelpers.RegionForService(r.ResourceType, r.Region),
-		Profile:    e.opts.Profile,
-		ProfileDir: e.opts.ProfileDir,
+		Region:        awshelpers.RegionForService(r.ResourceType, r.Region),
+		Profile:       e.opts.Profile,
+		ProfileDir:    e.opts.ProfileDir,
+		BeforeRequest: e.opts.BeforeRequest,
 	})
 	if err != nil {
 		slog.Warn("failed to create AWS config for enrichment, skipping enrichers",

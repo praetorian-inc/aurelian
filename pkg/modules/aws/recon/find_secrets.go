@@ -101,11 +101,13 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
 
+	// Callers persisting either checkpoint must not accept partial scans.
+	checkpointed := incremental || c.LogsSince != ""
 	var s secrets.SecretScanner
 	if err := s.Start(c.ScannerConfig); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
-	s.SetFailOnError(incremental)
+	s.SetFailOnError(checkpointed)
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	defer func() { _ = lister.Close() }()
@@ -120,7 +122,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		MaxStreams:    c.MaxStreams,
 		ModifiedSince: modifiedSince,
 		LogsSince:     logsSince,
-		FailOnError:   incremental,
+		FailOnError:   checkpointed,
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
@@ -151,6 +153,10 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	// than be silently treated as scanned.
 	if incremental && lister.Skipped.Len() > 0 {
 		return fmt.Errorf("resource enumeration was incomplete: %s", lister.Skipped.Summary())
+	}
+
+	if checkpointed && lister.Skipped.Len() > 0 {
+		return fmt.Errorf("incomplete log scan: %s", lister.Skipped.Summary())
 	}
 
 	cfg.Success("secret scanning complete")

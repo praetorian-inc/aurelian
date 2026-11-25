@@ -52,8 +52,9 @@ func (m *AWSOrgPoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	c := m.OrgPoliciesConfig
 
 	orgPols, err := orgpolicies.CollectOrgPolicies(cfg.Context, orgpolicies.CollectorOptions{
-		Profile:    c.Profile,
-		ProfileDir: c.ProfileDir,
+		Profile:       c.Profile,
+		ProfileDir:    c.ProfileDir,
+		BeforeRequest: c.BeforeRequest,
 	})
 	if err != nil {
 		return err

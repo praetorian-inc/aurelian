@@ -27,8 +27,9 @@ type OrganizationsClient interface {
 
 // CollectorOptions contains configuration for the org policies collector.
 type CollectorOptions struct {
-	Profile    string
-	ProfileDir string
+	Profile       string
+	ProfileDir    string
+	BeforeRequest func(context.Context) error
 }
 
 // CollectOrgPolicies is the main entry point for collecting AWS Organizations policies.
@@ -38,9 +39,10 @@ func CollectOrgPolicies(ctx context.Context, opts CollectorOptions) (*OrgPolicie
 
 	// Organizations API is global, use us-east-1
 	cfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
-		Region:     "us-east-1",
-		Profile:    opts.Profile,
-		ProfileDir: opts.ProfileDir,
+		Region:        "us-east-1",
+		Profile:       opts.Profile,
+		ProfileDir:    opts.ProfileDir,
+		BeforeRequest: opts.BeforeRequest,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS config: %w", err)
@@ -77,9 +79,10 @@ func CollectOrgPolicies(ctx context.Context, opts CollectorOptions) (*OrgPolicie
 // CollectOrgHierarchy collects and returns the AWS Organizations hierarchy tree.
 func CollectOrgHierarchy(ctx context.Context, opts CollectorOptions) (*OrgUnit, error) {
 	cfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
-		Region:     "us-east-1",
-		Profile:    opts.Profile,
-		ProfileDir: opts.ProfileDir,
+		Region:        "us-east-1",
+		Profile:       opts.Profile,
+		ProfileDir:    opts.ProfileDir,
+		BeforeRequest: opts.BeforeRequest,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS config: %w", err)

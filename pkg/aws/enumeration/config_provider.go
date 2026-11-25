@@ -35,9 +35,10 @@ func (p *AWSConfigProvider) GetAWSConfig(region string) (*aws.Config, error) {
 	p.configMu.RUnlock()
 
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-		Region:     region,
-		Profile:    p.Profile,
-		ProfileDir: p.ProfileDir,
+		Region:        region,
+		Profile:       p.Profile,
+		ProfileDir:    p.ProfileDir,
+		BeforeRequest: p.BeforeRequest,
 	})
 	if err != nil {
 		return nil, err

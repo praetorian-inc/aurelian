@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -11,10 +12,16 @@ import (
 )
 
 type AWSReconBase struct {
-	OutputDir  string `param:"output-dir"   desc:"Base output directory" default:"aurelian-output"`
-	Profile    string `param:"profile"      desc:"AWS profile to use" shortcode:"p"`
-	ProfileDir string `param:"profile-dir"  desc:"Set to override the default AWS profile directory"`
-	OpsecLevel string `param:"opsec_level"  desc:"Operational security level for AWS operations" default:"none"`
+	OutputDir     string                      `param:"output-dir"   desc:"Base output directory" default:"aurelian-output"`
+	Profile       string                      `param:"profile"      desc:"AWS profile to use" shortcode:"p"`
+	ProfileDir    string                      `param:"profile-dir"  desc:"Set to override the default AWS profile directory"`
+	OpsecLevel    string                      `param:"opsec_level"  desc:"Operational security level for AWS operations" default:"none"`
+	BeforeRequest func(context.Context) error `param:"-"`
+}
+
+func (c *AWSReconBase) PostBind(cfg Config, _ Module) error {
+	c.BeforeRequest = cfg.AWSBeforeRequest
+	return nil
 }
 
 type AWSCommonRecon struct {
@@ -27,13 +34,13 @@ type AWSCommonRecon struct {
 
 func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
 	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
-		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
+		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir, c.BeforeRequest)
 		if err != nil {
 			return fmt.Errorf("resolving regions: %w", err)
 		}
 		c.Regions = resolved
 	}
-	
+
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }

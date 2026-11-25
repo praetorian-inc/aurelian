@@ -61,7 +61,7 @@ func (e *AWSExtractor) Extract(r output.AWSResource, out *pipeline.P[output.Scan
 			return fmt.Errorf("no extractor registered for resource type %s", r.ResourceType)
 		}
 
-		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{Region: r.Region, Profile: e.opts.Profile, ProfileDir: e.opts.ProfileDir})
+		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{Region: r.Region, Profile: e.opts.Profile, ProfileDir: e.opts.ProfileDir, BeforeRequest: e.opts.BeforeRequest})
 		if err != nil {
 			slog.Warn("failed to create AWS config for extraction, skipping extractors", "resource", r.ResourceID, "region", r.Region, "error", err)
 			if e.cfg.FailOnError {
