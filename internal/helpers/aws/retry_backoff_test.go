@@ -143,9 +143,10 @@ func (r *observedRetryer) RetryDelay(attempt int, err error) (time.Duration, err
 
 func retryTestResponse(req *http.Request, status int) *http.Response {
 	header := http.Header{}
-	if status == http.StatusTooManyRequests {
+	switch status {
+	case http.StatusTooManyRequests:
 		header.Set("X-Amzn-Errortype", "TooManyRequestsException")
-	} else if status == http.StatusForbidden {
+	case http.StatusForbidden:
 		header.Set("X-Amzn-Errortype", "AccessDeniedException")
 	}
 	return &http.Response{StatusCode: status, Header: header, Body: io.NopCloser(strings.NewReader(`{"message":"test failure"}`)), Request: req}
