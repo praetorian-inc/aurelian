@@ -1,13 +1,11 @@
 package extraction
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -29,7 +27,9 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, nil)
+	options := ctx.Env.ARMClientOptions()
+	options.APIVersion = "2020-01-13-preview" // Preserve the pre-upgrade API version.
+	client, err := armautomation.NewVariableClient(r.SubscriptionID, ctx.Cred, options)
 	if err != nil {
 		return fmt.Errorf("failed to create automation variable client: %w", err)
 	}
@@ -71,9 +71,20 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		return fmt.Errorf("no automationAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, nil)
+	options := ctx.Env.ARMClientOptions()
+	options.APIVersion = "2018-06-30" // Preserve the pre-upgrade list API version.
+	client, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, options)
 	if err != nil {
 		return fmt.Errorf("failed to create automation runbook client: %w", err)
+	}
+
+	contentOptions := ctx.Env.ARMClientOptions()
+	contentOptions.APIVersion = "2023-11-01"
+	contentOptions.DisableRPRegistration = true
+	contentOptions.Retry.MaxRetries = -1
+	contentClient, err := armautomation.NewRunbookClient(r.SubscriptionID, ctx.Cred, contentOptions)
+	if err != nil {
+		return fmt.Errorf("failed to create runbook content client: %w", err)
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
@@ -87,7 +98,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 			if rb.Name == nil {
 				continue
 			}
-			content, err := fetchRunbookContent(ctx, r.SubscriptionID, resourceGroup, accountName, *rb.Name)
+			content, err := fetchRunbookContent(ctx.Context, contentClient, resourceGroup, accountName, *rb.Name)
 			if err != nil {
 				slog.Warn("failed to fetch runbook content", "runbook", *rb.Name, "error", err)
 				continue
@@ -103,37 +114,14 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 	return handleExtractError(err, "automation-runbooks", r.ResourceID)
 }
 
-// fetchRunbookContent retrieves the actual content of a runbook via the REST API.
-// The SDK's RunbookClient doesn't expose content directly — we use the
-// GET .../runbooks/{name}/content endpoint.
-func fetchRunbookContent(ctx extractContext, subscriptionID, resourceGroup, accountName, runbookName string) ([]byte, error) {
-	url := fmt.Sprintf(
-		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Automation/automationAccounts/%s/runbooks/%s/content?api-version=2023-11-01",
-		subscriptionID, resourceGroup, accountName, runbookName,
-	)
-
-	token, err := ctx.Cred.GetToken(ctx.Context, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get token: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx.Context, http.MethodGet, url, nil)
+func fetchRunbookContent(ctx context.Context, client *armautomation.RunbookClient, resourceGroup, accountName, runbookName string) ([]byte, error) {
+	resp, err := client.GetContent(ctx, resourceGroup, accountName, runbookName, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("runbook content request returned %d", resp.StatusCode)
+	if resp.Value == nil {
+		return nil, nil
 	}
 
-	return io.ReadAll(resp.Body)
+	return []byte(*resp.Value), nil
 }

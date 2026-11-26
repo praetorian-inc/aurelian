@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -22,7 +23,7 @@ func TestAzureExtractor(t *testing.T) {
 	require.NoError(t, err, "failed to create Azure credential")
 
 	subscriptionID := fixture.Output("subscription_id")
-	extractor := NewAzureExtractor(cred)
+	extractor := NewAzureExtractor(cred, azurecloud.Resolve(""))
 
 	t.Run("extracts VM user data", func(t *testing.T) {
 		vmID := fixture.Output("vm_id")

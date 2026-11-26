@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/praetorian-inc/aurelian/pkg/azure/azurecloud"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -31,11 +32,12 @@ var ARMEnumeratedTypes = []string{
 // ARMEnumerator lists Azure resources that cannot be discovered via Resource Graph.
 type ARMEnumerator struct {
 	cred azcore.TokenCredential
+	env  azurecloud.Environment
 }
 
 // NewARMEnumerator creates an enumerator with the given credential.
-func NewARMEnumerator(cred azcore.TokenCredential) *ARMEnumerator {
-	return &ARMEnumerator{cred: cred}
+func NewARMEnumerator(cred azcore.TokenCredential, env azurecloud.Environment) *ARMEnumerator {
+	return &ARMEnumerator{cred: cred, env: env}
 }
 
 // newPaginator returns a Paginator configured for Azure API throttling errors.
@@ -62,7 +64,7 @@ func (e *ARMEnumerator) List(sub azuretypes.SubscriptionInfo, out *pipeline.P[ou
 }
 
 func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-	client, err := armresources.NewDeploymentsClient(sub.ID, e.cred, nil)
+	client, err := armresources.NewDeploymentsClient(sub.ID, e.cred, e.env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("create deployments client: %w", err)
 	}
@@ -84,7 +86,7 @@ func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pi
 	}
 
 	// Resource-group-scope deployments: iterate all resource groups.
-	rgClient, err := armresources.NewResourceGroupsClient(sub.ID, e.cred, nil)
+	rgClient, err := armresources.NewResourceGroupsClient(sub.ID, e.cred, e.env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("create resource groups client: %w", err)
 	}
@@ -142,42 +144,39 @@ func emitDeployment(id, name, location *string, sub azuretypes.SubscriptionInfo,
 }
 
 func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-	// Use raw JSON pagination instead of the typed SDK client.
-	// The armpolicy SDK's typed unmarshaller crashes when custom policy definitions
-	// contain metadata type mismatches (e.g., "assignPermissions": "true" instead of
-	// true). This is a known issue with production tenants where custom policies have
-	// non-conforming metadata. Raw JSON lets us tolerate malformed fields gracefully.
-	pipeline, err := newRawPolicyPager(sub.ID, e.cred)
+	pager, err := newPolicyDefinitionsPager(sub.ID, e.cred, e.env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("create policy definitions pager: %w", err)
 	}
 
 	paginator := newPaginator()
 	return paginator.Paginate(func() (bool, error) {
-		defs, nextLink, err := pipeline.nextPage(context.Background())
+		page, err := pager.NextPage(context.Background())
 		if err != nil {
 			return false, handleListError(err, "policyDefinitions", sub.ID)
 		}
-		for _, d := range defs {
-			if d.ID == "" {
+		for _, d := range page.Value {
+			if d.ID == nil || *d.ID == "" {
 				continue
 			}
 			// Skip built-in and static policies — they don't contain customer secrets.
-			if d.Properties.PolicyType != "" && d.Properties.PolicyType != "Custom" {
+			if d.Properties.PolicyType != nil && *d.Properties.PolicyType != "" && *d.Properties.PolicyType != "Custom" {
 				continue
 			}
-			r := output.NewAzureResource(sub.ID, "Microsoft.Authorization/policyDefinitions", d.ID)
+			r := output.NewAzureResource(sub.ID, "Microsoft.Authorization/policyDefinitions", *d.ID)
 			r.SubscriptionName = sub.DisplayName
 			r.TenantID = sub.TenantID
-			r.DisplayName = d.Properties.DisplayName
+			if d.Properties.DisplayName != nil {
+				r.DisplayName = *d.Properties.DisplayName
+			}
 			out.Send(r)
 		}
-		return nextLink != "", nil
+		return pager.More(), nil
 	})
 }
 
 func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-	client, err := armblueprint.NewBlueprintsClient(e.cred, nil)
+	client, err := armblueprint.NewBlueprintsClient(e.cred, e.env.ARMClientOptions())
 	if err != nil {
 		return fmt.Errorf("create blueprints client: %w", err)
 	}

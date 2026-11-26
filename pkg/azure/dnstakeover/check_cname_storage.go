@@ -64,7 +64,7 @@ func checkBlobStorage(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[mode
 }
 
 func checkStorageAccountAvailability(ctx CheckContext, accountName string) (bool, error) {
-	client, err := armstorage.NewAccountsClient(ctx.SubscriptionID, ctx.Credential, nil)
+	client, err := armstorage.NewAccountsClient(ctx.SubscriptionID, ctx.Credential, ctx.Env.ARMClientOptions())
 	if err != nil {
 		return false, fmt.Errorf("create storage client: %w", err)
 	}

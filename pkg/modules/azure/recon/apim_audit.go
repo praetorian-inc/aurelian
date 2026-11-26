@@ -95,7 +95,7 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		ctx = context.Background()
 	}
 
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential, m.Env)
 	subIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 	cfg.Info("auditing APIM services across %d Azure subscriptions", len(subIDs))
 
-	argClient, err := armresourcegraph.NewClient(m.AzureCredential, nil)
+	argClient, err := armresourcegraph.NewClient(m.AzureCredential, m.Env.ARMClientOptions())
 	if err != nil {
 		// Backend check needs ARG; without it we can still run missing-auth.
 		slog.Warn("could not create ARG client — backend correlation lookups will be skipped", "error", err)
@@ -117,7 +117,7 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
 
-	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, m.Env, nil)
 	apimResources := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(resolvedSubs, func(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
 		return lister.List(resourcegraph.ListerInput{
@@ -151,7 +151,7 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 func (m *AzureAPIMAuditModule) runChecks(ctx context.Context, argClient *armresourcegraph.Client, checks []apimCheck) func(apimServiceTarget, *pipeline.P[model.AurelianModel]) error {
 	return func(t apimServiceTarget, out *pipeline.P[model.AurelianModel]) error {
-		factory, err := armapimanagement.NewClientFactory(t.SubscriptionID, m.AzureCredential, nil)
+		factory, err := armapimanagement.NewClientFactory(t.SubscriptionID, m.AzureCredential, m.Env.ARMClientOptions())
 		if err != nil {
 			return fmt.Errorf("failed to create APIM client factory for %s: %w", t.ResourceID, err)
 		}
